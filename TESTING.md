@@ -35,9 +35,15 @@ the automated test method, and the in-client checklist.
   per slot with the previous scan. Gains inside a creation window queue
   deletions, at most the excess over the limit and at most the gained amount.
   `ITEM_LOCK_CHANGED` and `CURSOR_CHANGED` retry queued deletions.
-- Options registers a vertical-layout category with proxy settings when the
-  Settings API exists; without it, WTF runs and `/wtf` says the page is
-  unavailable.
+- Stones requires `C_SpellBook.IsSpellKnown`, `C_Item.GetItemCount`, and
+  `C_Item.GetItemInfo`; without them Stones stays off with one message and the
+  rest of WTF runs. Secure attributes and bar visibility change only out of
+  combat, else at `PLAYER_REGEN_ENABLED`.
+- Announce pairs `UNIT_SPELLCAST_SENT` (target name, cast GUID) with
+  `UNIT_SPELLCAST_SUCCEEDED` and sends with `C_ChatInfo.SendChatMessage`.
+- Options registers a vertical-layout category with proxy settings, plus a
+  canvas Announce subpage, when the Settings API exists; without it, WTF runs
+  and `/wtf` says the page is unavailable.
 
 ## Pinned source evidence
 
@@ -68,6 +74,16 @@ the automated test method, and the in-client checklist.
   `OpenToCategory`; `Blizzard_SettingControls.lua` defines
   `SetParentInitializer`; `MinimalSlider.lua` defines
   `MinimalSliderWithSteppersMixin.Label`.
+- `Blizzard_FrameXML/SecureTemplates.lua` defines the secure action types
+  `spell`, `item`, and `macro` (`macrotext`) and `SecureActionButton_OnClick`,
+  which acts once per press and release, on the press only when
+  `useOnKeyDown` or the `ActionButtonUseKeyDown` CVar says so.
+- `Blizzard_SharedXML/Shared/InputBox/InputBoxTemplates.xml` defines
+  `InputBoxTemplate`; `CheckButtonTemplates.xml` defines `UIRadioButtonTemplate`.
+- `SpellBookDocumentation.lua` declares `C_SpellBook.IsSpellKnown`;
+  `ItemDocumentation.lua` declares `C_Item.GetItemInfo` (with `itemMinLevel`),
+  `GetItemCount`, `GetItemIconByID`, and `GetItemNameByID`;
+  `ChatInfoDocumentation.lua` declares `C_ChatInfo.SendChatMessage`.
 
 ### Client observations
 
@@ -115,7 +131,14 @@ the automated test method, and the in-client checklist.
 4. Whether shards stack, the soul bag family bit (4), and Drain Soul's spell
    IDs on Forever (`/wtf debug_shards`).
 5. Whether any source other than Drain Soul creates shards (the gain log).
-6. Whether the `INV_Misc_Gem_Amethyst_02` TOC icon renders.
+6. Whether the `INV_Misc_Gem_Amethyst_02` TOC icon and the `INV_Misc_Orb_04`
+   and `INV_Stone_04` fallback stone icons render.
+7. Forever's Create Soulstone and Create Healthstone spell IDs, stone item IDs,
+   and Healthstone level requirements (`/wtf debug_stones`); the tables hold
+   Classic's IDs.
+8. Whether `UNIT_SPELLCAST_SENT` names the target for Ritual of Summoning and a
+   Soulstone use, whether Say from a success event is blocked outdoors, and
+   which actions block accepting a summon (flying, trading, combat, death).
 
 ## Automated tests
 
@@ -123,7 +146,7 @@ From the Git Bash repository root:
 
 ```sh
 .tools/luarocks-3.13.0-win32/win32/lua5.1/bin/lua5.1.exe tests/run.lua
-.tools/luarocks-3.13.0-win32/win32/lua5.1/bin/luac5.1.exe -p Commands.lua Core.lua Shards.lua Probe.lua Options.lua tests/run.lua
+.tools/luarocks-3.13.0-win32/win32/lua5.1/bin/luac5.1.exe -p Commands.lua Core.lua Shards.lua Stones.lua Announce.lua Probe.lua Options.lua tests/run.lua
 .tools/python-3.13.7/python.exe -m unittest discover -s tests -p 'test_*.py'
 ```
 
@@ -157,4 +180,18 @@ and printing.
       until the cursor is empty, and the held item is never deleted.
 - [ ] `/wtf shards` matches the bag contents; settings survive `/reload` and
       relogging, and are separate on a second Warlock.
+- [ ] The Stones bar shows both buttons with counts; tooltips explain both
+      clicks. Left-click a Soulstone with a friend targeted, then with no
+      target; right-click creates your best rank. In combat a Soulstone click
+      prints the combat line once.
+- [ ] With a lower-level friend targeted, right-click on the Healthstone button
+      creates a rank that friend can use; `/wtf debug_stones` agrees.
+- [ ] `/click WarlockToolsForeverHealthstone` in a macro uses a Healthstone,
+      also in combat; `/click WarlockToolsForeverSoulstone RightButton` creates one.
+- [ ] Drag, lock, and `/wtf reset` the bar; its place survives `/reload`.
+- [ ] Ritual of Summoning on a party member: one party line and one whisper
+      with the zone. A Soulstone on a party member: the party line and the
+      author's whisper. On yourself: nothing.
+- [ ] The Announce page edits, Enter and Escape, switches, the Say choice, and
+      Defaults work and survive `/reload`.
 - [ ] No Lua errors or taint warnings in or out of combat.

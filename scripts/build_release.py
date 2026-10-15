@@ -20,7 +20,8 @@ from pathlib import Path
 
 
 ADDON = "WarlockToolsForever"
-RUNTIME_FILES = ("Commands.lua", "Core.lua", "Shards.lua", "Probe.lua", "Options.lua")
+RUNTIME_FILES = ("Commands.lua", "Core.lua", "Shards.lua", "Stones.lua", "Announce.lua", "Probe.lua",
+                 "Options.lua")
 TEXT_FILES = (ADDON + ".toc",) + RUNTIME_FILES + ("LICENSE",)
 # Runtime textures shipped in the package. WTF uses only built-in client
 # textures, so there are none; the TGA validator stays for future assets.
@@ -273,6 +274,8 @@ def _release_notes(version, changes):
 - Soul Shard management deletes shards created by Drain Soul above your limit
   (default: your soul bag size, or 6 without one). Shards you move in yourself
   are never deleted. Set the limit in Options > AddOns or with `/wtf options`.
+- Stones and Announce: Soulstone and Healthstone buttons, and group and whisper
+  messages for your summons and Soulstones, each with its own settings page.
 '''
 
 

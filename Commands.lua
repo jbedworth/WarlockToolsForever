@@ -1,6 +1,7 @@
 local _, WTF = ...
 
-local USAGE = "Use /wtf, /wtf options, /wtf shards, /wtf debug_restrictions, /wtf debug_shards, or /wtf debug_delete."
+local USAGE = "Use /wtf, /wtf options, /wtf shards, /wtf reset, /wtf debug_shards, /wtf debug_delete, "
+    .. "/wtf debug_stones, or /wtf debug_restrictions."
 local UNAVAILABLE = "Warlock Tools Forever is unavailable. Check the WTF login message."
 
 -- Each command is one word; "" opens the settings. Handlers live in the other
@@ -12,6 +13,8 @@ local COMMANDS = {
     debug_restrictions = {handler = "ReportRestrictions", always = true},
     debug_shards = {handler = "ReportShardDebug", always = true},
     debug_delete = {handler = "DebugDeleteShard"},
+    reset = {handler = "ResetStonesPosition"},
+    debug_stones = {handler = "ReportStoneDebug"},
 }
 
 function WTF.ParseCommand(message)

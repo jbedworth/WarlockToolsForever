@@ -24,10 +24,16 @@ local function contains(actual, fragment, context)
     end
 end
 
-local RUNTIME_FILES = {"Commands.lua", "Core.lua", "Shards.lua", "Probe.lua", "Options.lua"}
+local RUNTIME_FILES = {"Commands.lua", "Core.lua", "Shards.lua", "Stones.lua", "Announce.lua", "Probe.lua",
+    "Options.lua"}
 local SHARD = 6265
 local SPELLS = {[1120] = "Drain Soul", [11675] = "Drain Soul", [686] = "Shadow Bolt", [172] = "Corruption",
-    [6222] = "Corruption", [980] = "Curse of Agony"}
+    [6222] = "Corruption", [980] = "Curse of Agony", [698] = "Ritual of Summoning",
+    [20707] = "Soulstone Resurrection", [20762] = "Soulstone Resurrection",
+    [693] = "Create Soulstone (Minor)", [20752] = "Create Soulstone (Lesser)",
+    [6201] = "Create Healthstone (Minor)", [6202] = "Create Healthstone (Lesser)", [5699] = "Create Healthstone"}
+local ITEMS = {[5232] = {"Minor Soulstone", 18}, [16892] = {"Lesser Soulstone", 30},
+    [5512] = {"Minor Healthstone", 1}, [5511] = {"Lesser Healthstone", 12}, [5509] = {"Healthstone", 24}}
 local DRAIN_SOUL_RANK_4 = 11675
 local SHADOW_BOLT = 686
 
@@ -48,7 +54,8 @@ local function fixture(options)
     options = options or {}
     local state = {frames = {}, messages = {}, now = 100, combat = false, cursor = nil,
         deleteBlocked = false, secrets = {}, settings = {}, categories = {}, opened = nil,
-        notified = {}}
+        notified = {}, known = options.known or {}, carried = options.carried or {}, sent = {},
+        group = options.group, tooltip = {}}
     -- bags[bag] = {size, family, items = {[slot] = {itemID, stackCount, isLocked}}}
     state.bags = options.bags or {
         [0] = {size = 16, family = 0, items = {}},
@@ -88,9 +95,39 @@ local function fixture(options)
     env.C_Spell = {GetSpellName = function(id)
         if SPELLS[id] then return SPELLS[id] end
     end}
-    env.C_Item = {GetItemNameByID = function(id)
-        if id == SHARD then return "Soul Shard" end
+    env.C_Item = {
+        GetItemNameByID = function(id)
+            if id == SHARD then return "Soul Shard" end
+        end,
+        GetItemCount = function(id) return state.carried[id] or 0 end,
+        -- As in client, uncached item data returns nothing.
+        GetItemInfo = function(id)
+            local info = ITEMS[id]
+            if info then return info[1], "link", 1, 10, info[2] end
+        end,
+        GetItemIconByID = function(id) return 1000 + id end,
+        RequestLoadItemDataByID = function(id) state.requested = (state.requested or 0) + 1 end,
+    }
+    if not options.noSpellBook then
+        env.C_SpellBook = {IsSpellKnown = function(id) return state.known[id] == true end}
+    end
+    env.IsInRaid = function() return state.group == "raid" end
+    env.IsInGroup = function() return state.group ~= nil end
+    env.GetZoneText = function() return state.zone or "Redridge Mountains" end
+    env.C_ChatInfo = {SendChatMessage = function(message, chatType, _, target)
+        if chatType == "SAY" and state.sayBlocked then
+            state.emit("ADDON_ACTION_BLOCKED", "WarlockToolsForever", "UNKNOWN()")
+            return
+        end
+        state.sent[#state.sent + 1] = {message = message, chatType = chatType, target = target}
     end}
+    env.GameTooltip = {
+        SetOwner = function() state.tooltip = {} end,
+        SetText = function(_, text) state.tooltip[#state.tooltip + 1] = text end,
+        AddLine = function(_, text) state.tooltip[#state.tooltip + 1] = text end,
+        Show = function() end,
+        Hide = function() end,
+    }
 
     -- Containers and the cursor. As in client, an empty slot reports nothing.
     local function item(bag, slot)
@@ -160,7 +197,11 @@ local function fixture(options)
 
     -- Units, auras, and restrictions for the probe.
     state.units = options.units or {}
+    state.units.player = state.units.player or {name = "Dyre", player = true, friend = true, level = 20}
     env.UnitExists = function(unit) return state.units[unit] ~= nil end
+    env.UnitIsPlayer = function(unit) return state.units[unit] ~= nil and state.units[unit].player == true end
+    env.UnitIsFriend = function(_, unit) return state.units[unit] ~= nil and state.units[unit].friend == true end
+    env.UnitLevel = function(unit) return state.units[unit] and state.units[unit].level or 0 end
     env.UnitName = function(unit) return state.units[unit] and state.units[unit].name end
     env.UnitGUID = function(unit) return state.units[unit] and state.units[unit].guid end
     env.UnitCanAttack = function(_, unit) return state.units[unit] ~= nil end
@@ -240,6 +281,11 @@ local function fixture(options)
             VarType = {Boolean = "boolean", Number = "number", String = "string"},
             RegisterVerticalLayoutCategory = function(name) return newCategory(name) end,
             RegisterVerticalLayoutSubcategory = function(parent, name) return newCategory(name, parent) end,
+            RegisterCanvasLayoutSubcategory = function(parent, frame, name)
+                local page = newCategory(name, parent)
+                page.frame = frame
+                return page
+            end,
             RegisterProxySetting = function(category, variable, variableType, name, default, getValue, setValue)
                 equal(state.settings[variable], nil, "setting variables are unique")
                 local setting = {category = category, variable = variable, type = variableType, name = name,
@@ -273,23 +319,68 @@ local function fixture(options)
     state.worldHooks = {}
     env.UIParent = {}
     env.WorldFrame = {HookScript = function(_, script, callback) state.worldHooks[script] = callback end}
-    env.CreateFrame = function()
-        local frame = {events = {}, unitEvents = {}, scripts = {}}
-        function frame:SetPropagateKeyboardInput(value)
+    local function widget(kind, name, parent, template)
+        local object = {kind = kind, name = name, parent = parent, template = template, events = {},
+            unitEvents = {}, scripts = {}, attributes = {}, points = {}, shown = true, text = ""}
+        function object:SetPropagateKeyboardInput(value)
             if not options.noPropagate then self.propagate = value end
         end
-        function frame:GetPropagateKeyboardInput() return self.propagate == true end
-        function frame:EnableKeyboard(value) self.keyboard = value end
-        function frame:RegisterEvent(event)
+        function object:GetPropagateKeyboardInput() return self.propagate == true end
+        function object:EnableKeyboard(value) self.keyboard = value end
+        function object:RegisterEvent(event)
             if options.restrictCombatLog and event == "COMBAT_LOG_EVENT_UNFILTERED" then
                 error("COMBAT_LOG_EVENT_UNFILTERED is restricted")
             end
             self.events[event] = true
             return true
         end
-        function frame:RegisterUnitEvent(event, unit) self.unitEvents[event] = unit end
-        function frame:UnregisterEvent(event) self.events[event] = nil end
-        function frame:SetScript(script, callback) self.scripts[script] = callback end
+        function object:RegisterUnitEvent(event, unit) self.unitEvents[event] = unit end
+        function object:UnregisterEvent(event) self.events[event] = nil end
+        function object:SetScript(script, callback) self.scripts[script] = callback end
+        function object:GetScript(script) return self.scripts[script] end
+        function object:GetName() return self.name end
+        -- As in client, secure frames refuse changes in combat.
+        function object:SetAttribute(key, value)
+            if state.combat then error("SetAttribute in combat") end
+            self.attributes[key] = value
+        end
+        function object:GetAttribute(key) return self.attributes[key] end
+        function object:Show()
+            if state.combat and self.protected then error("Show in combat") end
+            self.shown = true
+        end
+        function object:Hide()
+            if state.combat and self.protected then error("Hide in combat") end
+            self.shown = false
+        end
+        function object:IsShown() return self.shown end
+        function object:SetPoint(...) self.points[#self.points + 1] = {...} end
+        function object:ClearAllPoints() self.points = {} end
+        function object:GetPoint()
+            local point = self.points[#self.points]
+            return point[1], point[2], point[3], point[4], point[5]
+        end
+        function object:StartMoving() self.moving = true end
+        function object:StopMovingOrSizing() self.moving = false end
+        function object:SetText(text) self.text = text end
+        function object:GetText() return self.text end
+        function object:SetTexture(texture) self.texture = texture end
+        function object:SetChecked(value) self.checked = value == true end
+        function object:GetChecked() return self.checked end
+        function object:CreateTexture() return widget("Texture", nil, self) end
+        function object:CreateFontString() return widget("FontString", nil, self) end
+        -- Unknown methods (layout, colors, and so on) do nothing here.
+        return setmetatable(object, {__index = function(_, key)
+            if type(key) == "string" and key:match("^%u") then return function() end end
+        end})
+    end
+    env.CreateFrame = function(kind, name, parent, template)
+        local frame = widget(kind, name, parent, template)
+        if name then env[name] = frame end
+        if template == "SecureActionButtonTemplate" then
+            frame.protected = true
+            if parent then parent.protected = true end
+        end
         state.frames[#state.frames + 1] = frame
         return frame
     end
@@ -328,6 +419,17 @@ local function fixture(options)
             for _, frame in ipairs(state.frames) do
                 if frame.keyboard and frame.scripts.OnKeyDown then frame.scripts.OnKeyDown(frame, "1") end
             end
+        end)
+    end
+    function state.clickButton(name, mouseButton)
+        local button = env[name]
+        local suffix = mouseButton == "RightButton" and "2" or "1"
+        hardware(function()
+            state.used = {type = button.attributes["type" .. suffix],
+                macrotext = button.attributes["macrotext" .. suffix], spell = button.attributes["spell" .. suffix]}
+            -- Secure buttons run PostClick for the press and the release.
+            button.scripts.PostClick(button, mouseButton, true)
+            button.scripts.PostClick(button, mouseButton, false)
         end)
     end
     function state.click()
@@ -456,7 +558,8 @@ test("a missing client API disables WTF with one message naming it", function()
     equal(state.categories["Warlock Tools Forever"], nil, "no settings page")
 end)
 test("a mixed install of old and new files is reported at login", function()
-    local state = fixture({files = {"Commands.lua", "Core.lua", "Shards.lua", "Options.lua"}})
+    local state = fixture({files = {"Commands.lua", "Core.lua", "Shards.lua", "Stones.lua", "Announce.lua",
+        "Options.lua"}})
     equal(state.wtf.available, false)
     contains(state.last(), "missing ReportRestrictions")
 end)
@@ -882,7 +985,7 @@ test("debug_shards lists bags, the source spell, and recent gains", function()
     state.slash("debug_shards")
     contains(state.messages[1], "debug_shards item=6265 name=Soul Shard")
     contains(state.messages[2], "source spell=1120 name=Drain Soul")
-    contains(state.messages[3], "NUM_BAG_SLOTS=4 NUM_TOTAL_EQUIPPED_BAG_SLOTS=nil itemCount=n/a")
+    contains(state.messages[3], "NUM_BAG_SLOTS=4 NUM_TOTAL_EQUIPPED_BAG_SLOTS=nil itemCount=0")
     contains(state.messages[5], "bag=1 slots=12 family=4 soul=true items=1 shards=1 shardSlotsByID=1 noInfo=0")
     contains(state.messages[9], "count=3 limit=12 source=soul bag")
     contains(state.messages[10], "gain 0.0s ago +1 count=3 created=true combat=false last=UNIT_SPELLCAST_CHANNEL_START 11675 1.0s before")
@@ -995,6 +1098,254 @@ test("debug_restrictions finds nameplate units by token, not from plate frames",
     reported(state, "nameplate3 instanceIDs count=0")
 end)
 
+-- Stones -----------------------------------------------------------------------
+
+local SOUL = "WarlockToolsForeverSoulstone"
+local HEALTH = "WarlockToolsForeverHealthstone"
+
+local function stonesFixture(extra)
+    local options = {known = {[693] = true, [20752] = true, [6201] = true, [6202] = true, [5699] = true},
+        carried = {[16892] = 1, [5232] = 2, [5511] = 1}}
+    for key, value in pairs(extra or {}) do options[key] = value end
+    return fixture(options)
+end
+
+test("stone buttons use the best stone carried and create the best rank known", function()
+    local state = stonesFixture()
+    local soul, health = state.env[SOUL], state.env[HEALTH]
+    equal(soul.attributes.type1, "macro")
+    equal(soul.attributes.macrotext1, "/use [@target,help,nodead][@player] item:16892")
+    equal(soul.attributes.type2, "spell")
+    equal(soul.attributes.spell2, 20752)
+    equal(health.attributes.macrotext1, "/use item:5511")
+    equal(health.attributes.spell2, 5699, "no player target: the best known rank")
+    equal(soul.count.text, 3)
+    equal(health.count.text, 1)
+    equal(soul.icon.texture, 1000 + 16892)
+end)
+test("right-click creates the best Healthstone a friendly player target can use", function()
+    local state = stonesFixture({units = {target = {name = "Lowbie", player = true, friend = true, level = 20}}})
+    equal(state.env[HEALTH].attributes.spell2, 6202, "Healthstone needs level 24")
+    state.units.target.level = 30
+    state.emit("PLAYER_TARGET_CHANGED")
+    equal(state.env[HEALTH].attributes.spell2, 5699)
+    state.units.target = {name = "Boar", level = 5}
+    state.emit("PLAYER_TARGET_CHANGED")
+    equal(state.env[HEALTH].attributes.spell2, 5699, "a mob target does not limit the rank")
+end)
+test("an uncached level requirement skips that rank until item data arrives", function()
+    local state = stonesFixture({units = {target = {name = "Lowbie", player = true, friend = true, level = 40}}})
+    equal(state.requested, 5, "level requirements are requested at login")
+    ITEMS[5509][2] = nil
+    state.emit("PLAYER_TARGET_CHANGED")
+    equal(state.env[HEALTH].attributes.spell2, 6202)
+    ITEMS[5509][2] = 24
+    state.emit("GET_ITEM_INFO_RECEIVED")
+    equal(state.env[HEALTH].attributes.spell2, 5699)
+end)
+test("with no stones or ranks, clicks explain what is missing, once per click", function()
+    local state = fixture()
+    local soul = state.env[SOUL]
+    equal(soul.attributes.type1, nil)
+    equal(soul.attributes.type2, nil)
+    state.clear()
+    state.clickButton(SOUL, "LeftButton")
+    equal(#state.messages, 1)
+    equal(state.last(), "WTF: No Soulstone in your bags. Right-click to create one.")
+    state.now = state.now + 1
+    state.clickButton(HEALTH, "RightButton")
+    equal(state.last(), "WTF: You do not know Create Healthstone yet.")
+end)
+test("a Soulstone click in combat explains that it cannot be applied", function()
+    local state = stonesFixture()
+    state.combat = true
+    state.clear()
+    state.clickButton(SOUL, "LeftButton")
+    equal(#state.messages, 1)
+    equal(state.last(), "WTF: Soulstones cannot be applied in combat.")
+    equal(state.used.macrotext, "/use [@target,help,nodead][@player] item:16892")
+end)
+test("stone button changes in combat wait for combat to end", function()
+    local state = stonesFixture()
+    state.combat = true
+    state.carried[16892] = 0
+    state.emit("BAG_UPDATE_DELAYED")
+    equal(state.env[SOUL].attributes.macrotext1, "/use [@target,help,nodead][@player] item:16892")
+    state.combat = false
+    state.emit("PLAYER_REGEN_ENABLED")
+    equal(state.env[SOUL].attributes.macrotext1, "/use [@target,help,nodead][@player] item:5232")
+end)
+test("the Stones bar follows the module and show settings, after combat if needed", function()
+    local state = stonesFixture()
+    local bar = state.env.WarlockToolsForeverStones
+    equal(bar.shown, true)
+    state.settings.WTF_STONES_SHOWN:SetValue(false)
+    equal(bar.shown, false)
+    state.settings.WTF_STONES_SHOWN:SetValue(true)
+    state.combat = true
+    state.settings.WTF_STONES_ENABLED:SetValue(false)
+    equal(bar.shown, true, "unchanged in combat")
+    state.combat = false
+    state.emit("PLAYER_REGEN_ENABLED")
+    equal(bar.shown, false)
+end)
+test("the Stones bar drags unless locked or in combat, and remembers its place", function()
+    local state = stonesFixture()
+    local bar, soul = state.env.WarlockToolsForeverStones, state.env[SOUL]
+    soul.scripts.OnDragStart(soul)
+    equal(bar.moving, true)
+    bar:SetPoint("TOPLEFT", nil, "TOPLEFT", 10, -20)
+    soul.scripts.OnDragStop(soul)
+    equal(state.wtf.db.stones.position.x, 10)
+    state.wtf.db.stones.locked = true
+    soul.scripts.OnDragStart(soul)
+    equal(bar.moving, false)
+    state.wtf.db.stones.locked = false
+    state.combat = true
+    bar.scripts.OnDragStart(bar)
+    equal(bar.moving, false)
+end)
+test("/wtf reset moves the Stones bar back, after combat if needed", function()
+    local state = stonesFixture({db = {stones = {position = {point = "TOP", relativePoint = "TOP", x = 1, y = 2}}}})
+    local bar = state.env.WarlockToolsForeverStones
+    equal(bar.points[1][1], "TOP")
+    state.combat = true
+    state.slash("reset")
+    equal(state.wtf.db.stones.position, nil)
+    contains(state.last(), "moves back after combat")
+    state.combat = false
+    state.emit("PLAYER_REGEN_ENABLED")
+    equal(bar.points[1][1], "CENTER")
+end)
+test("the stone tooltip explains both clicks and the macro name", function()
+    local state = stonesFixture()
+    local soul = state.env[SOUL]
+    soul.scripts.OnEnter(soul)
+    equal(state.tooltip[1], "Soulstone")
+    contains(state.tooltip[2], "Left-click: use Lesser Soulstone on your friendly target, or on yourself.")
+    contains(state.tooltip[3], "Right-click: create Lesser Soulstone.")
+    contains(state.tooltip[5], "/click WarlockToolsForeverSoulstone")
+end)
+test("debug_stones lists ranks, carried stones, and level requirements", function()
+    local state = stonesFixture()
+    state.clear()
+    state.slash("debug_stones")
+    contains(state.messages[2], "soulstone spell=20752 name=Create Soulstone (Lesser) known=true items=16892x1 minLevel=30")
+    contains(state.messages[6], "healthstone spell=6201 name=Create Healthstone (Minor) known=true items=5512x0,19004x0,19005x0 minLevel=1")
+    contains(state.last(), "targetLevel=nil healthstoneRank=5699 pending=false")
+end)
+test("without the spellbook API, Stones stay off and the rest of WTF runs", function()
+    local state = fixture({noSpellBook = true})
+    equal(state.wtf.available, true)
+    equal(state.env.WarlockToolsForeverStones, nil)
+    local found
+    for _, message in ipairs(state.messages) do
+        if message:find("Stones stay off: this client lacks C_SpellBook.IsSpellKnown.", 1, true) then found = true end
+    end
+    equal(found, true)
+end)
+
+-- Announce ---------------------------------------------------------------------
+
+local function cast(state, spellID, target, outcome)
+    state.emit("UNIT_SPELLCAST_SENT", "player", target, "cast-" .. spellID, spellID)
+    state.emit(outcome or "UNIT_SPELLCAST_SUCCEEDED", "player", "cast-" .. spellID, spellID)
+end
+
+test("a summon tells the party and whispers the target", function()
+    local state = fixture({group = "party"})
+    cast(state, 698, "Friend")
+    equal(#state.sent, 2)
+    equal(state.sent[1].message, "Summoning >> Friend << click please")
+    equal(state.sent[1].chatType, "PARTY")
+    equal(state.sent[2].chatType, "WHISPER")
+    equal(state.sent[2].target, "Friend")
+    contains(state.sent[2].message, "Summoning you to Redridge Mountains now.")
+end)
+test("a Soulstone use tells the raid and whispers the author's text", function()
+    local state = fixture({group = "raid"})
+    cast(state, 20762, "Tank")
+    equal(state.sent[1].message, "Soulstone on >> Tank <<")
+    equal(state.sent[1].chatType, "RAID")
+    contains(state.sent[2].message, "die in a good spot")
+end)
+test("alone, only the whisper goes out", function()
+    local state = fixture()
+    cast(state, 698, "Friend")
+    equal(#state.sent, 1)
+    equal(state.sent[1].chatType, "WHISPER")
+end)
+test("failed casts, yourself, other spells, and secret targets announce nothing", function()
+    local state = fixture({group = "party"})
+    cast(state, 698, "Friend", "UNIT_SPELLCAST_FAILED")
+    state.emit("UNIT_SPELLCAST_SUCCEEDED", "player", "cast-698", 698)
+    cast(state, 20707, "Dyre")
+    cast(state, 686, "Boar")
+    local hidden = secret()
+    state.secrets[hidden] = true
+    cast(state, 698, hidden)
+    equal(#state.sent, 0)
+end)
+test("each message has its own switch, and the module switch silences all", function()
+    local state = fixture({group = "party", db = {announce = {summonWhisper = false}}})
+    cast(state, 698, "Friend")
+    equal(#state.sent, 1)
+    equal(state.sent[1].chatType, "PARTY")
+    state.settings.WTF_ANNOUNCE_ENABLED:SetValue(false)
+    cast(state, 20707, "Friend")
+    equal(#state.sent, 1)
+end)
+test("Say sends to SAY, and a blocked Say is reported once", function()
+    local state = fixture({db = {announce = {channel = "say"}}})
+    cast(state, 698, "Friend")
+    equal(state.sent[1].chatType, "SAY")
+    state.sayBlocked = true
+    state.clear()
+    cast(state, 698, "Friend")
+    cast(state, 698, "Friend")
+    equal(#state.messages, 1)
+    contains(state.last(), "blocked the Say announcement")
+end)
+test("names and zones with percent signs are inserted literally", function()
+    local state = fixture()
+    state.zone = "100% Zone"
+    equal(state.wtf.FormatAnnouncement("%T in %Z (%T)", "A%1b"), "A%1b in 100% Zone (A%1b)")
+end)
+test("announcement texts are repaired on load", function()
+    local state = fixture({db = {announce = {summonGroupText = "  Come >> %T <<  ",
+        summonWhisperText = "", soulstoneGroupText = string.rep("x", 256), soulstoneWhisperText = "a\nb",
+        channel = "shout"}}})
+    local settings = state.wtf.db.announce
+    equal(settings.summonGroupText, "Come >> %T <<")
+    equal(settings.summonWhisperText, state.wtf.ANNOUNCE_DEFAULTS.summonWhisperText)
+    equal(settings.soulstoneGroupText, state.wtf.ANNOUNCE_DEFAULTS.soulstoneGroupText)
+    equal(settings.soulstoneWhisperText, state.wtf.ANNOUNCE_DEFAULTS.soulstoneWhisperText)
+    equal(settings.channel, "group")
+end)
+test("the Announce page edits texts, switches, and the channel", function()
+    local state = fixture()
+    local page = state.categories.Announce.frame
+    page:OnRefresh()
+    local row = page.rows[1]
+    equal(row.edit.text, "Summoning >> %T << click please")
+    row.edit.text = "  Port >> %T <<  "
+    row.edit.scripts.OnEnterPressed(row.edit)
+    equal(state.wtf.db.announce.summonGroupText, "Port >> %T <<")
+    row.edit.text = "typing"
+    row.edit.scripts.OnEscapePressed(row.edit)
+    equal(row.edit.text, "Port >> %T <<", "Escape undoes the edit")
+    row.check.checked = false
+    row.check.scripts.OnClick(row.check)
+    equal(state.wtf.db.announce.summonGroup, false)
+    page.channels[2].scripts.OnClick(page.channels[2])
+    equal(state.wtf.db.announce.channel, "say")
+    equal(page.channels[1].checked, false)
+    page:OnDefault()
+    equal(state.wtf.db.announce.channel, "group")
+    equal(state.wtf.db.announce.summonGroup, true)
+    equal(state.wtf.db.announce.summonGroupText, "Summoning >> %T << click please")
+end)
+
 -- Settings page ----------------------------------------------------------------
 
 test("the settings page has a module switch and a Soul Shards subpage", function()
@@ -1004,6 +1355,10 @@ test("the settings page has a module switch and a Soul Shards subpage", function
     equal(state.registered, main)
     equal(page.parent, main)
     equal(main.initializers[1].setting.variable, "WTF_SHARDS_ENABLED")
+    equal(main.initializers[2].setting.variable, "WTF_STONES_ENABLED")
+    equal(main.initializers[3].setting.variable, "WTF_ANNOUNCE_ENABLED")
+    equal(state.categories.Stones.parent, main)
+    equal(state.categories.Announce.parent, main)
     equal(page.initializers[1].setting.variable, "WTF_SHARDS_AUTO_LIMIT")
     equal(page.initializers[2].setting.variable, "WTF_SHARDS_LIMIT")
     equal(page.initializers[3].setting.variable, "WTF_SHARDS_REPORT")

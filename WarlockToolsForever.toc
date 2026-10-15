@@ -10,5 +10,7 @@
 Commands.lua
 Core.lua
 Shards.lua
+Stones.lua
+Announce.lua
 Probe.lua
 Options.lua
