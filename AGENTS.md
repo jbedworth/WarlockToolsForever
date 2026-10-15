@@ -25,11 +25,13 @@ module only after the author agrees its behavior.
   (author-approved). Delete at most as many shards as were just created, from
   the slots that just gained them.
 - The limit: total slots of equipped soul bags (bag family bit 4), in any
-  carried bag slot including the reagent slot, or 6 without one; or a manual limit (1-60). Turning the match off keeps the current limit.
+  carried bag slot including the reagent slot (verified: a 14-slot soul bag
+  sat in bag 5), or 6 without one; or a manual limit (1-60). Turning the match
+  off keeps the current limit.
 - Carried bags only: the backpack to `NUM_TOTAL_EQUIPPED_BAG_SLOTS` (falling
   back to `NUM_BAG_SLOTS`), which includes the reagent bag; never the bank. On
   Forever, Soul Shards are reagents: they go to the reagent bag until it is
-  full, then to other bags. Soul bags are only bags 1 to `NUM_BAG_SLOTS`.
+  full, then to other bags.
 - Deletion steps: wait for an empty cursor and an unlocked item; pick up exactly
   one shard (split stacks); confirm the cursor holds a Soul Shard; then
   `DeleteCursorItem`. If anything is unexpected, put the item back. If the
@@ -39,19 +41,42 @@ module only after the author agrees its behavior.
   and stops deleting until `/reload`. Queued deletions wait for input with no
   timeout and are dropped once the count is within the limit.
 
-### Agreed future modules (not yet built)
+### Stones (built)
 
-- **Stones:** secure buttons. Soulstone: left-click uses the best Soulstone on
-  the target (or self); right-click creates the highest rank. Healthstone: the
-  same, and with a player targeted, right-click creates the best rank that
-  player can use. Attributes change only out of combat. Out of combat only for
-  Soulstone use (it cannot be applied in combat); report one line otherwise.
-- **Announce:** on Ritual of Summoning, a configurable party/raid line
-  ("Summoning >> %T << click please") and an optional whisper to the target
-  with only verified advice. On a Soulstone use on another player, a
-  party/raid line and an optional whisper (author's text about reviving where
-  you fell). SAY needs a hardware event outdoors, so it works only from WTF's
-  buttons. If Forever adds meeting stones, announce that one is up.
+- A movable bar (`WarlockToolsForeverStones`, gold border, brown background)
+  with two `SecureActionButtonTemplate` buttons, `WarlockToolsForeverSoulstone`
+  and `WarlockToolsForeverHealthstone`; their global names exist for `/click`
+  macros. Left-click uses the best stone carried (Soulstone:
+  `/use [@target,help,nodead][@player] item:ID`; Healthstone: `/use item:ID`).
+  Right-click casts the highest known create rank; for a Healthstone with a
+  friendly player target other than you, the highest known rank whose item
+  level requirement (`C_Item.GetItemInfo` minLevel) the target meets.
+- Ranks are a table of Classic spell and item IDs, including Improved
+  Healthstone items; verify them in client with `/wtf debug_stones`.
+- Secure attributes and the bar's visibility change only out of combat;
+  changes in combat wait for `PLAYER_REGEN_ENABLED`. The bar drags out of
+  combat unless locked; `/wtf reset` restores its place.
+- PostClick explains a click that did nothing (no stone, no rank, a Soulstone
+  in combat) with one line, deduplicated across press and release.
+
+### Announce (built)
+
+- On `UNIT_SPELLCAST_SUCCEEDED` for a cast whose `UNIT_SPELLCAST_SENT` named
+  another player: Ritual of Summoning (by name of spell 698) or Soulstone
+  Resurrection (by name of spell 20707, any rank). Failed, interrupted, self,
+  and secret-target casts announce nothing.
+- Four messages with their own switches and texts (`%T` target, `%Z` zone):
+  summon group line ("Summoning >> %T << click please"), summon whisper (only
+  verified advice; the accept-blocking rules are unverified), Soulstone group
+  line, and Soulstone whisper (the author's text). Group means raid, else
+  party, else nothing; Say is optional. SAY outdoors needs a hardware event and
+  the success event is not one, so a blocked Say is reported once.
+- Texts are trimmed, single-line, at most 255 bytes, else the default. The
+  Announce settings subpage is a canvas page with edit boxes.
+- If Forever adds meeting stones, announce that one is up (agreed, not built).
+
+### Agreed future module (not yet built)
+
 - **Tracker:** DoTs, Banes (Agony, Doom, Havoc), Curses, and Fear per mob, up
   to about 8 mobs, with expired effects kept as dimmed slots, a target/focus
   highlight, shown only while an effect is active, and a placeholder mode for
@@ -69,9 +94,10 @@ general frameworks, or speculative modules without agreement.
 ## Project structure
 
 - Runtime files: WarlockToolsForever.toc, Commands.lua, Core.lua, Shards.lua,
-  Probe.lua, Options.lua, loaded in that order. Commands parses `/wtf`; Core
-  owns saved settings, the login banner, class and install checks, slash
-  conflict reporting, and startup; Shards owns the shard module; Probe owns
+  Stones.lua, Announce.lua, Probe.lua, Options.lua, loaded in that order.
+  Commands parses `/wtf`; Core owns saved settings and their defaults, the
+  login banner, class and install checks, slash conflict reporting, and
+  startup; Shards, Stones, and Announce own their modules; Probe owns
   `/wtf debug_restrictions`; Options owns the settings pages.
 - tests/run.lua holds the Lua 5.1 mock suite. tests/test_*.py cover the release
   helpers in scripts/. .github/workflows/ holds CI, opt-in publishing, and the
@@ -125,7 +151,8 @@ general frameworks, or speculative modules without agreement.
 - Lua 5.1 syntax and libraries only; no `bit` library (use arithmetic). Four-space
   indentation. Prefer local variables and functions; share state through the
   AddOn namespace. Expose globals only when WoW requires them (slash commands,
-  saved variables), prefixed `WarlockToolsForever` or `WTF`.
+  saved variables, and the Stones bar and buttons for `/click`), prefixed
+  `WarlockToolsForever` or `WTF`.
 - Centralize meaningful constants; avoid unexplained magic numbers.
 - Comment sparingly: non-obvious intent, API constraints, or tradeoffs.
 - Event-driven work only; no polling or idle `OnUpdate` handlers.
@@ -165,7 +192,7 @@ general frameworks, or speculative modules without agreement.
   changes; the builder puts it at the top of release-notes.md (GitHub release
   notes and CurseForge changelog) and fails without it.
 - Package only WarlockToolsForever.toc, Commands.lua, Core.lua, Shards.lua,
-  Probe.lua, Options.lua, and LICENSE under the top-level
+  Stones.lua, Announce.lua, Probe.lua, Options.lua, and LICENSE under the top-level
   `WarlockToolsForever/` folder, named
   `WarlockToolsForever-<version>-forever.zip`, with the builder's
   BigWigs-format `release.json` (flavor `forever`) attached for WowUp.

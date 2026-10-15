@@ -19,7 +19,7 @@ tested.
 
 ## Summary
 
-Quality-of-life tools for Warlocks in World of Warcraft: Forever, starting with automatic Soul Shard management.
+Quality-of-life tools for Warlocks in World of Warcraft: Forever: Soul Shard management, Soulstone and Healthstone buttons, and summon announcements.
 
 ## Description
 
@@ -37,6 +37,15 @@ Per-file changelogs need no manual text: each CI upload uses the version's
 - The limit matches your soul bags' size, or 6 without a soul bag. You can set your own.
 - Shards you move into your bags yourself, from the bank, mail, or trade, are never deleted. Only the shard Drain Soul just created goes.
 - Carried bags only; your bank is never touched.
+
+### Stones
+- A movable bar with a Soulstone and a Healthstone button. Left-click uses your best stone; right-click creates your best rank.
+- The Healthstone button creates the best rank your targeted friend can use.
+- Use them in macros: `/click WarlockToolsForeverSoulstone` and `/click WarlockToolsForeverHealthstone` (add `RightButton` to create).
+
+### Announce
+- When your Ritual of Summoning or a Soulstone use succeeds, tell your raid or party ("Summoning >> %T << click please") and whisper the target.
+- Every message has its own switch and editable text.
 
 ### Commands
 - `/wtf` or `/wtf options` opens the settings (Options > AddOns).

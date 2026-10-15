@@ -58,6 +58,8 @@ local REQUIRED_NAMESPACE = {
     "ParseCommand", "HandleCommand",
     "CheckShardCapabilities", "InitializeShards", "ReportShardStatus", "ReportShardDebug",
     "DebugDeleteShard",
+    "CheckStoneCapabilities", "InitializeStones", "ResetStonesPosition", "ReportStoneDebug",
+    "InitializeAnnounce", "FormatAnnouncement",
     "ReportRestrictions",
     "InitializeOptions", "OpenSettings",
 }
@@ -97,6 +99,40 @@ function WTF.SanitizeShardLimit(value)
     return math.max(WTF.SHARD_LIMIT_MIN, math.min(WTF.SHARD_LIMIT_MAX, value))
 end
 
+-- Chat messages longer than this are cut by the client.
+WTF.ANNOUNCE_MAX_LENGTH = 255
+
+WTF.ANNOUNCE_DEFAULTS = {
+    summonGroupText = "Summoning >> %T << click please",
+    summonWhisperText = "Summoning you to %Z now. Watch for the summon prompt and accept it. If it doesn't appear, tell me.",
+    soulstoneGroupText = "Soulstone on >> %T <<",
+    soulstoneWhisperText = "I've applied a soulstone to you, this means if you die, you can revive yourself where you fell. So, if you're going to die, die in a good spot.",
+}
+
+local function SanitizePosition(position)
+    if type(position) ~= "table" or type(position.point) ~= "string"
+        or type(position.relativePoint) ~= "string"
+        or type(position.x) ~= "number" or type(position.y) ~= "number" then
+        return nil
+    end
+    return {point = position.point, relativePoint = position.relativePoint,
+        x = position.x, y = position.y}
+end
+
+-- Announcement text: a non-empty line within the chat limit, else the default.
+function WTF.SanitizeAnnouncement(text, default)
+    if type(text) ~= "string" then
+        return default
+    end
+    text = text:match("^%s*(.-)%s*$")
+    if text == "" or #text > WTF.ANNOUNCE_MAX_LENGTH or text:find("[\r\n]") then
+        return default
+    end
+    return text
+end
+
+local ANNOUNCE_SWITCHES = {"summonGroup", "summonWhisper", "soulstoneGroup", "soulstoneWhisper"}
+
 function WTF.SanitizeDB(db)
     if type(db) ~= "table" then
         db = {}
@@ -108,6 +144,25 @@ function WTF.SanitizeDB(db)
         limit = WTF.SanitizeShardLimit(shards.limit),
         report = shards.report ~= false,
     }
+    local stones = type(db.stones) == "table" and db.stones or {}
+    db.stones = {
+        enabled = stones.enabled ~= false,
+        shown = stones.shown ~= false,
+        locked = stones.locked == true,
+        position = SanitizePosition(stones.position),
+    }
+    local announce = type(db.announce) == "table" and db.announce or {}
+    local cleanAnnounce = {
+        enabled = announce.enabled ~= false,
+        channel = announce.channel == "say" and "say" or "group",
+    }
+    for _, key in ipairs(ANNOUNCE_SWITCHES) do
+        cleanAnnounce[key] = announce[key] ~= false
+    end
+    for key, default in pairs(WTF.ANNOUNCE_DEFAULTS) do
+        cleanAnnounce[key] = WTF.SanitizeAnnouncement(announce[key], default)
+    end
+    db.announce = cleanAnnounce
     return db
 end
 
@@ -171,5 +226,7 @@ events:SetScript("OnEvent", function(self, event, loadedName)
     -- Called directly rather than from each file's own PLAYER_LOGIN handler,
     -- so startup never depends on event handler order.
     WTF.InitializeShards()
+    WTF.InitializeStones()
+    WTF.InitializeAnnounce()
     WTF.InitializeOptions()
 end)
