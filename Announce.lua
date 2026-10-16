@@ -2,7 +2,8 @@ local addonName, WTF = ...
 
 -- Announce: tell your group (or say it) and whisper the target when your
 -- Ritual of Summoning starts, or when a Soulstone use on someone succeeds;
--- whisper the player when a Healthstone trade from the Stones button opens.
+-- whisper the player when a Healthstone trade from the Stones button opens;
+-- emote when you create a Healthstone or a Soulstone.
 -- The target's name comes from the cast's UNIT_SPELLCAST_SENT event; a summon
 -- falls back to your friendly player target, since the ritual creates a portal
 -- and may not name one. Nothing is sent for yourself, and a Soulstone cast
@@ -12,18 +13,28 @@ local addonName, WTF = ...
 -- Soulstone Resurrection, the Soulstone item's spell.
 local SUMMON_SPELL_ID = 698
 local SOULSTONE_SPELL_ID = 20707
+-- Create Healthstone and Create Soulstone, any rank.
+local CREATE_HEALTHSTONE_SPELL_ID = 6201
+local CREATE_SOULSTONE_SPELL_ID = 693
+-- At most one stone creation emote per stone type a minute, so handing out
+-- stones stays quiet. In client an emote from the cast's success event was
+-- blocked, like Say outdoors, so it waits for your next key press or world
+-- click, as shard deletion does, and is dropped if none comes soon.
+local EMOTE_REPEAT_SECONDS = 60
+local EMOTE_INPUT_WAIT = 30
 -- One summon announcement per ritual: its cast start and channel start can
 -- both arrive, seconds apart.
 local SUMMON_REPEAT_SECONDS = 10
 local EVENT_LOG_SIZE = 8
 
-local announce = {casts = {}, sayBlocked = false, sending = false, names = {}, lastSummon = nil, log = {}}
+local announce = {casts = {}, blocked = {}, sending = nil, names = {}, lastSummon = nil, log = {},
+    lastEmote = {}}
 
 local function SendChat(message, chatType, target)
     local send = type(C_ChatInfo) == "table" and C_ChatInfo.SendChatMessage or SendChatMessage
-    announce.sending = true
+    announce.sending = chatType
     send(message, chatType, nil, target)
-    announce.sending = false
+    announce.sending = nil
 end
 
 -- "group" sends to your raid or party and nothing when you are alone.
@@ -80,6 +91,24 @@ function WTF.WhisperHealthstoneGift(target, whisperTo)
     announce.lastWhisper = whisperTo or target
 end
 
+local EMOTE_KINDS = {healthstoneCreate = "healthstoneEmote", soulstoneCreate = "soulstoneEmote"}
+
+local function Emote(kind)
+    local settings = WTF.db.announce
+    local switch = EMOTE_KINDS[kind]
+    local now = GetTime()
+    if not settings[switch] or (announce.lastEmote[kind] and now - announce.lastEmote[kind] < EMOTE_REPEAT_SECONDS) then
+        return
+    end
+    announce.lastEmote[kind] = now
+    local message = WTF.FormatAnnouncement(settings[switch .. "Text"], "")
+    WTF.RunOnNextInput(function()
+        if GetTime() - now <= EMOTE_INPUT_WAIT then
+            SendChat(message, "EMOTE")
+        end
+    end)
+end
+
 local function KindOf(spellID)
     if WTF.IsSecret(spellID) or type(spellID) ~= "number" then
         return nil
@@ -89,6 +118,10 @@ local function KindOf(spellID)
         return "summon"
     elseif name and name == announce.names.soulstone then
         return "soulstone"
+    elseif name and name == announce.names.healthstoneCreate then
+        return "healthstoneCreate"
+    elseif name and name == announce.names.soulstoneCreate then
+        return "soulstoneCreate"
     end
 end
 
@@ -181,9 +214,18 @@ events:SetScript("OnEvent", function(_, event, unit, first, second, third)
     if event == "ADDON_ACTION_BLOCKED" then
         -- Saying something outdoors needs a key press or click; cast events
         -- are not one, so SAY can be refused.
-        if unit == addonName and announce.sending and not announce.sayBlocked then
-            announce.sayBlocked = true
-            WTF.Report("The game blocked the Say announcement. Choose Group in the Announce settings.")
+        local chatType = announce.sending
+        if unit == addonName and announce.probing then
+            announce.probeBlocked = true
+            return
+        end
+        if unit == addonName and chatType and not announce.blocked[chatType] then
+            announce.blocked[chatType] = true
+            if chatType == "SAY" then
+                WTF.Report("The game blocked the Say announcement. Choose Group in the Announce settings.")
+            else
+                WTF.Report("The game blocked the " .. chatType:lower() .. " message. Turn it off in the Announce settings.")
+            end
         end
         return
     end
@@ -193,6 +235,12 @@ events:SetScript("OnEvent", function(_, event, unit, first, second, third)
         Log(event, spellID, event == "UNIT_SPELLCAST_SENT" and first or nil)
     end
     if not WTF.db.announce.enabled or not kind then
+        return
+    end
+    if EMOTE_KINDS[kind] then
+        if event == "UNIT_SPELLCAST_SUCCEEDED" then
+            Emote(kind)
+        end
         return
     end
     if event == "UNIT_SPELLCAST_SENT" then
@@ -229,11 +277,43 @@ end)
 function WTF.InitializeAnnounce()
     announce.names.summon = C_Spell.GetSpellName(SUMMON_SPELL_ID)
     announce.names.soulstone = C_Spell.GetSpellName(SOULSTONE_SPELL_ID)
+    announce.names.healthstoneCreate = C_Spell.GetSpellName(CREATE_HEALTHSTONE_SPELL_ID)
+    announce.names.soulstoneCreate = C_Spell.GetSpellName(CREATE_SOULSTONE_SPELL_ID)
     for _, event in ipairs({"UNIT_SPELLCAST_SENT", "UNIT_SPELLCAST_START", "UNIT_SPELLCAST_CHANNEL_START",
         "UNIT_SPELLCAST_SUCCEEDED", "UNIT_SPELLCAST_FAILED", "UNIT_SPELLCAST_INTERRUPTED"}) do
         events:RegisterUnitEvent(event, "player")
     end
     events:RegisterEvent("ADDON_ACTION_BLOCKED")
+end
+
+-- /wtf debug_emote: a test emote from a timer (no key press) through
+-- C_ChatInfo.SendChatMessage, then through the global SendChatMessage that
+-- RestedXP uses for its level-up emote, reporting which the game blocks.
+local PROBE_DELAYS = {1, 3}
+
+local function ProbeEmote(label, send)
+    announce.probing, announce.probeBlocked = true, false
+    send("is testing an emote (WTF debug, " .. label .. ")", "EMOTE")
+    announce.probing = false
+    WTF.Report(string.format("debug_emote %s from a timer: %s", label,
+        announce.probeBlocked and "blocked" or "not blocked"))
+end
+
+function WTF.DebugEmote()
+    local probes = {}
+    if type(C_ChatInfo) == "table" and type(C_ChatInfo.SendChatMessage) == "function" then
+        probes[#probes + 1] = {"C_ChatInfo.SendChatMessage", C_ChatInfo.SendChatMessage}
+    end
+    if type(SendChatMessage) == "function" then
+        probes[#probes + 1] = {"SendChatMessage", SendChatMessage}
+    end
+    if type(C_Timer) ~= "table" or type(C_Timer.After) ~= "function" or #probes == 0 then
+        WTF.Report("debug_emote needs C_Timer.After and a chat send function.")
+        return
+    end
+    for index, probe in ipairs(probes) do
+        C_Timer.After(PROBE_DELAYS[index], function() ProbeEmote(probe[1], probe[2]) end)
+    end
 end
 
 -- /wtf debug_announce: the spell names WTF listens for and the latest summon

@@ -92,6 +92,11 @@ your zone.
   accept the summon.
 - The Soulstone whisper tells the target that a sliver of their soul is
   trapped in a stone and drags them back to life where they fell.
+- When you create a Healthstone or a Soulstone, WTF emotes (for example,
+  "Dyre crushes a Soul Shard and forges a Healthstone from the screaming
+  essence within."), at most once a minute per stone. The game lets AddOns
+  emote only during a key press or click, so the emote goes out with your
+  next one, within 30 seconds.
 - The default texts credit Warlock Tools Forever (WTF), and the Healthstone
   whisper says: "Here, have a Healthstone. Some poor creature's essence gives
   you more health!" Edit a text to say anything you like.
@@ -169,6 +174,7 @@ module. Each module has its own subpage, such as **Soul Shards**.
 | `/wtf debug_delete` | Diagnostics: delete one shard above your limit now (out of combat) |
 | `/wtf debug_stones` | Diagnostics: known stone ranks, carried stones, and level requirements |
 | `/wtf debug_announce` | Diagnostics: the latest summon and Soulstone cast events |
+| `/wtf debug_emote` | Diagnostics: two test emotes from a timer, one per chat function, and which the game blocks |
 | `/wtf debug_tracker` | Diagnostics: the spell IDs each tracker slot accepts, and tracked mobs |
 
 `/warlocktools` works the same as `/wtf`, in case another AddOn uses `/wtf`.

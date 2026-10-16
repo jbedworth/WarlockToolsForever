@@ -17,7 +17,8 @@ notes and the CurseForge changelog, and fails if that section is missing.
 - Stone macros: WTF keeps "! Healthstone" and "! Soulstone" in your character macros for your action bars; left-click uses your best stone, right-click creates one, also in combat.
 - Creating a Healthstone when you already carry that rank makes the next lower rank instead.
 - Healthstone trading: with a friendly player targeted, the Healthstone button trades them one they can use, or creates one first. When the trade window opens, WTF whispers them (its own switch and text on the Announce page).
-- The default announcement texts credit Warlock Tools Forever (WTF). Texts you have edited are kept as they are.
+- The default announcement texts credit Warlock Tools Forever (WTF).
+- Creating a Healthstone or a Soulstone emotes, at most once a minute per stone, with its own switch and text. Texts you have edited are kept as they are.
 - Stone status: a chat note when your Soulstone ends, and reminders when none is up or you carry no Healthstone; `/wtf stones` shows the status.
 - Optional Nightfall sound when Shadow Trance procs, with a choice of sounds.
 - `/wtf shards` shows your shard count and limit. `/wtf options` opens the settings.

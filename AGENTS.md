@@ -135,6 +135,13 @@ module only after the author agrees its behavior.
   (`TRADE_SHOW` within 10 s of the button's trade), to the friendly target
   named at the click, once, before WTF places the stone (author's choice:
   not on completion, which in client sent nothing).
+- Stone creation emotes (author-approved): `UNIT_SPELLCAST_SUCCEEDED` of
+  Create Healthstone or Create Soulstone (by name, any rank) queues an
+  EMOTE, at most once per stone type every 60 s. In client an emote sent from
+  the success event was blocked (ADDON_ACTION_BLOCKED), so it waits for the
+  next key press or world click (`WTF.RunOnNextInput`), as shard deletion
+  does, and is dropped after 30 s without one. A blocked chat type is
+  reported once. No Spellstone or Firestone emotes until those exist.
 - Texts are trimmed, single-line, at most 255 bytes, else the default. The
   Announce settings subpage is a canvas page with edit boxes.
 - If Forever adds meeting stones, announce that one is up (agreed, not built).

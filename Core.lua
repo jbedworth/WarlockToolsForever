@@ -60,7 +60,7 @@ local REQUIRED_NAMESPACE = {
     "DebugDeleteShard",
     "CheckStoneCapabilities", "InitializeStones", "ResetStonesPosition", "ReportStoneDebug",
     "ReportStoneStatus", "RemindStones", "ApplyStoneMacros", "AddInputHandler", "RunOnNextInput", "ReportClickDebug",
-    "InitializeAnnounce", "FormatAnnouncement", "ReportAnnounceDebug", "FriendlyTargetNames",
+    "InitializeAnnounce", "FormatAnnouncement", "ReportAnnounceDebug", "DebugEmote", "FriendlyTargetNames",
     "WhisperHealthstoneGift",
     "CheckTrackerCapabilities", "InitializeTracker", "ResetTrackerPosition", "RefreshTracker",
     "ReportTrackerDebug", "TrackerCandidateFilters", "TrackerKnowsSlot", "SetTrackerTheme",
@@ -117,6 +117,9 @@ WTF.ANNOUNCE_DEFAULTS = {
     -- The author's texts, with their own credit; %Z leaves room for long zone names.
     summonWhisperText = "Summoning you to %Z, since your sloth-like pace would get you there sometime next week. Accept the summon when it pops up (and tell me if it doesn't). Courtesy of Warlock Tools Forever (WTF)",
     soulstoneWhisperText = "I've trapped a sliver of your soul in a stone. If you die, it drags you back to life right where you fell, so if you're going to die, die in a good spot. Courtesy of Warlock Tools Forever (WTF)",
+    -- Emotes start with your name: "Dyre crushes a Soul Shard ...".
+    healthstoneEmoteText = "crushes a Soul Shard and forges a Healthstone from the screaming essence within. - via Warlock Tools Forever (WTF)",
+    soulstoneEmoteText = "binds a captured soul into a Soulstone. Someone's afterlife just got an escape hatch. - via Warlock Tools Forever (WTF)",
     healthstoneWhisperText = "Here, have a Healthstone. Some poor creature's essence gives you more health! Courtesy of Warlock Tools Forever (WTF)",
 }
 -- Saved copies of earlier defaults, never edited, become the new ones.
@@ -228,7 +231,7 @@ WTF.NIGHTFALL_SOUNDS = {
 WTF.DEFAULT_NIGHTFALL_SOUND = "impspell"
 
 local ANNOUNCE_SWITCHES = {"summonGroup", "summonWhisper", "soulstoneGroup", "soulstoneWhisper",
-    "healthstoneWhisper"}
+    "healthstoneWhisper", "healthstoneEmote", "soulstoneEmote"}
 
 function WTF.SanitizeDB(db)
     if type(db) ~= "table" then
