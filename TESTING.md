@@ -39,6 +39,16 @@ the automated test method, and the in-client checklist.
   `C_Item.GetItemInfo`; without them Stones stays off with one message and the
   rest of WTF runs. Secure attributes and bar visibility change only out of
   combat, else at `PLAYER_REGEN_ENABLED`.
+- Tracker requires `C_XMLUtil.GetTemplateInfo("CustomAuraContainerTemplate")`
+  after loading `Blizzard_AuraContainer`, and `C_Timer.After`; without them the
+  tracker stays off with one message; it also needs `RegisterStateDriver`.
+  Each row's container gets one
+  `AddAuraSlot` per spell; WTF sets only the unit (`SetUnit`, then
+  `UpdateAllAuras`) afterwards, and slot spell sets only out of combat.
+- Dots need the tracker's spell sets and `C_NamePlate.GetNamePlateForUnit`;
+  they attach to plates on `NAME_PLATE_UNIT_ADDED`, detach on
+  `NAME_PLATE_UNIT_REMOVED`, and show only between `PLAYER_REGEN_DISABLED` and
+  `PLAYER_REGEN_ENABLED` on live hostile units.
 - Announce pairs `UNIT_SPELLCAST_SENT` (target name, cast GUID) with
   `UNIT_SPELLCAST_SUCCEEDED` and sends with `C_ChatInfo.SendChatMessage`.
 - Options registers a vertical-layout category with proxy settings, plus a
@@ -80,6 +90,22 @@ the automated test method, and the in-client checklist.
   `useOnKeyDown` or the `ActionButtonUseKeyDown` CVar says so.
 - `Blizzard_SharedXML/Shared/InputBox/InputBoxTemplates.xml` defines
   `InputBoxTemplate`; `CheckButtonTemplates.xml` defines `UIRadioButtonTemplate`.
+- `Blizzard_AuraContainer/Blizzard_CustomAuraContainer.lua` defines
+  `AddAuraSlot`, `SetAuraSlotCandidateFilters`, and `includeSpellIDs` matching,
+  which "is only permitted for helpful buffs on assistable units, and harmful
+  buffs on non-assistable units". `Blizzard_CustomAuraButton.lua` defines
+  `SetIcon`, `SetDurationCooldown`, `SetDurationText`, and `SetDurationBar`
+  (`StatusBar:SetTimerDuration` with a `StatusBarTimerDirection`).
+  `Blizzard_AuraContainerShared.lua` applies
+  `DenyTaintedAccessWhenAurasAreSecret` to AddOn access after `initializeFrame`.
+- Installed EllesmereUI (`EllesmereUI_AuraKit.lua`,
+  `EUI_Nameplates_AuraContainers.lua`) and ThreatPlates
+  (`Widgets/AurasWidgetMidnight.lua`) show the player's debuffs on enemy
+  nameplates in combat through these containers, with
+  `HARMFUL|PLAYER|INCLUDE_NAME_PLATE_ONLY` filters and `includeSpellIDs` slots.
+- Installed TankHelper (`core.lua`) attaches its nameplate threat display on
+  `NAME_PLATE_UNIT_ADDED` through `C_NamePlate.GetNamePlateForUnit`, skipping
+  plates where `IsForbidden()` is true.
 - `SpellBookDocumentation.lua` declares `C_SpellBook.IsSpellKnown`;
   `ItemDocumentation.lua` declares `C_Item.GetItemInfo` (with `itemMinLevel`),
   `GetItemCount`, `GetItemIconByID`, and `GetItemNameByID`;
@@ -108,6 +134,36 @@ the automated test method, and the in-client checklist.
   same hardware-event rule. Shards now deletes from the same kind of hooks,
   and in client a Drain Soul shard above the limit was deleted on the next
   key press.
+- In client the tracker and nameplate dots showed Corruption, Immolate, and a
+  Bane in combat through engine slots, but not a curse (Curse of the Elements,
+  4 minutes left on the nameplate): its debuff matched no listed spell ID. The
+  Curse slot now matches Curse-type debuffs instead, as EllesmereUI's
+  nameplates match `includeDispelTypes`.
+- In client the nameplate dots lit for Curse (after the switch to debuff-type
+  matching), Bane, and Corruption. With EllesmereUI plates, a dot height of
+  4 covered the name and 40 the debuff icons; 50 cleared both and is the default.
+- Ritual of Summoning's `UNIT_SPELLCAST_SENT`, `START`, `CHANNEL_START`, and
+  `SUCCEEDED` events carry no target name; the party line went out from the
+  friendly-target fallback.
+- Every Forever character has a first and a last name ("Meatrod Theog").
+  `UnitName` returns the last name as its second value, where other clients
+  return the realm. A whisper to the first name alone failed ("No player
+  named ... is currently playing"); a whisper to `First-Last` reached the
+  player. A Soulstone on yourself was whispered to you, because the cast
+  named you `First-Last`; the self check compares with `UnitFullName("player")`.
+- The Bars theme rendered in client as designed: per-mob blocks with engine
+  bars, spell names, and time left draining like the Cooldown Manager's.
+- `/click WarlockToolsForeverHealthstone` did nothing: the client's `/click`
+  (`Blizzard_ChatFrameBase/Shared/SlashCommands.lua`) calls
+  `button:Click(mouseButton, false)`, a release only, and
+  `SecureActionButton_OnClick` acts on the press while `ActionButtonUseKeyDown`
+  is on. WTF's secure buttons set `useOnKeyDown` to false, as RestedXP does,
+  yet `/click` macros still did nothing, for any AddOn button: on Forever
+  `/click` does not press AddOn buttons. WTF writes stone macros with the
+  game's own `/use` and `/cast` instead, as Consumable Connoisseur does.
+- From the Healthstone button's PostClick, `InitiateTrade("target")` opened
+  a trade and `ClickTradeButton` from `TRADE_SHOW` placed the stone in the
+  window.
 - `C_NamePlate.GetNamePlates()` frames have no `namePlateUnitToken` field; the
   probe finds nameplate units by testing `nameplate1` to `nameplate40`.
 - In open-world combat, the Combat restriction is active and the others stay
@@ -124,21 +180,28 @@ the automated test method, and the in-client checklist.
 ### Open client questions
 
 1. Restrictions in instances and during encounters.
-2. Whether `DeleteCursorItem` from a key press or world click works in combat
+2. Whether the tracker's engine slots show timers in combat with the
+   `HARMFUL|PLAYER` filter (EllesmereUI adds `INCLUDE_NAME_PLATE_ONLY` on
+   nameplates), whether Forever's Bane auras match by name-derived spell IDs
+   (`/wtf debug_tracker`), whether Fear and control show, and whether `UnitIsDead` and
+   `UNIT_HEALTH` stay readable for nameplate units in combat.
+3. Whether a completed trade brings `UI_INFO_MESSAGE` with
+    `ERR_TRADE_COMPLETE`, which the Healthstone gift whisper waits for.
+4. Forever's Soulstone duration (30 minutes in Classic) and Shadow Trance spell
+    ID (17941 in Classic); whether the three interface sound files exist.
+5. Whether `DeleteCursorItem` from a key press or world click works in combat
    (RestedXP's users report deletion in and out of combat).
-3. Whether the player's own `UNIT_SPELLCAST_*` spell IDs are secret in combat.
-   If they are, no creation window opens and nothing is deleted.
-4. Whether shards stack, the soul bag family bit (4), and Drain Soul's spell
-   IDs on Forever (`/wtf debug_shards`).
-5. Whether any source other than Drain Soul creates shards (the gain log).
-6. Whether the `INV_Misc_Gem_Amethyst_02` TOC icon and the `INV_Misc_Orb_04`
+6. Whether shards stack.
+7. Whether Shadowburn's shard arrives within its 9-second window, and whether
+   any other source creates shards (the gain log). Forever's spell list and
+   talents (wowhandbook.com, talentsforever.com) name Shadowburn's shard.
+8. Whether the `INV_Misc_Gem_Amethyst_02` TOC icon and the `INV_Misc_Orb_04`
    and `INV_Stone_04` fallback stone icons render.
-7. Forever's Create Soulstone and Create Healthstone spell IDs, stone item IDs,
+9. Forever's Create Soulstone and Create Healthstone spell IDs, stone item IDs,
    and Healthstone level requirements (`/wtf debug_stones`); the tables hold
    Classic's IDs.
-8. Whether `UNIT_SPELLCAST_SENT` names the target for Ritual of Summoning and a
-   Soulstone use, whether Say from a success event is blocked outdoors, and
-   which actions block accepting a summon (flying, trading, combat, death).
+10. Whether Say from a cast event is blocked outdoors, and which actions block
+   accepting a summon (flying, trading, combat, death).
 
 ## Automated tests
 
@@ -146,7 +209,7 @@ From the Git Bash repository root:
 
 ```sh
 .tools/luarocks-3.13.0-win32/win32/lua5.1/bin/lua5.1.exe tests/run.lua
-.tools/luarocks-3.13.0-win32/win32/lua5.1/bin/luac5.1.exe -p Commands.lua Core.lua Shards.lua Stones.lua Announce.lua Probe.lua Options.lua tests/run.lua
+.tools/luarocks-3.13.0-win32/win32/lua5.1/bin/luac5.1.exe -p Commands.lua Core.lua Shards.lua Stones.lua Announce.lua Tracker.lua Dots.lua Alerts.lua Probe.lua Options.lua tests/run.lua
 .tools/python-3.13.7/python.exe -m unittest discover -s tests -p 'test_*.py'
 ```
 
@@ -186,12 +249,54 @@ and printing.
       prints the combat line once.
 - [ ] With a lower-level friend targeted, right-click on the Healthstone button
       creates a rank that friend can use; `/wtf debug_stones` agrees.
-- [ ] `/click WarlockToolsForeverHealthstone` in a macro uses a Healthstone,
-      also in combat; `/click WarlockToolsForeverSoulstone RightButton` creates one.
+- [ ] "! Healthstone" and "! Soulstone" appear in your character macros
+      with the stone's icon. On an action bar, left-click uses your best stone
+      in combat; right-click creates one (the Healthstone one downranked when
+      you carry the rank). They update after a stone is made or used, out of
+      combat. Turning "Keep stone macros" off removes them.
+- [ ] Middle-click on the Healthstone button uses your best Healthstone, also
+      with a friendly player targeted.
 - [ ] Drag, lock, and `/wtf reset` the bar; its place survives `/reload`.
 - [ ] Ritual of Summoning on a party member: one party line and one whisper
       with the zone. A Soulstone on a party member: the party line and the
-      author's whisper. On yourself: nothing.
+      author's whisper. On yourself: nothing. Default texts credit
+      Warlock Tools Forever (WTF).
+- [ ] Trade a Healthstone with the button and accept: the recipient gets one
+      whisper. Cancel, or take the stone out first: no whisper.
 - [ ] The Announce page edits, Enter and Escape, switches, the Say choice, and
       Defaults work and survive `/reload`.
+- [ ] DoT two mobs with Corruption, a Bane, and a Curse: the target's timers
+      show in the purple pinned row, the other mob in the list below, with
+      icons, countdowns, sweeps, and draining bars; an expired spell shows dim.
+- [ ] Tab to the other mob: the pinned row follows and the old target joins
+      the list. Set a focus: the red-outlined row appears and the list
+      moves below it; clear it and the list moves up.
+- [ ] Click a dim slot in the target and focus rows, also in combat: the
+      spell is cast on that unit; Bane and Curse slots use the last one cast.
+- [ ] A mob that dies leaves the list; the list hides after combat.
+- [ ] With "Show DoT dots on nameplates" on, fight two mobs: grey dots turn
+      to their colors as you DoT, back to grey as DoTs expire; no bubbles out
+      of combat or on friendly plates. Check the height setting with your
+      nameplate AddOn, and that `TempPortraitAlphaMask` makes the dots round.
+      The height slider shows a gold mark at 50, and no other slider in the
+      Settings panel shows one.
+- [ ] The DoT Colors page: a new color recolors the tracker's bars and the
+      nameplate dots at once; Defaults restores them; nameplate switches add
+      and remove dots.
+- [ ] Spells you have not learned yet (shown greyed in the spellbook) appear
+      in neither theme nor on the nameplate dots.
+- [ ] With the default Bars theme: each mob shows its name and a bar line per
+      spell you know, with icon, spell name, and time left, draining from
+      right to left; missing spells show as dim named lines; clicking a line
+      in the pinned rows recasts it. A switch in combat applies after combat.
+- [ ] "Show placeholders" shows sample rows to drag; lock and `/wtf reset`
+      work; the place survives `/reload`.
+- [ ] Target a lower-level party member and left-click the Healthstone button:
+      with a stone they can use, a trade opens with it in the window; without
+      one, it is created, and the next left-click trades it. WTF never accepts.
+- [ ] Soulstone a party member: `/wtf stones` names them; 30 minutes later a
+      chat line says it ended. With no Soulstone up or no Healthstone, a
+      reminder after a fight, at most every 10 minutes; the switches stop them.
+- [ ] Turn on the Nightfall sound: choosing a sound plays it; a Nightfall proc
+      plays it in combat.
 - [ ] No Lua errors or taint warnings in or out of combat.

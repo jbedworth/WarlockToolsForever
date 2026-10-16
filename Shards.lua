@@ -8,11 +8,14 @@ local SOUL_SHARD_ITEM_ID = 6265
 local SOUL_BAG_FAMILY = 4
 local BACKPACK = 0
 -- Spells that create shards, matched by name so every rank counts.
-local SHARD_SOURCE_SPELL_IDS = {
-    1120, -- Drain Soul
+-- Window: seconds after the spell ends during which a new shard counts as
+-- created. Drain Soul's shard arrives as the target dies while channeling.
+-- Forever's Shadowburn (a talent) gives a shard if the target dies within 8
+-- seconds of the hit, so its window covers that plus the bag update.
+local SHARD_SOURCES = {
+    {id = 1120, window = 3},   -- Drain Soul
+    {id = 17877, window = 9},  -- Shadowburn
 }
--- Seconds after a source spell ends during which a new shard counts as created.
-local CREATION_WINDOW = 3
 local GAIN_LOG_SIZE = 10
 
 local REQUIRED_CONTAINER = {
@@ -23,7 +26,7 @@ local REQUIRED_GLOBALS = {"GetCursorInfo", "ClearCursor", "DeleteCursorItem", "G
 
 local state = {
     slots = {},
-    sourceNames = {},
+    sourceWindows = {},
     channeling = false,
     windowEnd = 0,
     pending = {},
@@ -131,16 +134,17 @@ function WTF.CountShards()
     return count
 end
 
-local function IsShardSource(spellID)
+-- The creation window of a shard source spell, or nil for other spells.
+local function SourceWindow(spellID)
     if WTF.IsSecret(spellID) then
         state.secretCasts = true
-        return false
+        return nil
     end
     if type(spellID) ~= "number" then
-        return false
+        return nil
     end
     local name = C_Spell.GetSpellName(spellID)
-    return name ~= nil and state.sourceNames[name] == true
+    return name and state.sourceWindows[name]
 end
 
 local function InCreationWindow()
@@ -259,22 +263,6 @@ local function OnInput()
     end
 end
 
--- Hooks every key press and every click on the game world, as RestedXP does
--- for its junk deletion. The keyboard frame passes every key on to the game;
--- it is enabled only after the client confirms that.
-local function InstallInputHooks()
-    local keys = CreateFrame("Frame", nil, UIParent)
-    if type(keys.SetPropagateKeyboardInput) == "function"
-        and type(keys.GetPropagateKeyboardInput) == "function" then
-        keys:SetPropagateKeyboardInput(true)
-        if keys:GetPropagateKeyboardInput() then
-            keys:SetScript("OnKeyDown", OnInput)
-            keys:EnableKeyboard(true)
-        end
-    end
-    WorldFrame:HookScript("OnMouseDown", OnInput)
-end
-
 local function OnBagsChanged()
     local slots, count = Scan()
     local gains = FindGains(state.slots, slots)
@@ -305,17 +293,18 @@ end
 
 local function OnSpellEvent(event, spellID)
     state.lastSpell = {time = GetTime(), id = WTF.Describe(spellID), event = event}
-    if not IsShardSource(spellID) then
+    local window = SourceWindow(spellID)
+    if not window then
         return
     end
     if event == "UNIT_SPELLCAST_CHANNEL_START" then
         state.channeling = true
-    elseif event == "UNIT_SPELLCAST_CHANNEL_STOP" then
-        state.channeling = false
-        state.windowEnd = GetTime() + CREATION_WINDOW
-    else
-        state.windowEnd = GetTime() + CREATION_WINDOW
+        return
     end
+    if event == "UNIT_SPELLCAST_CHANNEL_STOP" then
+        state.channeling = false
+    end
+    state.windowEnd = math.max(state.windowEnd, GetTime() + window)
 end
 
 local events = CreateFrame("Frame")
@@ -334,17 +323,17 @@ events:SetScript("OnEvent", function(_, event, ...)
 end)
 
 function WTF.InitializeShards()
-    for _, id in ipairs(SHARD_SOURCE_SPELL_IDS) do
-        local name = C_Spell.GetSpellName(id)
+    for _, source in ipairs(SHARD_SOURCES) do
+        local name = C_Spell.GetSpellName(source.id)
         if name then
-            state.sourceNames[name] = true
+            state.sourceWindows[name] = source.window
         end
     end
-    if next(state.sourceNames) == nil then
+    if next(state.sourceWindows) == nil then
         WTF.Report("Drain Soul was not found, so Soul Shard deletion stays off. Run /wtf debug_shards.")
     end
     state.slots = Scan()
-    InstallInputHooks()
+    WTF.AddInputHandler(OnInput)
     for _, event in ipairs({"BAG_UPDATE_DELAYED", "PLAYER_ENTERING_WORLD",
         "ADDON_ACTION_BLOCKED", "ADDON_ACTION_FORBIDDEN"}) do
         events:RegisterEvent(event)
@@ -420,9 +409,10 @@ function WTF.ReportShardDebug()
     local itemName = type(C_Item) == "table" and type(C_Item.GetItemNameByID) == "function"
         and C_Item.GetItemNameByID(SOUL_SHARD_ITEM_ID)
     WTF.Report(string.format("debug_shards item=%d name=%s", SOUL_SHARD_ITEM_ID, tostring(itemName)))
-    for _, id in ipairs(SHARD_SOURCE_SPELL_IDS) do
-        local spellName = C_Spell.GetSpellName(id)
-        WTF.Report(string.format("debug_shards source spell=%d name=%s", id, tostring(spellName)))
+    for _, source in ipairs(SHARD_SOURCES) do
+        local spellName = C_Spell.GetSpellName(source.id)
+        WTF.Report(string.format("debug_shards source spell=%d name=%s window=%ds", source.id,
+            tostring(spellName), source.window))
     end
     local carried = "n/a"
     if type(C_Item) == "table" and type(C_Item.GetItemCount) == "function" then

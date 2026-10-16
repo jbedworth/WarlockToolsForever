@@ -24,14 +24,16 @@ local function contains(actual, fragment, context)
     end
 end
 
-local RUNTIME_FILES = {"Commands.lua", "Core.lua", "Shards.lua", "Stones.lua", "Announce.lua", "Probe.lua",
-    "Options.lua"}
+local RUNTIME_FILES = {"Commands.lua", "Core.lua", "Shards.lua", "Stones.lua", "Announce.lua", "Tracker.lua",
+    "Dots.lua", "Alerts.lua", "Probe.lua", "Options.lua"}
 local SHARD = 6265
 local SPELLS = {[1120] = "Drain Soul", [11675] = "Drain Soul", [686] = "Shadow Bolt", [172] = "Corruption",
     [6222] = "Corruption", [980] = "Curse of Agony", [698] = "Ritual of Summoning",
     [20707] = "Soulstone Resurrection", [20762] = "Soulstone Resurrection",
-    [693] = "Create Soulstone (Minor)", [20752] = "Create Soulstone (Lesser)",
-    [6201] = "Create Healthstone (Minor)", [6202] = "Create Healthstone (Lesser)", [5699] = "Create Healthstone"}
+    [693] = "Create Soulstone", [20752] = "Create Soulstone",
+    [17877] = "Shadowburn", [18871] = "Shadowburn",
+    [348] = "Immolate", [18265] = "Siphon Life", [5782] = "Fear", [702] = "Curse of Weakness",
+    [6201] = "Create Healthstone", [6202] = "Create Healthstone", [5699] = "Create Healthstone"}
 local ITEMS = {[5232] = {"Minor Soulstone", 18}, [16892] = {"Lesser Soulstone", 30},
     [5512] = {"Minor Healthstone", 1}, [5511] = {"Lesser Healthstone", 12}, [5509] = {"Healthstone", 24}}
 local DRAIN_SOUL_RANK_4 = 11675
@@ -108,9 +110,126 @@ local function fixture(options)
         GetItemIconByID = function(id) return 1000 + id end,
         RequestLoadItemDataByID = function(id) state.requested = (state.requested or 0) + 1 end,
     }
+    env.C_SpellBook = {}
     if not options.noSpellBook then
-        env.C_SpellBook = {IsSpellKnown = function(id) return state.known[id] == true end}
+        env.C_SpellBook.IsSpellKnown = function(id) return state.known[id] == true end
     end
+    state.timers = {}
+    env.C_Timer = {After = function(seconds, callback)
+        state.timers[#state.timers + 1] = {at = state.now + seconds, callback = callback}
+    end}
+    function state.runTimers()
+        local due = {}
+        for index = #state.timers, 1, -1 do
+            if state.timers[index].at <= state.now then
+                due[#due + 1] = table.remove(state.timers, index)
+            end
+        end
+        for _, timer in ipairs(due) do timer.callback() end
+    end
+    env.C_XMLUtil = {GetTemplateInfo = function(name)
+        if name == "CustomAuraContainerTemplate" and not options.noAuraContainer then return {} end
+    end}
+    env.C_AddOns.IsAddOnLoaded = function(name) return state.loadedAddOns and state.loadedAddOns[name] end
+    env.C_AddOns.LoadAddOn = function(name)
+        state.loadedAddOns = state.loadedAddOns or {}
+        state.loadedAddOns[name] = true
+    end
+    env.C_Spell.GetSpellTexture = function(id) return 2000 + id end
+    -- As on Forever, stone spells have numeric ranks.
+    local RANKS = {[6201] = 1, [6202] = 2, [5699] = 3, [693] = 1, [20752] = 2}
+    env.C_Spell.GetSpellSubtext = function(id) if RANKS[id] then return "Rank " .. RANKS[id] end end
+    -- The spellbook: one skill line holding state.spellbook entries {spellID, name}.
+    state.spellbook = options.spellbook or {}
+    env.C_SpellBook = env.C_SpellBook or {}
+    env.C_SpellBook.GetNumSpellBookSkillLines = function() return 1 end
+    env.C_SpellBook.GetSpellBookSkillLineInfo = function()
+        return {itemIndexOffset = 0, numSpellBookItems = #state.spellbook}
+    end
+    -- As in client, each item has a type: 1 learned, 2 learned later (FutureSpell).
+    env.C_SpellBook.GetSpellBookItemInfo = function(index)
+        local item = state.spellbook[index]
+        if item then
+            return {spellID = item.spellID, name = item.name, itemType = item.itemType or 1}
+        end
+    end
+    env.Enum = env.Enum or {}
+    env.Enum.SpellBookSpellBank = {Player = 0}
+    env.Enum.SpellBookItemType = {None = 0, Spell = 1, FutureSpell = 2, PetAction = 3, Flyout = 4}
+    env.Enum.StatusBarTimerDirection = {ElapsedTime = 0, RemainingTime = 1}
+    env.C_ClassColor = {GetClassColor = function(class)
+        equal(class, "WARLOCK")
+        return {r = 0.53, g = 0.53, b = 0.93}
+    end}
+    env.UnitIsDead = function(unit) return state.units[unit] ~= nil and state.units[unit].dead == true end
+    -- State drivers: "[@unit,harm,nodead] show; hide", evaluated by the game.
+    state.drivers = {}
+    function state.applyDrivers()
+        for frame, driver in pairs(state.drivers) do
+            local unit = driver:match("@(%a+)")
+            local data = state.units[unit]
+            frame.shown = data ~= nil and not data.friend and not data.dead
+        end
+    end
+    env.RegisterStateDriver = function(frame, kind, driver)
+        equal(kind, "visibility")
+        if state.combat then error("RegisterStateDriver in combat") end
+        state.drivers[frame] = driver
+        state.applyDrivers()
+    end
+    env.UnregisterStateDriver = function(frame, kind)
+        equal(kind, "visibility")
+        if state.combat then error("UnregisterStateDriver in combat") end
+        state.drivers[frame] = nil
+    end
+    -- The trade window: six slots; placing an item may need a key press or click.
+    state.tradeSlots = {}
+    env.InitiateTrade = function(unit) state.tradeWith = unit end
+    env.ERR_TRADE_COMPLETE = "Trade complete."
+    env.GetTradePlayerItemLink = function(slot)
+        if state.tradeSlots[slot] then return "item:" .. state.tradeSlots[slot] end
+    end
+    env.ClickTradeButton = function(slot)
+        if state.tradeNeedsHardware and not state.hardware then
+            state.emit("ADDON_ACTION_BLOCKED", "WarlockToolsForever", "UNKNOWN()")
+            return
+        end
+        if state.cursor then
+            state.tradeSlots[slot] = state.cursor.itemID
+            state.cursor = nil
+        end
+    end
+    env.IsInInstance = function() return state.inInstance == true end
+    state.macros = options.macros or {}
+    -- As in client, the global exists only once the Macro window has loaded.
+    env.Constants = {MacroConsts = {MAX_ACCOUNT_MACROS = 120, MAX_CHARACTER_MACROS = 30}}
+    local function macroIndex(name)
+        for index, macro in ipairs(state.macros) do
+            if macro.name == name then return 120 + index end
+        end
+        return 0
+    end
+    env.GetMacroIndexByName = macroIndex
+    env.GetNumMacros = function() return 0, #state.macros end
+    env.GetMacroBody = function(index) return state.macros[index - 120].body end
+    env.CreateMacro = function(name, icon, body, perCharacter)
+        if state.combat then error("CreateMacro in combat") end
+        equal(perCharacter, true, "a character macro")
+        state.macros[#state.macros + 1] = {name = name, icon = icon, body = body}
+        return 120 + #state.macros
+    end
+    env.EditMacro = function(index, name, icon, body)
+        if state.combat then error("EditMacro in combat") end
+        state.macros[index - 120] = {name = name, icon = icon, body = body}
+        state.macroEdits = (state.macroEdits or 0) + 1
+    end
+    env.DeleteMacro = function(index)
+        if state.combat then error("DeleteMacro in combat") end
+        table.remove(state.macros, index - 120)
+    end
+    env.PlaySoundFile = function(file, channel) state.played = {file = file, channel = channel} end
+    -- Wall-clock seconds, as WoW's time().
+    env.time = function() return 1000000 + math.floor(state.now) end
     env.IsInRaid = function() return state.group == "raid" end
     env.IsInGroup = function() return state.group ~= nil end
     env.GetZoneText = function() return state.zone or "Redridge Mountains" end
@@ -121,6 +240,14 @@ local function fixture(options)
         end
         state.sent[#state.sent + 1] = {message = message, chatType = chatType, target = target}
     end}
+    env.hooksecurefunc = function(target, name, hook)
+        local original = target[name]
+        target[name] = function(...)
+            local result = original(...)
+            hook(...)
+            return result
+        end
+    end
     env.GameTooltip = {
         SetOwner = function() state.tooltip = {} end,
         SetText = function(_, text) state.tooltip[#state.tooltip + 1] = text end,
@@ -199,12 +326,20 @@ local function fixture(options)
     state.units = options.units or {}
     state.units.player = state.units.player or {name = "Dyre", player = true, friend = true, level = 20}
     env.UnitExists = function(unit) return state.units[unit] ~= nil end
+    env.UnitFullName = function(unit)
+        local data = state.units[unit]
+        if data then return data.name, data.surname or (unit == "player" and "Maebryn" or nil) end
+    end
     env.UnitIsPlayer = function(unit) return state.units[unit] ~= nil and state.units[unit].player == true end
     env.UnitIsFriend = function(_, unit) return state.units[unit] ~= nil and state.units[unit].friend == true end
     env.UnitLevel = function(unit) return state.units[unit] and state.units[unit].level or 0 end
-    env.UnitName = function(unit) return state.units[unit] and state.units[unit].name end
+    -- As in client, UnitName returns the first and the last name (Forever full names).
+    env.UnitName = function(unit)
+        local data = state.units[unit]
+        if data then return data.name, data.surname end
+    end
     env.UnitGUID = function(unit) return state.units[unit] and state.units[unit].guid end
-    env.UnitCanAttack = function(_, unit) return state.units[unit] ~= nil end
+    env.UnitCanAttack = function(_, unit) return state.units[unit] ~= nil and not state.units[unit].friend end
     env.UnitIsUnit = function(a, b) return state.units[a] == state.units[b] end
     -- In client, combat makes index access raise an error for AddOn code.
     local function auras(unit, filter)
@@ -239,6 +374,18 @@ local function fixture(options)
             }
         end,
         GetUnitAuras = function(unit, filter) return auras(unit, filter) end,
+        -- As in client, aura sound changes are refused during an encounter.
+        AddAuraSound = function(trigger, info)
+            if state.encounter then error("AddAuraSound during an encounter") end
+            state.auraSoundCount = (state.auraSoundCount or 0) + 1
+            state.auraSounds = state.auraSounds or {}
+            state.auraSounds[state.auraSoundCount] = {trigger = trigger, info = info}
+            return state.auraSoundCount
+        end,
+        RemoveAuraSound = function(id)
+            if state.encounter then error("RemoveAuraSound during an encounter") end
+            state.auraSounds[id] = nil
+        end,
         -- In client these may answer in combat: nothing for a secret aura.
         GetAuraDataBySpellName = function(unit, name, filter)
             for _, aura in ipairs(auras(unit, filter)) do
@@ -251,13 +398,31 @@ local function fixture(options)
             end
         end,
     }
-    env.C_NamePlate = {GetNamePlates = function() return state.nameplates or {} end}
+    -- Blizzard's plate frame per nameplate unit; forbidden plates are other players' or protected.
+    state.plates = {}
+    env.C_NamePlate = {
+        GetNamePlates = function() return state.nameplates or {} end,
+        GetNamePlateForUnit = function(unit)
+            if not state.units[unit] then return end
+            if not state.plates[unit] then
+                state.plates[unit] = env.CreateFrame("Frame", nil, nil)
+                state.plates[unit].forbidden = state.units[unit].forbidden
+            end
+            return state.plates[unit]
+        end,
+    }
+    env.UnitAffectingCombat = function(unit) return unit == "player" and state.combat end
     if not options.noRestrictionAPI then
-        env.Enum = {AddOnRestrictionType = {Combat = 0, Encounter = 1, Chat = 5}}
+        env.Enum = env.Enum or {}
+        env.Enum.AddOnRestrictionType = {Combat = 0, Encounter = 1, Chat = 5}
+        env.Enum.UnitAuraSoundTrigger = {Added = 0, ApplicationsIncreased = 1, Removed = 2}
         env.C_RestrictedActions = {GetAddOnRestrictionState = function(kind)
             return (state.restrictions or {})[kind] or 0
         end}
         env.C_CombatLog = {IsCombatLogRestricted = function() return state.combatLogRestricted == true end}
+        env.C_RestrictedActions.IsAddOnRestrictionActive = function(kind)
+            return kind == 1 and state.encounter == true
+        end
     end
 
     -- Settings: proxy settings with getters and setters, as the client builds them.
@@ -272,6 +437,11 @@ local function fixture(options)
             local object = {setting = setting, options = extra}
             function object:SetParentInitializer(parent, predicate)
                 self.parentInitializer, self.predicate = parent, predicate
+            end
+            object.modifyPredicates = {}
+            function object:InitFrame(frame) frame.initializedWith = self end
+            function object:AddModifyPredicate(predicate)
+                self.modifyPredicates[#self.modifyPredicates + 1] = predicate
             end
             category.initializers[#category.initializers + 1] = object
             return object
@@ -306,6 +476,22 @@ local function fixture(options)
                 object.tooltip = tooltip
                 return object
             end,
+            CreateControlTextContainer = function()
+                local container = {data = {}}
+                function container:Add(value, label) self.data[#self.data + 1] = {value = value, label = label} end
+                function container:GetData() return self.data end
+                return container
+            end,
+            CreateDropdown = function(category, setting, choices, tooltip)
+                local object = initializer(category, setting)
+                object.tooltip, object.choices = tooltip, choices
+                return object
+            end,
+            CreateColorSwatch = function(category, setting, tooltip)
+                local object = initializer(category, setting)
+                object.tooltip, object.swatch = tooltip, true
+                return object
+            end,
             CreateSliderOptions = function(minValue, maxValue, step)
                 local object = {minValue = minValue, maxValue = maxValue, step = step}
                 function object:SetLabelFormatter(label) self.label = label end
@@ -321,7 +507,22 @@ local function fixture(options)
     env.WorldFrame = {HookScript = function(_, script, callback) state.worldHooks[script] = callback end}
     local function widget(kind, name, parent, template)
         local object = {kind = kind, name = name, parent = parent, template = template, events = {},
-            unitEvents = {}, scripts = {}, attributes = {}, points = {}, shown = true, text = ""}
+            unitEvents = {}, scripts = {}, attributes = {}, points = {}, shown = true, text = "", children = {}}
+        if parent and parent.children then parent.children[#parent.children + 1] = object end
+        function object:SetBackdropBorderColor(...) self.backdropBorder = {...} end
+        function object:SetBackdrop(backdrop) self.backdrop = backdrop end
+        function object:SetStatusBarColor(...) self.barColor = {...} end
+        function object:SetColorTexture(...) self.color = {...} end
+        function object:SetHeight(height) self.height = height end
+        function object:SetSize(width, height) self.width, self.height = width, height end
+        function object:SetFrameLevel(level) self.level = level end
+        function object:SetParent(newParent) self.parent = newParent end
+        function object:IsForbidden() return self.forbidden == true end
+        function object:CreateMaskTexture() return widget("MaskTexture", nil, self) end
+        function object:GetFrameLevel() return self.level or 1 end
+        function object:SetShown(value)
+            if value then self:Show() else self:Hide() end
+        end
         function object:SetPropagateKeyboardInput(value)
             if not options.noPropagate then self.propagate = value end
         end
@@ -368,6 +569,27 @@ local function fixture(options)
         function object:SetChecked(value) self.checked = value == true end
         function object:GetChecked() return self.checked end
         function object:CreateTexture() return widget("Texture", nil, self) end
+        function object:AddAuraSlot(key, filter, slotOptions)
+            self.slots = self.slots or {}
+            local button = widget("Button", nil, self)
+            button.display = {}
+            function button:SetIcon(region) self.display.icon = region end
+            function button:SetDurationCooldown(region) self.display.cooldown = region end
+            function button:SetDurationBar(region, barOptions) self.display.bar, self.display.barOptions = region, barOptions end
+            function button:SetDurationText(region) self.display.text = region end
+            function button:SetMouseClickEnabled(value) self.clicks = value end
+            slotOptions.initializeFrame(button)
+            self.slots[#self.slots + 1] = {key = key, filter = filter, button = button,
+                ids = slotOptions.candidateFilters.includeSpellIDs, candidates = slotOptions.candidateFilters}
+            return button
+        end
+        function object:SetAuraSlotCandidateFilters(key, filters)
+            for _, slot in ipairs(self.slots) do
+                if slot.key == key then slot.ids, slot.candidates = filters.includeSpellIDs, filters end
+            end
+        end
+        function object:SetUnit(unit) self.unit = unit end
+        function object:UpdateAllAuras() self.updates = (self.updates or 0) + 1 end
         function object:CreateFontString() return widget("FontString", nil, self) end
         -- Unknown methods (layout, colors, and so on) do nothing here.
         return setmetatable(object, {__index = function(_, key)
@@ -377,6 +599,10 @@ local function fixture(options)
     env.CreateFrame = function(kind, name, parent, template)
         local frame = widget(kind, name, parent, template)
         if name then env[name] = frame end
+        if kind == "AuraContainer" then
+            equal(template, "CustomAuraContainerTemplate")
+            equal(state.loadedAddOns and state.loadedAddOns.Blizzard_AuraContainer, true, "container AddOn loaded")
+        end
         if template == "SecureActionButtonTemplate" then
             frame.protected = true
             if parent then parent.protected = true end
@@ -423,9 +649,9 @@ local function fixture(options)
     end
     function state.clickButton(name, mouseButton)
         local button = env[name]
-        local suffix = mouseButton == "RightButton" and "2" or "1"
+        local suffix = mouseButton == "RightButton" and "2" or mouseButton == "MiddleButton" and "3" or "1"
         hardware(function()
-            state.used = {type = button.attributes["type" .. suffix],
+            state.used = {type = button.attributes["type" .. suffix], item = button.attributes["item" .. suffix],
                 macrotext = button.attributes["macrotext" .. suffix], spell = button.attributes["spell" .. suffix]}
             -- Secure buttons run PostClick for the press and the release.
             button.scripts.PostClick(button, mouseButton, true)
@@ -559,7 +785,7 @@ test("a missing client API disables WTF with one message naming it", function()
 end)
 test("a mixed install of old and new files is reported at login", function()
     local state = fixture({files = {"Commands.lua", "Core.lua", "Shards.lua", "Stones.lua", "Announce.lua",
-        "Options.lua"}})
+        "Tracker.lua", "Dots.lua", "Alerts.lua", "Options.lua"}})
     equal(state.wtf.available, false)
     contains(state.last(), "missing ReportRestrictions")
 end)
@@ -671,6 +897,18 @@ test("shards in a reagent bag are carried shards", function()
     state.gain(5, 7)
     equal(state.count(), 6)
     equal(state.bags[5].items[7], nil)
+end)
+test("a shard within 8 seconds of Shadowburn counts as created", function()
+    -- Forever's Shadowburn gives a shard when the target dies within 8 seconds.
+    local state = fixture()
+    state.fill(6)
+    state.emit("UNIT_SPELLCAST_SUCCEEDED", "player", "cast", 18871)
+    state.now = state.now + 7.5
+    state.gain(1, 1)
+    equal(state.count(), 6)
+    state.now = state.now + 10
+    state.gain(1, 2)
+    equal(state.count(), 7, "after the window")
 end)
 test("every Drain Soul rank counts as a source", function()
     local state = fixture()
@@ -984,11 +1222,12 @@ test("debug_shards lists bags, the source spell, and recent gains", function()
     state.clear()
     state.slash("debug_shards")
     contains(state.messages[1], "debug_shards item=6265 name=Soul Shard")
-    contains(state.messages[2], "source spell=1120 name=Drain Soul")
-    contains(state.messages[3], "NUM_BAG_SLOTS=4 NUM_TOTAL_EQUIPPED_BAG_SLOTS=nil itemCount=0")
-    contains(state.messages[5], "bag=1 slots=12 family=4 soul=true items=1 shards=1 shardSlotsByID=1 noInfo=0")
-    contains(state.messages[9], "count=3 limit=12 source=soul bag")
-    contains(state.messages[10], "gain 0.0s ago +1 count=3 created=true combat=false last=UNIT_SPELLCAST_CHANNEL_START 11675 1.0s before")
+    contains(state.messages[2], "source spell=1120 name=Drain Soul window=3s")
+    contains(state.messages[3], "source spell=17877 name=Shadowburn window=9s")
+    contains(state.messages[4], "NUM_BAG_SLOTS=4 NUM_TOTAL_EQUIPPED_BAG_SLOTS=nil itemCount=0")
+    contains(state.messages[6], "bag=1 slots=12 family=4 soul=true items=1 shards=1 shardSlotsByID=1 noInfo=0")
+    contains(state.messages[10], "count=3 limit=12 source=soul bag")
+    contains(state.messages[11], "gain 0.0s ago +1 count=3 created=true combat=false last=UNIT_SPELLCAST_CHANNEL_START 11675 1.0s before")
 end)
 local function reported(state, fragment)
     for _, message in ipairs(state.messages) do
@@ -1058,7 +1297,7 @@ test("debug_restrictions looks up auras by spell name, Banes included, and by th
     state.slash("debug_restrictions")
     reported(state, "target byName Corruption: name=Corruption spellId=6222")
     reported(state, "target byName Bane of Agony: name=Bane of Agony spellId=99999")
-    reported(state, "target byName checked=5 found=2")
+    reported(state, "target byName checked=9 found=2")
     reported(state, "target bySpellID 6222: name=Corruption spellId=6222")
 end)
 test("a secret last cast is not used for a spell ID lookup", function()
@@ -1117,14 +1356,15 @@ test("stone buttons use the best stone carried and create the best rank known", 
     equal(soul.attributes.macrotext1, "/use [@target,help,nodead][@player] item:16892")
     equal(soul.attributes.type2, "spell")
     equal(soul.attributes.spell2, 20752)
-    equal(health.attributes.macrotext1, "/use item:5511")
+    equal(health.attributes.type1, "item")
+    equal(health.attributes.item1, "item:5511")
     equal(health.attributes.spell2, 5699, "no player target: the best known rank")
     equal(soul.count.text, 3)
     equal(health.count.text, 1)
     equal(soul.icon.texture, 1000 + 16892)
 end)
 test("right-click creates the best Healthstone a friendly player target can use", function()
-    local state = stonesFixture({units = {target = {name = "Lowbie", player = true, friend = true, level = 20}}})
+    local state = stonesFixture({carried = {}, units = {target = {name = "Lowbie", player = true, friend = true, level = 20}}})
     equal(state.env[HEALTH].attributes.spell2, 6202, "Healthstone needs level 24")
     state.units.target.level = 30
     state.emit("PLAYER_TARGET_CHANGED")
@@ -1134,7 +1374,7 @@ test("right-click creates the best Healthstone a friendly player target can use"
     equal(state.env[HEALTH].attributes.spell2, 5699, "a mob target does not limit the rank")
 end)
 test("an uncached level requirement skips that rank until item data arrives", function()
-    local state = stonesFixture({units = {target = {name = "Lowbie", player = true, friend = true, level = 40}}})
+    local state = stonesFixture({carried = {}, units = {target = {name = "Lowbie", player = true, friend = true, level = 40}}})
     equal(state.requested, 5, "level requirements are requested at login")
     ITEMS[5509][2] = nil
     state.emit("PLAYER_TARGET_CHANGED")
@@ -1142,6 +1382,130 @@ test("an uncached level requirement skips that rank until item data arrives", fu
     ITEMS[5509][2] = 24
     state.emit("GET_ITEM_INFO_RECEIVED")
     equal(state.env[HEALTH].attributes.spell2, 5699)
+end)
+test("debug_click shows each button's actions and the key-down setting", function()
+    local state = stonesFixture()
+    state.env.GetCVarBool = function(name) return name == "ActionButtonUseKeyDown" end
+    state.clear()
+    state.slash("debug_click")
+    equal(state.messages[1], "WTF: debug_click ActionButtonUseKeyDown=true combat=false healthstoneMode=use")
+    contains(state.messages[2], "WarlockToolsForeverHealthstone useOnKeyDown=false")
+    contains(state.messages[3], "button1 type=item item=item:5511")
+    contains(state.messages[5], "button3 type=item item=item:5511")
+end)
+local function macroBody(state, name)
+    for _, macro in ipairs(state.macros) do
+        if macro.name == name then return macro.body end
+    end
+end
+
+test("WTF writes Healthstone and Soulstone macros in the character tab", function()
+    local state = stonesFixture()
+    equal(macroBody(state, "! Healthstone"), table.concat({
+        "#showtooltip item:5511",
+        "/cast [btn:2] Create Healthstone(Rank 3)",
+        "/stopmacro [btn:2]",
+        "/use item:9421", "/use item:5510", "/use item:5509", "/use item:5511", "/use item:5512"}, "\n"))
+    equal(macroBody(state, "! Soulstone"), table.concat({
+        "#showtooltip item:16892",
+        "/cast [btn:2] Create Soulstone",
+        "/stopmacro [btn:2]",
+        "/use [@target,help,nodead][@player] item:16892"}, "\n"))
+    equal(state.macros[1].icon, 134400, "the question mark, so #showtooltip shows the stone")
+end)
+test("the macros follow your bags and downranking, out of combat only", function()
+    local state = stonesFixture()
+    state.carried[5509] = 1
+    state.emit("BAG_UPDATE_DELAYED")
+    contains(macroBody(state, "! Healthstone"), "/cast [btn:2] Create Healthstone(Rank 1)")
+    local edits = state.macroEdits
+    state.combat = true
+    state.carried[5509] = 0
+    state.emit("BAG_UPDATE_DELAYED")
+    equal(state.macroEdits, edits, "no change in combat")
+    state.combat = false
+    state.emit("PLAYER_REGEN_ENABLED")
+    contains(macroBody(state, "! Healthstone"), "Create Healthstone(Rank 3)")
+    state.emit("BAG_UPDATE_DELAYED")
+    equal(state.macroEdits, edits + 1, "an unchanged body is not rewritten")
+end)
+test("macros work without the Macro window's global, and report what is missing", function()
+    local state = stonesFixture()
+    equal(state.env.MAX_CHARACTER_MACROS, nil)
+    equal(#state.macros, 2)
+    state.clear()
+    state.slash("debug_stones")
+    contains(table.concat(state.messages, "|"), "macros enabled=true available=true missing=nil limit=30 used=2")
+    local bare = stonesFixture({remove = {"CreateMacro"}})
+    contains(table.concat(bare.messages, "|"), "Stone macros stay off: this client lacks CreateMacro.")
+end)
+test("macros made under the old names are renamed in place", function()
+    local state = stonesFixture({macros = {{name = "WTF Healthstone", body = "old"}, {name = "Mine", body = ""},
+        {name = "!WTF Soulstone", body = "old"}}})
+    equal(state.macros[1].name, "! Healthstone", "the same slot, so action bars keep it")
+    equal(#state.macros, 3, "both renamed, none added")
+    equal(state.macros[3].name, "! Soulstone")
+end)
+test("macros need a known rank and a free slot, and turning them off deletes them", function()
+    local novice = fixture()
+    equal(#novice.macros, 0)
+    local full = {}
+    for index = 1, 28 do full[index] = {name = "Mine" .. index, body = ""} end
+    local crowded = stonesFixture({macros = full})
+    equal(#crowded.macros, 28, "the last two slots stay yours")
+    contains(crowded.messages[#crowded.messages], "No free character macro slot")
+    local state = stonesFixture()
+    equal(#state.macros, 2)
+    state.settings.WTF_STONES_MACROS:SetValue(false)
+    equal(#state.macros, 0)
+    state.settings.WTF_STONES_MACROS:SetValue(true)
+    equal(#state.macros, 2)
+end)
+test("stone buttons act on the release, so /click works", function()
+    -- In client, /click sends only a release and did nothing while the
+    -- buttons acted on the press (ActionButtonUseKeyDown).
+    local state = stonesFixture()
+    equal(state.env[HEALTH].attributes.useOnKeyDown, false)
+    equal(state.env[SOUL].attributes.useOnKeyDown, false)
+end)
+test("middle-click always uses your best Healthstone, whatever the target", function()
+    local state = stonesFixture({carried = {[5511] = 1, [5509] = 1},
+        units = {target = {name = "Lowbie", player = true, friend = true, level = 20}}})
+    local health = state.env[HEALTH]
+    equal(health.mode, "trade", "left-click trades to the friend")
+    equal(health.attributes.type3, "item")
+    equal(health.attributes.item3, "item:5509", "middle-click uses your best")
+    state.clickButton(HEALTH, "MiddleButton")
+    equal(state.used.item, "item:5509")
+    equal(state.tradeWith, nil, "no trade")
+    health.scripts.OnEnter(health)
+    local text = table.concat(state.tooltip, "|")
+    contains(text, "Middle-click: use your best Healthstone on yourself.")
+    contains(text, "the \"! Healthstone\" macro in your character macros")
+    local empty = fixture({known = {[6201] = true}})
+    empty.clear()
+    empty.clickButton(HEALTH, "MiddleButton")
+    equal(empty.last(), "WTF: No Healthstone in your bags. Right-click to create one.")
+end)
+test("a Healthstone rank you already carry is skipped for the one below it", function()
+    -- Each rank is unique in your bags, so creating it again would fail.
+    local state = stonesFixture({carried = {[5509] = 1}})
+    equal(state.env[HEALTH].attributes.spell2, 6202, "Healthstone carried: make a Lesser")
+    state.carried[5511] = 1
+    state.emit("BAG_UPDATE_DELAYED")
+    equal(state.env[HEALTH].attributes.spell2, 6201, "Lesser carried too: make a Minor")
+    state.carried[5512] = 1
+    state.emit("BAG_UPDATE_DELAYED")
+    equal(state.env[HEALTH].attributes.type2, nil, "every rank carried")
+    state.clear()
+    state.clickButton(HEALTH, "RightButton")
+    equal(state.last(), "WTF: You already carry every Healthstone rank you can make here.")
+end)
+test("downranking also respects a friendly target's level", function()
+    local state = stonesFixture({carried = {[5511] = 1},
+        units = {target = {name = "Lowbie", player = true, friend = true, level = 20}}})
+    equal(state.env[HEALTH].attributes.spell2, 6201, "Lesser carried, Healthstone too high: a Minor")
+    equal(state.env[HEALTH].mode, "trade", "left-click trades the Lesser one they can use")
 end)
 test("with no stones or ranks, clicks explain what is missing, once per click", function()
     local state = fixture()
@@ -1224,15 +1588,15 @@ test("the stone tooltip explains both clicks and the macro name", function()
     equal(state.tooltip[1], "Soulstone")
     contains(state.tooltip[2], "Left-click: use Lesser Soulstone on your friendly target, or on yourself.")
     contains(state.tooltip[3], "Right-click: create Lesser Soulstone.")
-    contains(state.tooltip[5], "/click WarlockToolsForeverSoulstone")
+    contains(state.tooltip[5], "the \"! Soulstone\" macro")
 end)
 test("debug_stones lists ranks, carried stones, and level requirements", function()
     local state = stonesFixture()
     state.clear()
     state.slash("debug_stones")
-    contains(state.messages[2], "soulstone spell=20752 name=Create Soulstone (Lesser) known=true items=16892x1 minLevel=30")
-    contains(state.messages[6], "healthstone spell=6201 name=Create Healthstone (Minor) known=true items=5512x0,19004x0,19005x0 minLevel=1")
-    contains(state.last(), "targetLevel=nil healthstoneRank=5699 pending=false")
+    contains(state.messages[2], "soulstone spell=20752 name=Create Soulstone known=true items=16892x1 minLevel=30")
+    contains(state.messages[6], "healthstone spell=6201 name=Create Healthstone known=true items=5512x0 minLevel=1")
+    contains(table.concat(state.messages, "|"), "targetLevel=nil healthstoneRank=5699 pending=false")
 end)
 test("without the spellbook API, Stones stay off and the rest of WTF runs", function()
     local state = fixture({noSpellBook = true})
@@ -1243,6 +1607,227 @@ test("without the spellbook API, Stones stay off and the rest of WTF runs", func
         if message:find("Stones stay off: this client lacks C_SpellBook.IsSpellKnown.", 1, true) then found = true end
     end
     equal(found, true)
+end)
+
+-- Healthstone trading and stone status ---------------------------------------
+
+local function bagWith(itemID, count)
+    return {[0] = {size = 16, family = 0, items = {[1] = {itemID = itemID, stackCount = count or 1}}},
+        [1] = {size = 0, family = 0, items = {}}, [2] = {size = 0, family = 0, items = {}},
+        [3] = {size = 0, family = 0, items = {}}, [4] = {size = 0, family = 0, items = {}}}
+end
+
+test("with a friend targeted, left-click trades a Healthstone they can use", function()
+    local state = stonesFixture({carried = {[5511] = 1}, bags = bagWith(5511),
+        units = {target = {name = "Lowbie", player = true, friend = true, level = 20}}})
+    local health = state.env[HEALTH]
+    equal(health.mode, "trade")
+    equal(health.attributes.type1, nil, "no secure action: WTF opens the trade")
+    state.clickButton(HEALTH, "LeftButton")
+    equal(state.tradeWith, "target")
+    state.clear()
+    state.emit("TRADE_SHOW")
+    equal(state.tradeSlots[1], 5511)
+    equal(state.cursor, nil)
+    equal(state.last(), "WTF: Healthstone in the trade window. Press Trade to give it.")
+end)
+test("without a Healthstone they can use, left-click creates one for them", function()
+    local state = stonesFixture({carried = {[5509] = 1},
+        units = {target = {name = "Lowbie", player = true, friend = true, level = 20}}})
+    local health = state.env[HEALTH]
+    equal(health.mode, "create", "Healthstone needs level 24")
+    equal(health.attributes.type1, "spell")
+    equal(health.attributes.spell1, 6202, "the Lesser rank, for level 20")
+    health.scripts.OnEnter(health)
+    contains(state.tooltip[2], "then left-click again to trade it")
+end)
+test("a completed Healthstone trade whispers the recipient, with credit", function()
+    local state = stonesFixture({carried = {[5511] = 1}, bags = bagWith(5511),
+        units = {target = {name = "Meatrod", surname = "Theog", player = true, friend = true, level = 20}}})
+    state.clickButton(HEALTH, "LeftButton")
+    state.emit("TRADE_SHOW")
+    state.emit("TRADE_ACCEPT_UPDATE", 1, 0)
+    equal(#state.sent, 0, "nothing before the trade completes")
+    state.emit("TRADE_CLOSED")
+    state.emit("UI_INFO_MESSAGE", 0, "Trade complete.")
+    equal(#state.sent, 1)
+    equal(state.sent[1].chatType, "WHISPER")
+    equal(state.sent[1].target, "Meatrod-Theog")
+    equal(state.sent[1].message, "Here, have a Healthstone. Some poor creature's essence gives you more health! Courtesy of Warlock Tools Forever (WTF)")
+    state.emit("UI_INFO_MESSAGE", 0, "Trade complete.")
+    equal(#state.sent, 1, "once per trade")
+end)
+test("no gift whisper for a cancelled trade, a removed stone, or with it off", function()
+    local options = {carried = {[5511] = 1}, bags = bagWith(5511),
+        units = {target = {name = "Lowbie", player = true, friend = true, level = 20}}}
+    local state = stonesFixture(options)
+    state.clickButton(HEALTH, "LeftButton")
+    state.emit("TRADE_SHOW")
+    state.emit("TRADE_CLOSED")
+    state.emit("TRADE_SHOW")
+    state.emit("TRADE_ACCEPT_UPDATE", 1, 1)
+    state.emit("UI_INFO_MESSAGE", 0, "Trade complete.")
+    equal(#state.sent, 0, "a later trade WTF did not fill")
+    local removed = stonesFixture(options)
+    removed.clickButton(HEALTH, "LeftButton")
+    removed.emit("TRADE_SHOW")
+    removed.tradeSlots[1] = nil
+    removed.emit("TRADE_ACCEPT_UPDATE", 1, 1)
+    removed.emit("UI_INFO_MESSAGE", 0, "Trade complete.")
+    equal(#removed.sent, 0, "you took the stone back out")
+    local off = stonesFixture(options)
+    off.wtf.db.announce.healthstoneWhisper = false
+    off.clickButton(HEALTH, "LeftButton")
+    off.emit("TRADE_SHOW")
+    off.emit("TRADE_ACCEPT_UPDATE", 1, 1)
+    off.emit("UI_INFO_MESSAGE", 0, "Trade complete.")
+    equal(#off.sent, 0)
+end)
+test("saved texts that match an old default gain the credit; edited ones do not", function()
+    local state = fixture({db = {announce = {summonGroupText = "Summoning >> %T << click please",
+        soulstoneGroupText = "Stone on %T", soulstoneWhisperText = "I've applied a soulstone to you, this means if you die, you can revive yourself where you fell. So, if you're going to die, die in a good spot. - via Warlock Tools Forever (WTF)"}}})
+    local settings = state.wtf.db.announce
+    equal(settings.summonGroupText, "The ritual hungers! Click the portal to drag >> %T << through the Twisting Nether - via Warlock Tools Forever (WTF)")
+    equal(settings.soulstoneGroupText, "Stone on %T")
+    equal(settings.soulstoneWhisperText, state.wtf.ANNOUNCE_DEFAULTS.soulstoneWhisperText)
+    equal(settings.healthstoneWhisper, true)
+    for key, text in pairs(state.wtf.ANNOUNCE_DEFAULTS) do
+        if #text > state.wtf.ANNOUNCE_MAX_LENGTH then error(key .. " is over the chat limit") end
+    end
+end)
+test("a refused trade placement waits for the next key press, once", function()
+    local state = stonesFixture({carried = {[5511] = 1}, bags = bagWith(5511),
+        units = {target = {name = "Lowbie", player = true, friend = true, level = 20}}})
+    state.tradeNeedsHardware = true
+    state.clickButton(HEALTH, "LeftButton")
+    state.emit("TRADE_SHOW")
+    equal(state.tradeSlots[1], nil)
+    equal(state.cursor, nil, "the stone is back in the bag")
+    state.press()
+    equal(state.tradeSlots[1], 5511, "placed on the key press")
+end)
+test("a trade window long after the click, or from someone else, gets nothing", function()
+    local state = stonesFixture({carried = {[5511] = 1}, bags = bagWith(5511),
+        units = {target = {name = "Lowbie", player = true, friend = true, level = 20}}})
+    state.clickButton(HEALTH, "LeftButton")
+    state.now = state.now + 30
+    state.emit("TRADE_SHOW")
+    equal(state.tradeSlots[1], nil)
+    state.emit("TRADE_SHOW")
+    equal(state.tradeSlots[1], nil, "no request pending")
+end)
+test("a Soulstone on someone is remembered, reported, and announced when it ends", function()
+    local state = stonesFixture()
+    state.emit("UNIT_SPELLCAST_SENT", "player", "Meatrod-Theog", "ss", 20707)
+    state.emit("UNIT_SPELLCAST_SUCCEEDED", "player", "ss", 20707)
+    equal(state.wtf.db.stones.soulstone.name, "Meatrod Theog")
+    state.clear()
+    state.slash("stones")
+    equal(state.messages[1], "WTF: Soulstone on Meatrod Theog, 30 min left.")
+    contains(state.messages[2], "You carry 3 Soulstone(s) and 1 Healthstone(s).")
+    state.now = state.now + 30 * 60 + 2
+    state.clear()
+    state.runTimers()
+    equal(state.messages[1], "WTF: Your Soulstone on Meatrod Theog has ended.")
+    contains(state.messages[2], "No Soulstone is up. Left-click the Soulstone button to apply one.")
+    equal(state.wtf.db.stones.soulstone, nil)
+end)
+test("a Soulstone on yourself is remembered as on you", function()
+    local state = stonesFixture()
+    state.emit("UNIT_SPELLCAST_SENT", "player", "Dyre-Maebryn", "ss", 20707)
+    state.emit("UNIT_SPELLCAST_SUCCEEDED", "player", "ss", 20707)
+    equal(state.wtf.db.stones.soulstone.name, "you")
+end)
+test("a remembered Soulstone survives a reload until it ends", function()
+    local state = stonesFixture({db = {stones = {soulstone = {name = "Tank", ends = 1000000 + 100 + 600}}}})
+    state.clear()
+    state.slash("stones")
+    equal(state.messages[1], "WTF: Soulstone on Tank, 10 min left.")
+end)
+test("reminders come after a fight, in an instance, or in a new group, at most every 10 minutes", function()
+    local state = stonesFixture({carried = {}})
+    state.clear()
+    state.emit("PLAYER_REGEN_ENABLED")
+    equal(#state.messages, 2)
+    contains(state.messages[1], "No Soulstone is up. Right-click the Soulstone button to create one.")
+    contains(state.messages[2], "You carry no Healthstone.")
+    state.clear()
+    state.emit("GROUP_JOINED")
+    equal(#state.messages, 0, "throttled")
+    state.now = state.now + 601
+    state.inInstance = true
+    state.emit("PLAYER_ENTERING_WORLD")
+    equal(#state.messages, 2)
+end)
+test("reminders can be turned off, and need a known rank", function()
+    local state = stonesFixture({carried = {}, db = {stones = {remindSoulstone = false}}})
+    state.clear()
+    state.emit("PLAYER_REGEN_ENABLED")
+    equal(#state.messages, 1)
+    contains(state.last(), "no Healthstone")
+    local novice = fixture()
+    novice.clear()
+    novice.emit("PLAYER_REGEN_ENABLED")
+    equal(#novice.messages, 0, "no rank known yet")
+end)
+
+-- Alerts: the Nightfall sound ------------------------------------------------------
+
+local function liveSounds(state)
+    local list = {}
+    for _, sound in pairs(state.auraSounds or {}) do list[#list + 1] = sound end
+    return list
+end
+
+test("the Nightfall sound is off by default", function()
+    local state = fixture()
+    equal(state.wtf.db.alerts.nightfall, false)
+    equal(#liveSounds(state), 0)
+end)
+test("turned on, the game plays the chosen sound when Shadow Trance appears", function()
+    local state = fixture()
+    state.settings.WTF_ALERTS_NIGHTFALL:SetValue(true)
+    local sounds = liveSounds(state)
+    equal(#sounds, 1)
+    equal(sounds[1].trigger, 0, "on the buff appearing")
+    equal(sounds[1].info.spellID, 17941)
+    equal(sounds[1].info.unitToken, "player")
+    equal(sounds[1].info.soundFileID, 639156, "the Imp spell chirp by file ID")
+    equal(sounds[1].info.soundFileName, nil)
+    state.settings.WTF_ALERTS_NIGHTFALL_SOUND:SetValue("readycheck")
+    sounds = liveSounds(state)
+    equal(#sounds, 1, "the old sound is replaced")
+    equal(sounds[1].info.soundFileName, "Sound\\Interface\\ReadyCheck.ogg")
+    equal(state.played.file, "Sound\\Interface\\ReadyCheck.ogg", "choosing a sound previews it")
+    state.settings.WTF_ALERTS_NIGHTFALL:SetValue(false)
+    equal(#liveSounds(state), 0)
+end)
+test("a sound change during an encounter waits until it ends", function()
+    local state = fixture()
+    state.encounter = true
+    state.settings.WTF_ALERTS_NIGHTFALL:SetValue(true)
+    equal(#liveSounds(state), 0)
+    state.encounter = false
+    state.emit("ADDON_RESTRICTION_STATE_CHANGED", 1, 0)
+    equal(#liveSounds(state), 1)
+end)
+test("the Nightfall setting survives a reload and bad saved values are repaired", function()
+    local state = fixture({db = {alerts = {nightfall = true, nightfallSound = "alarm"}}})
+    equal(liveSounds(state)[1].info.soundFileName, "Sound\\Interface\\AlarmClockWarning3.ogg")
+    local repaired = fixture({db = {alerts = {nightfall = "yes", nightfallSound = "kazoo"}}})
+    equal(repaired.wtf.db.alerts.nightfall, false)
+    equal(repaired.wtf.db.alerts.nightfallSound, "impspell")
+end)
+test("the Alerts page has the switch and a sound dropdown under it", function()
+    local state = fixture()
+    local page = state.categories.Alerts
+    equal(page.initializers[1].setting.variable, "WTF_ALERTS_NIGHTFALL")
+    local dropdown = page.initializers[2]
+    equal(dropdown.parentInitializer, page.initializers[1])
+    local choices = dropdown.choices()
+    equal(#choices, 16)
+    equal(choices[1].label, "Imp laugh 1")
+    equal(choices[14].label, "Raid warning")
 end)
 
 -- Announce ---------------------------------------------------------------------
@@ -1256,18 +1841,18 @@ test("a summon tells the party and whispers the target", function()
     local state = fixture({group = "party"})
     cast(state, 698, "Friend")
     equal(#state.sent, 2)
-    equal(state.sent[1].message, "Summoning >> Friend << click please")
+    equal(state.sent[1].message, "The ritual hungers! Click the portal to drag >> Friend << through the Twisting Nether - via Warlock Tools Forever (WTF)")
     equal(state.sent[1].chatType, "PARTY")
     equal(state.sent[2].chatType, "WHISPER")
     equal(state.sent[2].target, "Friend")
-    contains(state.sent[2].message, "Summoning you to Redridge Mountains now.")
+    equal(state.sent[2].message, "Summoning you to Redridge Mountains, since your sloth-like pace would get you there sometime next week. Accept the summon when it pops up (and tell me if it doesn't). Courtesy of Warlock Tools Forever (WTF)")
 end)
 test("a Soulstone use tells the raid and whispers the author's text", function()
     local state = fixture({group = "raid"})
     cast(state, 20762, "Tank")
-    equal(state.sent[1].message, "Soulstone on >> Tank <<")
+    equal(state.sent[1].message, "A piece of >> Tank <<'s soul now rests in my keeping. Death is merely an inconvenience - via Warlock Tools Forever (WTF)")
     equal(state.sent[1].chatType, "RAID")
-    contains(state.sent[2].message, "die in a good spot")
+    equal(state.sent[2].message, "I've trapped a sliver of your soul in a stone. If you die, it drags you back to life right where you fell, so if you're going to die, die in a good spot. Courtesy of Warlock Tools Forever (WTF)")
 end)
 test("alone, only the whisper goes out", function()
     local state = fixture()
@@ -1278,13 +1863,88 @@ end)
 test("failed casts, yourself, other spells, and secret targets announce nothing", function()
     local state = fixture({group = "party"})
     cast(state, 698, "Friend", "UNIT_SPELLCAST_FAILED")
-    state.emit("UNIT_SPELLCAST_SUCCEEDED", "player", "cast-698", 698)
+    cast(state, 20707, "Friend", "UNIT_SPELLCAST_INTERRUPTED")
+    state.emit("UNIT_SPELLCAST_SUCCEEDED", "player", "cast-20707", 20707)
     cast(state, 20707, "Dyre")
     cast(state, 686, "Boar")
     local hidden = secret()
     state.secrets[hidden] = true
     cast(state, 698, hidden)
     equal(#state.sent, 0)
+end)
+test("a summon is announced when the ritual starts, once", function()
+    local state = fixture({group = "raid"})
+    state.emit("UNIT_SPELLCAST_SENT", "player", "Friend", "ritual", 698)
+    equal(#state.sent, 0, "not yet: only sent")
+    state.emit("UNIT_SPELLCAST_START", "player", "ritual", 698)
+    equal(#state.sent, 2)
+    equal(state.sent[1].message, "The ritual hungers! Click the portal to drag >> Friend << through the Twisting Nether - via Warlock Tools Forever (WTF)")
+    equal(state.sent[1].chatType, "RAID")
+    state.emit("UNIT_SPELLCAST_CHANNEL_START", "player", "ritual", 698)
+    state.emit("UNIT_SPELLCAST_SUCCEEDED", "player", "ritual", 698)
+    equal(#state.sent, 2, "start, channel start, and success announce once")
+    state.now = state.now + 30
+    state.emit("UNIT_SPELLCAST_SENT", "player", "Friend", "ritual2", 698)
+    state.emit("UNIT_SPELLCAST_CHANNEL_START", "player", "ritual2", 698)
+    equal(#state.sent, 4, "the next ritual is announced again")
+end)
+test("a ritual that names no target uses your friendly player target", function()
+    local state = fixture({group = "party", units = {target = {name = "Friend", player = true, friend = true}}})
+    state.emit("UNIT_SPELLCAST_SENT", "player", "", "ritual", 698)
+    state.emit("UNIT_SPELLCAST_CHANNEL_START", "player", "ritual", 698)
+    equal(#state.sent, 2)
+    equal(state.sent[1].message, "The ritual hungers! Click the portal to drag >> Friend << through the Twisting Nether - via Warlock Tools Forever (WTF)")
+    equal(state.sent[2].target, "Friend")
+    local alone = fixture({group = "party", units = {target = {name = "Boar"}}})
+    alone.emit("UNIT_SPELLCAST_SENT", "player", "", "ritual", 698)
+    alone.emit("UNIT_SPELLCAST_START", "player", "ritual", 698)
+    equal(#alone.sent, 0, "no friendly player target, no announcement")
+end)
+test("whispers go to the full First-Last name", function()
+    -- In client, "Meatrod Theog" got no whisper: "No player named 'Meatrod'".
+    local state = fixture({group = "party",
+        units = {target = {name = "Meatrod", surname = "Theog", player = true, friend = true}}})
+    state.emit("UNIT_SPELLCAST_SENT", "player", nil, "ritual", 698)
+    state.emit("UNIT_SPELLCAST_CHANNEL_START", "player", "ritual", 698)
+    equal(state.sent[1].message, "The ritual hungers! Click the portal to drag >> Meatrod Theog << through the Twisting Nether - via Warlock Tools Forever (WTF)", "%T is the full name")
+    equal(state.sent[2].target, "Meatrod-Theog")
+    state.emit("UNIT_SPELLCAST_SENT", "player", "Meatrod", "stone", 20707)
+    state.emit("UNIT_SPELLCAST_SUCCEEDED", "player", "stone", 20707)
+    equal(state.sent[4].target, "Meatrod-Theog", "a Soulstone on your target too")
+    equal(state.sent[3].message, "A piece of >> Meatrod Theog <<'s soul now rests in my keeping. Death is merely an inconvenience - via Warlock Tools Forever (WTF)")
+    state.units.target = nil
+    state.emit("UNIT_SPELLCAST_SENT", "player", "Ryla-Stone", "stone2", 20707)
+    state.emit("UNIT_SPELLCAST_SUCCEEDED", "player", "stone2", 20707)
+    equal(state.sent[5].message, "A piece of >> Ryla Stone <<'s soul now rests in my keeping. Death is merely an inconvenience - via Warlock Tools Forever (WTF)", "a First-Last cast name, not targeted")
+    equal(state.sent[6].target, "Ryla-Stone")
+    state.clear()
+    state.slash("debug_announce")
+    contains(state.messages[1], "lastWhisper=Ryla-Stone")
+end)
+test("a Soulstone on yourself announces nothing, with or without your last name", function()
+    -- In client a Soulstone on yourself was whispered to you.
+    local state = fixture({group = "party"})
+    for index, name in ipairs({"Dyre", "Dyre-Maebryn", "Dyre-Mae bryn"}) do
+        state.emit("UNIT_SPELLCAST_SENT", "player", name, "self" .. index, 20707)
+        state.emit("UNIT_SPELLCAST_SUCCEEDED", "player", "self" .. index, 20707)
+    end
+    equal(#state.sent, 0)
+    state.emit("UNIT_SPELLCAST_SENT", "player", "Dyre-Theog", "other", 20707)
+    state.emit("UNIT_SPELLCAST_SUCCEEDED", "player", "other", 20707)
+    equal(#state.sent, 2, "someone with your first name and another last name is someone else")
+end)
+test("debug_announce shows the spell names and the latest cast events", function()
+    local state = fixture({group = "party"})
+    state.emit("UNIT_SPELLCAST_SENT", "player", "", "ritual", 698)
+    state.emit("UNIT_SPELLCAST_START", "player", "ritual", 698)
+    state.emit("UNIT_SPELLCAST_SENT", "player", "Boar", "bolt", 686)
+    state.clear()
+    state.slash("debug_announce")
+    equal(state.messages[1],
+        "WTF: debug_announce summon=Ritual of Summoning soulstone=Soulstone Resurrection enabled=true channel=group group=PARTY lastWhisper=nil")
+    contains(state.messages[2], "UNIT_SPELLCAST_START spell=698 target=nil")
+    contains(state.messages[3], "UNIT_SPELLCAST_SENT spell=698 target=")
+    equal(#state.messages, 3, "other spells are not logged")
 end)
 test("each message has its own switch, and the module switch silences all", function()
     local state = fixture({group = "party", db = {announce = {summonWhisper = false}}})
@@ -1301,7 +1961,9 @@ test("Say sends to SAY, and a blocked Say is reported once", function()
     equal(state.sent[1].chatType, "SAY")
     state.sayBlocked = true
     state.clear()
+    state.now = state.now + 30
     cast(state, 698, "Friend")
+    state.now = state.now + 30
     cast(state, 698, "Friend")
     equal(#state.messages, 1)
     contains(state.last(), "blocked the Say announcement")
@@ -1327,7 +1989,7 @@ test("the Announce page edits texts, switches, and the channel", function()
     local page = state.categories.Announce.frame
     page:OnRefresh()
     local row = page.rows[1]
-    equal(row.edit.text, "Summoning >> %T << click please")
+    equal(row.edit.text, "The ritual hungers! Click the portal to drag >> %T << through the Twisting Nether - via Warlock Tools Forever (WTF)")
     row.edit.text = "  Port >> %T <<  "
     row.edit.scripts.OnEnterPressed(row.edit)
     equal(state.wtf.db.announce.summonGroupText, "Port >> %T <<")
@@ -1343,7 +2005,696 @@ test("the Announce page edits texts, switches, and the channel", function()
     page:OnDefault()
     equal(state.wtf.db.announce.channel, "group")
     equal(state.wtf.db.announce.summonGroup, true)
-    equal(state.wtf.db.announce.summonGroupText, "Summoning >> %T << click please")
+    equal(state.wtf.db.announce.summonGroupText, "The ritual hungers! Click the portal to drag >> %T << through the Twisting Nether - via Warlock Tools Forever (WTF)")
+end)
+
+-- DoT tracker -------------------------------------------------------------------
+
+local ROW_STEP = 32
+-- The target row's outline (3) and gap (2) plus 2 spare pixels.
+local TARGET_SPACING = 7
+
+local function trackerFixture(extra)
+    local options = {units = {
+        target = {name = "Boar", guid = "Creature-1"},
+        nameplate3 = {name = "Boar", guid = "Creature-1"},
+        nameplate4 = {name = "Wolf", guid = "Creature-2"},
+    }, spellbook = {{spellID = 6222, name = "Corruption"}, {spellID = 348, name = "Immolate"},
+        {spellID = 5782, name = "Fear"}, {spellID = 980, name = "Curse of Agony"},
+        {spellID = 702, name = "Curse of Weakness"}}}
+    for key, value in pairs(extra or {}) do options[key] = value end
+    options.db = options.db or {}
+    options.db.tracker = options.db.tracker or {}
+    options.db.tracker.theme = options.db.tracker.theme or "compact"
+    local state = fixture(options)
+    state.anchor = state.env.WarlockToolsForeverTracker
+    state.list = state.env.WarlockToolsForeverTrackerList
+    for _, frame in ipairs(state.frames) do
+        if frame.parent == state.anchor and frame.container then
+            if frame.unit == "target" then state.targetRow = frame else state.focusRow = frame end
+        end
+    end
+    return state
+end
+
+local function listRows(state)
+    local rows = {}
+    for _, frame in ipairs(state.frames) do
+        if frame.parent == state.list and frame.container then rows[#rows + 1] = frame end
+    end
+    return rows
+end
+
+local function shownRows(state)
+    local rows = {}
+    for _, row in ipairs(listRows(state)) do
+        if row.shown then rows[#rows + 1] = row end
+    end
+    table.sort(rows, function(a, b) return a.points[#a.points][5] > b.points[#b.points][5] end)
+    return rows
+end
+
+-- The current rows: a rebuild leaves the old frames behind, hidden.
+local function currentRows(state)
+    local rows = listRows(state)
+    local current = {}
+    for index = #rows - 7, #rows do current[#current + 1] = rows[index] end
+    return current
+end
+
+local function pinnedRow(state, unit)
+    local found
+    for _, frame in ipairs(state.frames) do
+        if frame.parent == state.anchor and frame.container and frame.unit == unit then found = frame end
+    end
+    return found
+end
+
+local function slotByKey(container, key)
+    for _, slot in ipairs(container.slots) do
+        if slot.key == key then return slot end
+    end
+end
+
+local function listOffset(state)
+    return state.list.points[#state.list.points][5]
+end
+
+local function dot(state, spellID, target)
+    state.emit("UNIT_SPELLCAST_SENT", "player", target, "dot-" .. spellID .. target, spellID)
+    state.emit("UNIT_SPELLCAST_SUCCEEDED", "player", "dot-" .. spellID .. target, spellID)
+end
+
+test("the tracker has pinned target and focus rows and eight list rows of engine slots", function()
+    local state = trackerFixture()
+    equal(state.targetRow.container.unit, "target")
+    equal(state.focusRow.container.unit, "focus")
+    equal(state.targetRow.backdropBorder[1], 0.53, "warlock purple")
+    equal(state.targetRow.backdropBorder[3], 0.93)
+    equal(state.focusRow.outline.backdrop.edgeSize, 3, "the focus row has the same outline")
+    equal(state.focusRow.outline.backdropBorder[1], 0.9, "in red")
+    equal(state.focusRow.outline.backdropBorder[2], 0.1)
+    equal(state.focusRow.outline.points[1][2], -5)
+    local outline = state.targetRow.outline
+    equal(outline.backdrop.edgeSize, 3, "a solid 3-pixel target outline")
+    equal(outline.backdrop.edgeFile, "Interface\\Buttons\\WHITE8X8")
+    equal(outline.backdropBorder[1], 0.53)
+    equal(outline.points[1][2], -5, "drawn outside the row")
+    equal(state.focusRow.points[1][5], -(ROW_STEP + TARGET_SPACING), "the focus row sits clear of it")
+    local rows = listRows(state)
+    equal(#rows, 8)
+    local container = rows[1].container
+    local keys = {}
+    for index, slot in ipairs(container.slots) do
+        keys[index] = slot.key
+        equal(slot.filter, "HARMFUL|PLAYER")
+        equal(slot.button.clicks, false, "engine slots never take clicks")
+        equal(slot.button.display.barOptions.direction, 1, "the bar counts down")
+    end
+    equal(table.concat(keys, ","), "curse,bane,corruption,immolate,control", "no Siphon Life: not known")
+    equal(container.slots[3].ids[6222], true)
+    for _, id in ipairs({5782, 5484, 6789, 710}) do
+        equal(slotByKey(container, "control").ids[id], true, "Fear, Howl of Terror, Death Coil, Banish")
+    end
+    equal(container.slots[2].ids[980], true, "Curse of Agony as a Bane")
+    equal(container.unit, nil, "list rows start unbound")
+    equal(state.list.shown, false, "the list hides until a mob is DoTed")
+end)
+test("the pinned rows show only while target or focus is a live hostile", function()
+    local state = trackerFixture()
+    equal(state.targetRow.shown, true)
+    equal(state.focusRow.shown, false, "no focus")
+    equal(state.drivers[state.focusRow], "[@focus,harm,nodead] show; hide")
+    state.units.focus = {name = "Wolf", guid = "Creature-2"}
+    state.applyDrivers()
+    equal(state.focusRow.shown, true)
+    state.units.target = {name = "Friend", guid = "Player-1", friend = true}
+    state.applyDrivers()
+    equal(state.targetRow.shown, false)
+end)
+test("pinned slots recast on target or focus by spell name", function()
+    local state = trackerFixture()
+    local casts = state.targetRow.casts
+    equal(casts[3].template, "SecureActionButtonTemplate")
+    equal(casts[3].attributes.macrotext1, "/cast [@target,harm,nodead] Corruption")
+    equal(casts[4].attributes.macrotext1, "/cast [@target,harm,nodead] Immolate")
+    equal(casts[5], nil, "no Siphon Life slot: not known")
+    equal(casts[2].attributes.macrotext1, "/cast [@target,harm,nodead] Curse of Agony",
+        "Agony until another Bane is used")
+    equal(casts[1].attributes.type1, nil, "no Curse used yet")
+    equal(casts[6].attributes.macrotext1, "/cast [@target,harm,nodead] Fear")
+    equal(state.focusRow.casts[3].attributes.macrotext1, "/cast [@focus,harm,nodead] Corruption")
+    casts[1].scripts.OnEnter(casts[1])
+    contains(state.tooltip[1], "it recasts the last one you used")
+end)
+test("Bane and Curse slots recast the last one used, changed after combat", function()
+    local state = trackerFixture()
+    state.combat = true
+    dot(state, 702, "Boar")
+    equal(state.targetRow.casts[1].attributes.type1, nil, "no change in combat")
+    state.combat = false
+    state.emit("PLAYER_REGEN_ENABLED")
+    equal(state.targetRow.casts[1].attributes.macrotext1, "/cast [@target,harm,nodead] Curse of Weakness")
+    dot(state, 980, "Boar")
+    equal(state.focusRow.casts[2].attributes.macrotext1, "/cast [@focus,harm,nodead] Curse of Agony")
+    equal(state.wtf.db.tracker.lastBane, "Curse of Agony")
+    local reloaded = trackerFixture({db = {tracker = {lastCurse = "Curse of Weakness"}}})
+    equal(reloaded.targetRow.casts[1].attributes.macrotext1, "/cast [@target,harm,nodead] Curse of Weakness")
+end)
+test("spellbook ranks with a tracked name join the slot, Banes by name", function()
+    local state = trackerFixture({spellbook = {
+        {spellID = 990001, name = "Bane of Agony"}, {spellID = 6223, name = "Corruption"},
+        {spellID = 990002, name = "Corruption"}, {spellID = 686, name = "Shadow Bolt"}}})
+    local container = listRows(state)[1].container
+    equal(slotByKey(container, "bane").ids[990001], true)
+    equal(slotByKey(container, "corruption").ids[990002], true)
+    equal(slotByKey(state.targetRow.container, "corruption").ids[990002], true)
+    state.clear()
+    state.slash("debug_tracker")
+    contains(state.messages[4], "slot=corruption recast=Corruption matches=ids ids=172,6222,6223,7648,11671,11672,25311,990002")
+    state.emit("UNIT_SPELLCAST_SENT", "player", "Boar", "c1", 702)
+    state.emit("UNIT_SPELLCAST_SENT", "player", "Boar", "c2", 990009)
+    state.clear()
+    state.slash("debug_tracker")
+    equal(state.last(), "WTF: debug_tracker lastCast spell=990009 name=nil slot=nil")
+end)
+test("your target has the pinned row; other DoTed mobs are listed below it", function()
+    local state = trackerFixture()
+    dot(state, 6222, "Boar")
+    equal(#shownRows(state), 0, "the target is not listed twice")
+    dot(state, 6222, "Wolf")
+    local rows = shownRows(state)
+    equal(#rows, 1)
+    equal(rows[1].name.text, "Wolf")
+    equal(rows[1].container.unit, "nameplate4")
+    equal(state.list.shown, true)
+    equal(listOffset(state), -(ROW_STEP + TARGET_SPACING), "below the target row and its outline")
+    equal(state.targetRow.name.text, "Boar")
+end)
+test("tabbing moves the pinned row; the old target joins the list", function()
+    local state = trackerFixture()
+    dot(state, 6222, "Boar")
+    dot(state, 6222, "Wolf")
+    state.units.target = state.units.nameplate4
+    state.emit("PLAYER_TARGET_CHANGED")
+    local rows = shownRows(state)
+    equal(#rows, 1)
+    equal(rows[1].name.text, "Boar")
+    equal(state.targetRow.name.text, "Wolf")
+    equal(state.targetRow.container.updates > 1, true, "the target row refreshes")
+end)
+test("a focus gets its pinned row and the list moves below both", function()
+    local state = trackerFixture({units = {
+        target = {name = "Boar", guid = "Creature-1"},
+        nameplate3 = {name = "Boar", guid = "Creature-1"},
+        nameplate4 = {name = "Wolf", guid = "Creature-2"},
+        nameplate5 = {name = "Bear", guid = "Creature-3"},
+    }})
+    dot(state, 172, "Wolf")
+    dot(state, 172, "Bear")
+    equal(#shownRows(state), 2)
+    state.units.focus = state.units.nameplate4
+    state.emit("PLAYER_FOCUS_CHANGED")
+    state.applyDrivers()
+    local rows = shownRows(state)
+    equal(#rows, 1)
+    equal(rows[1].name.text, "Bear")
+    equal(state.focusRow.name.text, "Wolf")
+    equal(listOffset(state), -2 * (ROW_STEP + TARGET_SPACING))
+    state.units.target = nil
+    state.emit("PLAYER_TARGET_CHANGED")
+    equal(listOffset(state), -2 * (ROW_STEP + TARGET_SPACING),
+        "the secure focus row cannot move, so the list stays below it")
+    state.units.focus = nil
+    state.emit("PLAYER_FOCUS_CHANGED")
+    equal(listOffset(state), 0, "with no pinned row the list moves to the top")
+end)
+test("list rows follow nameplates and fall back to target or focus", function()
+    local state = trackerFixture()
+    dot(state, 172, "Wolf")
+    local row = shownRows(state)[1]
+    equal(row.container.unit, "nameplate4")
+    state.units.nameplate4 = nil
+    state.units.nameplate7 = {name = "Wolf", guid = "Creature-2"}
+    state.emit("NAME_PLATE_UNIT_ADDED", "nameplate7")
+    equal(row.container.unit, "nameplate7")
+end)
+test("a mob out of sight for ten seconds leaves the list", function()
+    local state = trackerFixture()
+    dot(state, 172, "Wolf")
+    state.units.nameplate4 = nil
+    state.emit("NAME_PLATE_UNIT_REMOVED", "nameplate4")
+    local row = shownRows(state)[1]
+    equal(row.container.unit, "none")
+    state.now = state.now + 5
+    state.runTimers()
+    equal(#shownRows(state), 1)
+    state.now = state.now + 6
+    state.runTimers()
+    equal(#shownRows(state), 0)
+    equal(state.list.shown, false)
+end)
+test("a dead mob leaves the list, and leaving combat clears it", function()
+    local units = {target = {name = "Boar", guid = "Creature-1"}}
+    for index = 4, 5 do units["nameplate" .. index] = {name = "Mob" .. index, guid = "Creature-" .. index} end
+    local state = trackerFixture({units = units})
+    dot(state, 172, "Mob4")
+    dot(state, 172, "Mob5")
+    state.units.nameplate4.dead = true
+    state.emit("UNIT_HEALTH", "nameplate4")
+    equal(#shownRows(state), 1)
+    state.emit("PLAYER_REGEN_ENABLED")
+    equal(#shownRows(state), 0)
+    equal(listRows(state)[1].container.unit, "none")
+end)
+test("a ninth mob replaces the oldest list row", function()
+    local units = {}
+    for index = 1, 9 do
+        units["nameplate" .. index] = {name = "Mob" .. index, guid = "Creature-" .. index}
+    end
+    local state = trackerFixture({units = units})
+    for index = 1, 9 do
+        state.now = state.now + 1
+        dot(state, 172, "Mob" .. index)
+    end
+    local rows = shownRows(state)
+    equal(#rows, 8)
+    equal(rows[1].name.text, "Mob2")
+    equal(rows[8].name.text, "Mob9")
+end)
+test("placeholders show sample rows for positioning, out of combat", function()
+    local state = trackerFixture({units = {}})
+    equal(state.targetRow.shown, false)
+    state.settings.WTF_TRACKER_PLACEHOLDERS:SetValue(true)
+    equal(state.targetRow.shown, true)
+    equal(state.focusRow.shown, true)
+    equal(state.targetRow.name.text, "Target (sample)")
+    equal(state.focusRow.name.text, "Focus (sample)")
+    local rows = shownRows(state)
+    equal(#rows, 2)
+    equal(rows[1].name.text, "Another mob (sample)")
+    equal(listOffset(state), -2 * (ROW_STEP + TARGET_SPACING))
+    state.combat = true
+    state.settings.WTF_TRACKER_PLACEHOLDERS:SetValue(false)
+    equal(state.targetRow.shown, true, "secure rows wait for combat to end")
+    state.combat = false
+    state.emit("PLAYER_REGEN_ENABLED")
+    equal(state.targetRow.shown, false)
+    equal(state.drivers[state.targetRow], "[@target,harm,nodead] show; hide")
+    equal(#shownRows(state), 0)
+end)
+test("the tracker drags by its rows unless locked, and /wtf reset moves it back", function()
+    local state = trackerFixture()
+    state.targetRow.scripts.OnDragStart(state.targetRow)
+    equal(state.anchor.moving, true)
+    state.anchor:SetPoint("TOP", nil, "TOP", 5, -5)
+    state.targetRow.scripts.OnDragStop(state.targetRow)
+    equal(state.wtf.db.tracker.position.point, "TOP")
+    state.wtf.db.tracker.locked = true
+    state.targetRow.scripts.OnDragStart(state.targetRow)
+    equal(state.anchor.moving, false)
+    state.slash("reset")
+    equal(state.wtf.db.tracker.position, nil)
+    equal(state.anchor.points[1][1], "CENTER")
+    state.combat = true
+    state.slash("reset")
+    contains(state.last(), "moves back after combat")
+end)
+test("the tracker module switch hides it", function()
+    local state = trackerFixture()
+    dot(state, 172, "Wolf")
+    state.settings.WTF_TRACKER_ENABLED:SetValue(false)
+    equal(state.anchor.shown, false)
+    equal(state.list.shown, false)
+end)
+test("learning a rank in combat updates every row after combat", function()
+    local state = trackerFixture()
+    state.spellbook[#state.spellbook + 1] = {spellID = 990003, name = "Corruption"}
+    state.spellbook[#state.spellbook + 1] = {spellID = 18265, name = "Siphon Life"}
+    state.combat = true
+    state.emit("SPELLS_CHANGED")
+    equal(listRows(state)[1].container.slots[3].ids[990003], nil)
+    state.combat = false
+    state.emit("PLAYER_REGEN_ENABLED")
+    local row = currentRows(state)[1]
+    equal(slotByKey(row.container, "corruption").ids[990003], true)
+    equal(slotByKey(row.container, "siphon") ~= nil, true, "Siphon Life now has a slot")
+    equal(slotByKey(pinnedRow(state, "focus").container, "corruption").ids[990003], true)
+    equal(pinnedRow(state, "target").casts[5].attributes.macrotext1, "/cast [@target,harm,nodead] Siphon Life")
+end)
+test("without the aura container the tracker stays off and the rest runs", function()
+    local state = fixture({noAuraContainer = true})
+    equal(state.wtf.available, true)
+    equal(state.env.WarlockToolsForeverTracker, nil)
+    local found
+    for _, message in ipairs(state.messages) do
+        if message:find("The DoT tracker stays off: this client lacks CustomAuraContainerTemplate.", 1, true) then
+            found = true
+        end
+    end
+    equal(found, true)
+end)
+
+test("the Curse slot matches your Curse-type debuffs, not by ID and never your Bane", function()
+    -- In client, a curse's debuff did not match the Classic or spellbook IDs.
+    local state = trackerFixture({spellbook = {{spellID = 990001, name = "Bane of Agony"},
+        {spellID = 702, name = "Curse of Weakness"}}})
+    for _, row in ipairs({state.targetRow, listRows(state)[1]}) do
+        local curse = row.container.slots[1]
+        equal(curse.key, "curse")
+        equal(curse.ids, nil, "no spell ID list")
+        equal(curse.candidates.includeDispelTypes.Curse, true)
+        equal(curse.candidates.excludeSpellIDs[990001], true, "the Bane stays in its own slot")
+        equal(curse.candidates.excludeSpellIDs[980], true)
+    end
+    state.clear()
+    state.slash("debug_tracker")
+    contains(state.messages[2], "slot=curse recast=nil matches=Curse debuffs except bane")
+    dot(state, 702, "Wolf")
+    equal(#shownRows(state), 1, "casting a curse still adds the mob")
+end)
+test("spells you will learn later count as unknown everywhere", function()
+    -- The spellbook lists spells learned later (FutureSpell); they must not show.
+    local state = trackerFixture({db = {tracker = {plateDots = true}},
+        units = {nameplate1 = {name = "Boar", guid = "Creature-1"}, target = {name = "Boar", guid = "Creature-1"}},
+        spellbook = {{spellID = 6222, name = "Corruption"}, {spellID = 18265, name = "Siphon Life", itemType = 2}}})
+    equal(state.wtf.TrackerKnowsSlot("siphon"), false)
+    equal(slotByKey(state.targetRow.container, "siphon"), nil, "not in the compact view")
+    local keys = {}
+    for _, frame in ipairs(state.frames) do
+        if frame.colored then
+            for key in pairs(frame.colored) do keys[#keys + 1] = key end
+        end
+    end
+    equal(table.concat(keys, ","), "corruption", "only a Corruption dot on the nameplate")
+end)
+test("Bars is the default theme", function()
+    equal(fixture().wtf.db.tracker.theme, "bars")
+end)
+test("drains are not tracked: a Drain Life cast adds no row", function()
+    local state = trackerFixture()
+    dot(state, 689, "Wolf")
+    equal(#shownRows(state), 0)
+end)
+
+-- Slot colors ----------------------------------------------------------------------
+
+local function near3(actual, r, g, b, context)
+    for index, expected in ipairs({r, g, b}) do
+        if math.abs(actual[index] - expected) > 0.002 then
+            error((context or "color") .. ": expected " .. r .. "," .. g .. "," .. b .. ", got "
+                .. tostring(actual[1]) .. "," .. tostring(actual[2]) .. "," .. tostring(actual[3]), 2)
+        end
+    end
+end
+
+local function barColor(row, index)
+    return row.container.slots[index].button.display.bar.barColor
+end
+
+test("each slot has a default color, used by the tracker's bars", function()
+    local state = trackerFixture()
+    local colors = state.wtf.db.tracker.colors
+    equal(colors.corruption, "ffffffff")
+    equal(colors.curse, "ff9e40d9")
+    equal(colors.control, "ffffd91a")
+    near3(barColor(state.targetRow, 3), 1, 1, 1, "Corruption white")
+    near3(barColor(state.targetRow, 1), 0x9e / 255, 0x40 / 255, 0xd9 / 255, "Curse purple")
+    near3(barColor(listRows(state)[1], 2), 0xe6 / 255, 0x26 / 255, 0x26 / 255, "Bane red")
+end)
+test("a new color applies at once to bars and nameplate dots", function()
+    local state = trackerFixture({db = {tracker = {plateDots = true}},
+        units = {nameplate1 = {name = "Boar", guid = "Creature-1"}}})
+    state.settings.WTF_COLOR_CORRUPTION:SetValue("ff00ff00")
+    equal(state.wtf.db.tracker.colors.corruption, "ff00ff00")
+    near3(barColor(state.focusRow, 3), 0, 1, 0)
+    near3(barColor(listRows(state)[8], 3), 0, 1, 0)
+    local bubble
+    for _, frame in ipairs(state.frames) do
+        if frame.colored and frame.colored.corruption then bubble = frame end
+    end
+    near3(bubble.colored.corruption.color, 0, 1, 0, "the nameplate dot")
+    state.settings.WTF_COLOR_CORRUPTION:SetValue("not a color")
+    equal(state.wtf.db.tracker.colors.corruption, "ffffffff", "invalid values become the default")
+end)
+test("slots still on the old default colors move to the new ones, once", function()
+    local old = trackerFixture({db = {tracker = {colors = {curse = "ff4d8cff", corruption = "ff9e40d9",
+        immolate = "ff123456"}}}})
+    equal(old.wtf.db.tracker.colors.curse, "ff9e40d9")
+    equal(old.wtf.db.tracker.colors.corruption, "ffffffff")
+    equal(old.wtf.db.tracker.colors.immolate, "ff123456", "a picked color stays")
+    equal(old.wtf.db.tracker.colorsVersion, 2)
+    local chosen = trackerFixture({db = {tracker = {colorsVersion = 2, colors = {curse = "ff4d8cff"}}}})
+    equal(chosen.wtf.db.tracker.colors.curse, "ff4d8cff", "the old blue, picked after the change, stays")
+end)
+test("saved colors and nameplate choices are repaired on load", function()
+    local state = trackerFixture({db = {tracker = {colors = {curse = "FF112233", bane = 7},
+        onPlates = {control = true, curse = "yes"}}}})
+    equal(state.wtf.db.tracker.colors.curse, "ff112233")
+    equal(state.wtf.db.tracker.colors.bane, "ffe62626")
+    equal(state.wtf.db.tracker.onPlates.control, true)
+    equal(state.wtf.db.tracker.onPlates.curse, true, "not a boolean: the default")
+    equal(state.wtf.db.tracker.onPlates.immolate, true)
+end)
+test("the DoT Colors page has a swatch and a nameplate switch per slot", function()
+    local state = trackerFixture()
+    local page = state.categories["DoT Colors"]
+    equal(page.parent, state.categories["Warlock Tools Forever"])
+    equal(#page.initializers, 12)
+    equal(page.initializers[1].setting.variable, "WTF_COLOR_CURSE")
+    equal(page.initializers[1].swatch, true)
+    equal(page.initializers[5].setting.variable, "WTF_COLOR_CORRUPTION")
+    equal(page.initializers[5].setting.default, "ffffffff")
+    equal(page.initializers[6].setting.variable, "WTF_PLATE_CORRUPTION")
+    equal(page.initializers[12].setting.variable, "WTF_PLATE_CONTROL")
+    equal(page.initializers[12].setting.default, false, "crowd control is off on nameplates")
+end)
+
+-- Bar theme ----------------------------------------------------------------------
+
+local function barsFixture(extra)
+    local options = {db = {tracker = {theme = "bars"}}}
+    for key, value in pairs(extra or {}) do options[key] = value end
+    return trackerFixture(options)
+end
+
+test("the bar theme gives each mob a name line and a bar line per spell you know", function()
+    local state = barsFixture()
+    -- Known in the fixture: Corruption, Immolate, Fear, Curse of Agony (a Bane), Curse of Weakness.
+    local row = listRows(state)[1]
+    local keys = {}
+    for index, slot in ipairs(row.container.slots) do keys[index] = slot.key end
+    equal(table.concat(keys, ","), "curse,bane,corruption,immolate,control", "no Siphon Life line")
+    local curse = row.container.slots[1].button
+    equal(curse.points[1][1], "TOPLEFT")
+    equal(curse.points[1][5], -18, "the first line under the name")
+    equal(row.container.slots[2].button.points[1][5], -36)
+    local display = curse.display
+    equal(display.barOptions.direction, 1, "bars drain like the Cooldown Manager's")
+    equal(row.height, 18 + 5 * 18 + 6)
+    near3(display.bar.barColor, 0x9e / 255, 0x40 / 255, 0xd9 / 255, "Curse purple")
+end)
+test("pinned bar rows recast from each bar line", function()
+    local state = barsFixture()
+    local casts = state.targetRow.casts
+    equal(casts[5], nil, "no Siphon Life line, so no button")
+    equal(casts[3].attributes.macrotext1, "/cast [@target,harm,nodead] Corruption")
+    equal(casts[3].points[1][1], "TOPLEFT")
+    equal(casts[3].points[1][5], -(18 + 2 * 18), "over the Corruption line")
+end)
+test("pinned rows and the list are spaced by the taller bar blocks", function()
+    local state = barsFixture()
+    local step = 18 + 5 * 18 + 6 + 2
+    equal(state.focusRow.points[1][5], -(step + TARGET_SPACING))
+    dot(state, 172, "Wolf")
+    equal(listOffset(state), -(step + TARGET_SPACING))
+end)
+test("switching the theme rebuilds the rows and keeps the tracked mobs", function()
+    local state = trackerFixture()
+    dot(state, 172, "Wolf")
+    local before = listRows(state)
+    state.settings.WTF_TRACKER_THEME:SetValue("bars")
+    equal(state.wtf.db.tracker.theme, "bars")
+    for _, row in ipairs(before) do equal(row.shown, false, "old rows hidden") end
+    local rows = {}
+    for _, row in ipairs(listRows(state)) do
+        if row.shown then rows[#rows + 1] = row end
+    end
+    equal(#rows, 1)
+    equal(rows[1].name.text, "Wolf")
+    equal(rows[1].container.unit, "nameplate4")
+    equal(#rows[1].container.slots, 5)
+end)
+test("a theme change in combat waits for combat to end", function()
+    local state = trackerFixture()
+    local before = state.targetRow
+    state.combat = true
+    state.settings.WTF_TRACKER_THEME:SetValue("bars")
+    equal(state.wtf.db.tracker.theme, "bars")
+    equal(before.shown, true, "secure rows untouched in combat")
+    state.combat = false
+    state.emit("PLAYER_REGEN_ENABLED")
+    equal(before.shown, false)
+end)
+test("learning a spell adds its bar line, after combat", function()
+    local state = barsFixture()
+    state.spellbook[#state.spellbook + 1] = {spellID = 18265, name = "Siphon Life"}
+    state.emit("SPELLS_CHANGED")
+    local row
+    for _, frame in ipairs(listRows(state)) do row = frame end
+    equal(#row.container.slots, 6)
+end)
+
+-- Nameplate DoT dots ---------------------------------------------------------------
+
+local function dotsFixture(extra)
+    local options = {units = {
+        nameplate1 = {name = "Boar", guid = "Creature-1"},
+        nameplate2 = {name = "Wolf", guid = "Creature-2"},
+        nameplate3 = {name = "Guard", guid = "Creature-3", friend = true},
+    }, spellbook = {{spellID = 6222, name = "Corruption"}, {spellID = 348, name = "Immolate"},
+        {spellID = 980, name = "Curse of Agony"}, {spellID = 702, name = "Curse of Weakness"}},
+        db = {tracker = {plateDots = true}}}
+    for key, value in pairs(extra or {}) do options[key] = value end
+    return fixture(options)
+end
+
+local function bubbleOn(state, unit)
+    local plate = state.plates[unit]
+    if not plate then return end
+    for _, frame in ipairs(state.frames) do
+        if frame.parent == plate and frame.backdropBorder then return frame end
+    end
+end
+
+local function containerIn(bubble)
+    for _, frame in ipairs(bubble.children) do
+        if frame.kind == "AuraContainer" then return frame end
+    end
+end
+
+test("nameplate dots are off by default", function()
+    local state = dotsFixture({db = {}})
+    equal(state.wtf.db.tracker.plateDots, false)
+    state.emit("NAME_PLATE_UNIT_ADDED", "nameplate1")
+    equal(bubbleOn(state, "nameplate1"), nil)
+end)
+test("each hostile plate gets a bubble with a dot per DoT you know", function()
+    local state = dotsFixture()
+    local bubble = bubbleOn(state, "nameplate1")
+    local container = containerIn(bubble)
+    local keys = {}
+    for index, slot in ipairs(container.slots) do
+        keys[index] = slot.key
+        equal(slot.filter, "HARMFUL|PLAYER")
+    end
+    equal(table.concat(keys, ","), "curse,bane,corruption,immolate", "no Siphon Life: not known")
+    equal(container.slots[3].ids[6222], true)
+    equal(container.unit, "nameplate1")
+    local point = bubble.points[#bubble.points]
+    equal(point[1], "BOTTOM")
+    equal(point[2], state.plates.nameplate1)
+    equal(point[3], "TOP")
+    equal(point[5], 50)
+    equal(state.wtf.HasTrackableDots(), true)
+end)
+test("dots show only in combat, on live hostile mobs", function()
+    local state = dotsFixture()
+    local boar, guard = bubbleOn(state, "nameplate1"), bubbleOn(state, "nameplate3")
+    equal(boar.shown, false, "out of combat")
+    state.emit("PLAYER_REGEN_DISABLED")
+    equal(boar.shown, true)
+    equal(guard.shown, false, "friendly")
+    state.units.nameplate1.dead = true
+    state.emit("UNIT_HEALTH", "nameplate1")
+    equal(boar.shown, false, "dead")
+    state.emit("PLAYER_REGEN_ENABLED")
+    equal(bubbleOn(state, "nameplate2").shown, false)
+end)
+test("a removed plate frees its bubble for the next plate", function()
+    local state = dotsFixture()
+    local bubble = bubbleOn(state, "nameplate2")
+    state.emit("NAME_PLATE_UNIT_REMOVED", "nameplate2")
+    equal(containerIn(bubble).unit, "none")
+    equal(bubble.shown, false)
+    equal(bubble.parent, state.env.UIParent)
+    state.units.nameplate9 = {name = "Bear", guid = "Creature-9"}
+    state.emit("NAME_PLATE_UNIT_ADDED", "nameplate9")
+    equal(bubbleOn(state, "nameplate9"), bubble, "reused")
+    equal(containerIn(bubble).unit, "nameplate9")
+end)
+test("forbidden plates get no bubble", function()
+    local state = dotsFixture()
+    state.units.nameplate8 = {name = "Rival", guid = "Player-8", forbidden = true}
+    state.emit("NAME_PLATE_UNIT_ADDED", "nameplate8")
+    equal(bubbleOn(state, "nameplate8"), nil)
+end)
+test("the dots switch and height setting apply at once", function()
+    local state = dotsFixture({db = {}})
+    state.settings.WTF_TRACKER_PLATE_DOTS:SetValue(true)
+    local bubble = bubbleOn(state, "nameplate1")
+    equal(bubble ~= nil, true)
+    state.settings.WTF_TRACKER_PLATE_DOTS_OFFSET:SetValue(20)
+    bubble = bubbleOn(state, "nameplate1")
+    equal(bubble.points[#bubble.points][5], 20)
+    state.settings.WTF_TRACKER_PLATE_DOTS:SetValue(false)
+    equal(bubbleOn(state, "nameplate1"), nil)
+    local page = state.categories["DoT Tracker"]
+    equal(page.initializers[1].setting.variable, "WTF_TRACKER_THEME")
+    equal(page.initializers[4].setting.variable, "WTF_TRACKER_PLATE_DOTS")
+    equal(page.initializers[5].parentInitializer, page.initializers[4])
+end)
+test("the dot height slider has a gold mark at the default, hidden on reuse", function()
+    local state = dotsFixture()
+    local initializer = state.categories["DoT Tracker"].initializers[5]
+    local frame = state.env.CreateFrame("Frame")
+    local slider = state.env.CreateFrame("Slider")
+    frame.SliderWithSteppers = {Slider = slider}
+    function frame:Release() self.released = true end
+    function slider:GetWidth() return 240 end
+    function slider:GetThumbTexture() return {GetWidth = function() return 20 end} end
+    initializer:InitFrame(frame)
+    equal(frame.initializedWith, initializer, "Blizzard's setup still runs")
+    local tick = slider.wtfDefaultTick
+    equal(tick.shown, true)
+    local point = tick.points[#tick.points]
+    -- The thumb's center runs from 10 to 230; 50 of 0-120 is 5/12 of the way.
+    equal(point[1], "CENTER")
+    equal(point[3], "LEFT")
+    equal(point[4], 10 + 5 / 12 * 220)
+    frame:Release()
+    equal(frame.released, true)
+    equal(tick.shown, false, "hidden when the panel reuses the frame for another setting")
+end)
+test("without a known DoT the dots stay off and cannot be turned on", function()
+    local state = dotsFixture({spellbook = {{spellID = 686, name = "Shadow Bolt"}}})
+    equal(state.wtf.HasTrackableDots(), false)
+    equal(bubbleOn(state, "nameplate1"), nil)
+    equal(state.categories["DoT Tracker"].initializers[4].modifyPredicates[1](), false)
+end)
+test("nameplate dots follow the per-slot nameplate choices", function()
+    local state = dotsFixture({db = {tracker = {plateDots = true, onPlates = {immolate = false}}},
+        spellbook = {{spellID = 6222, name = "Corruption"}, {spellID = 348, name = "Immolate"},
+            {spellID = 5782, name = "Fear"}}})
+    local keys = {}
+    for index, slot in ipairs(containerIn(bubbleOn(state, "nameplate1")).slots) do keys[index] = slot.key end
+    equal(table.concat(keys, ","), "corruption", "no Immolate by choice, no Fear by default")
+    local cursed = dotsFixture()
+    local curseDot = containerIn(bubbleOn(cursed, "nameplate1")).slots[1]
+    equal(curseDot.key, "curse")
+    equal(curseDot.candidates.includeDispelTypes.Curse, true, "the dot uses the same Curse match")
+    state.settings.WTF_PLATE_CONTROL:SetValue(true)
+    keys = {}
+    for index, slot in ipairs(containerIn(bubbleOn(state, "nameplate1")).slots) do keys[index] = slot.key end
+    equal(table.concat(keys, ","), "corruption,control")
+end)
+test("learning a DoT rebuilds the bubbles", function()
+    local state = dotsFixture()
+    state.spellbook[#state.spellbook + 1] = {spellID = 18265, name = "Siphon Life"}
+    state.emit("SPELLS_CHANGED")
+    local container = containerIn(bubbleOn(state, "nameplate1"))
+    equal(#container.slots, 5)
+    equal(container.slots[5].key, "siphon")
 end)
 
 -- Settings page ----------------------------------------------------------------
@@ -1357,6 +2708,8 @@ test("the settings page has a module switch and a Soul Shards subpage", function
     equal(main.initializers[1].setting.variable, "WTF_SHARDS_ENABLED")
     equal(main.initializers[2].setting.variable, "WTF_STONES_ENABLED")
     equal(main.initializers[3].setting.variable, "WTF_ANNOUNCE_ENABLED")
+    equal(main.initializers[4].setting.variable, "WTF_TRACKER_ENABLED")
+    equal(state.categories["DoT Tracker"].parent, main)
     equal(state.categories.Stones.parent, main)
     equal(state.categories.Announce.parent, main)
     equal(page.initializers[1].setting.variable, "WTF_SHARDS_AUTO_LIMIT")

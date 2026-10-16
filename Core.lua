@@ -59,7 +59,13 @@ local REQUIRED_NAMESPACE = {
     "CheckShardCapabilities", "InitializeShards", "ReportShardStatus", "ReportShardDebug",
     "DebugDeleteShard",
     "CheckStoneCapabilities", "InitializeStones", "ResetStonesPosition", "ReportStoneDebug",
-    "InitializeAnnounce", "FormatAnnouncement",
+    "ReportStoneStatus", "RemindStones", "ApplyStoneMacros", "AddInputHandler", "RunOnNextInput", "ReportClickDebug",
+    "InitializeAnnounce", "FormatAnnouncement", "ReportAnnounceDebug", "FriendlyTargetNames",
+    "WhisperHealthstoneGift",
+    "CheckTrackerCapabilities", "InitializeTracker", "ResetTrackerPosition", "RefreshTracker",
+    "ReportTrackerDebug", "TrackerCandidateFilters", "TrackerKnowsSlot", "SetTrackerTheme",
+    "InitializePlateDots", "RefreshPlateDots", "HasTrackableDots", "ApplyTrackerColors", "ApplyDotColors",
+    "InitializeAlerts", "ApplyNightfallSound", "PreviewNightfallSound", "HasNightfallSound",
     "ReportRestrictions",
     "InitializeOptions", "OpenSettings",
 }
@@ -102,12 +108,34 @@ end
 -- Chat messages longer than this are cut by the client.
 WTF.ANNOUNCE_MAX_LENGTH = 255
 
+-- The default texts credit WTF (author-approved), so players you group with
+-- can find it; a text you edit says only what you wrote.
+WTF.ANNOUNCE_CREDIT = " - via Warlock Tools Forever (WTF)"
 WTF.ANNOUNCE_DEFAULTS = {
-    summonGroupText = "Summoning >> %T << click please",
-    summonWhisperText = "Summoning you to %Z now. Watch for the summon prompt and accept it. If it doesn't appear, tell me.",
-    soulstoneGroupText = "Soulstone on >> %T <<",
-    soulstoneWhisperText = "I've applied a soulstone to you, this means if you die, you can revive yourself where you fell. So, if you're going to die, die in a good spot.",
+    summonGroupText = "The ritual hungers! Click the portal to drag >> %T << through the Twisting Nether" .. WTF.ANNOUNCE_CREDIT,
+    soulstoneGroupText = "A piece of >> %T <<'s soul now rests in my keeping. Death is merely an inconvenience" .. WTF.ANNOUNCE_CREDIT,
+    -- The author's texts, with their own credit; %Z leaves room for long zone names.
+    summonWhisperText = "Summoning you to %Z, since your sloth-like pace would get you there sometime next week. Accept the summon when it pops up (and tell me if it doesn't). Courtesy of Warlock Tools Forever (WTF)",
+    soulstoneWhisperText = "I've trapped a sliver of your soul in a stone. If you die, it drags you back to life right where you fell, so if you're going to die, die in a good spot. Courtesy of Warlock Tools Forever (WTF)",
+    healthstoneWhisperText = "Here, have a Healthstone. Some poor creature's essence gives you more health! Courtesy of Warlock Tools Forever (WTF)",
 }
+-- Saved copies of earlier defaults, never edited, become the new ones.
+local OLD_ANNOUNCE_DEFAULTS = {
+    summonGroupText = {"Summoning >> %T << click please", "Summoning >> %T << click please - via Warlock Tools Forever (WTF)"},
+    summonWhisperText = {"Summoning you to %Z now. Watch for the summon prompt and accept it. If it doesn't appear, tell me.", "Summoning you to %Z now. Watch for the summon prompt and accept it. If it doesn't appear, tell me. - via Warlock Tools Forever (WTF)"},
+    soulstoneGroupText = {"Soulstone on >> %T <<", "Soulstone on >> %T << - via Warlock Tools Forever (WTF)"},
+    soulstoneWhisperText = {"I've applied a soulstone to you, this means if you die, you can revive yourself where you fell. So, if you're going to die, die in a good spot.", "I've applied a soulstone to you, this means if you die, you can revive yourself where you fell. So, if you're going to die, die in a good spot. - via Warlock Tools Forever (WTF)"},
+    healthstoneWhisperText = {"Enjoy the Healthstone, %T! Use it when your health runs low. - via Warlock Tools Forever (WTF)"},
+}
+
+local function IsOldDefault(key, text)
+    for _, old in ipairs(OLD_ANNOUNCE_DEFAULTS[key] or {}) do
+        if text == old then
+            return true
+        end
+    end
+    return false
+end
 
 local function SanitizePosition(position)
     if type(position) ~= "table" or type(position.point) ~= "string"
@@ -131,7 +159,76 @@ function WTF.SanitizeAnnouncement(text, default)
     return text
 end
 
-local ANNOUNCE_SWITCHES = {"summonGroup", "summonWhisper", "soulstoneGroup", "soulstoneWhisper"}
+-- Tracker and nameplate slots, in display order, with default colors as the
+-- Settings color swatch stores them (AARRGGBB) and whether each shows as a
+-- nameplate dot by default. Crowd control is not a DoT to keep up.
+WTF.DOT_SLOTS = {
+    {key = "curse", label = "Curse", color = "ff9e40d9", plate = true},
+    {key = "bane", label = "Bane", color = "ffe62626", plate = true},
+    {key = "corruption", label = "Corruption", color = "ffffffff", plate = true},
+    {key = "immolate", label = "Immolate", color = "ffff8019", plate = true},
+    {key = "siphon", label = "Siphon Life", color = "ff4dd94d", plate = true},
+    {key = "control", label = "Fear and control", color = "ffffd91a", plate = false},
+}
+
+-- Defaults that changed (author-approved): once, a slot still on its old
+-- default moves to the new one; a color the user picked stays, also later.
+local OLD_DEFAULT_COLORS = {curse = "ff4d8cff", corruption = "ff9e40d9"}
+local COLORS_VERSION = 2
+
+function WTF.SanitizeColor(value, default)
+    if type(value) == "string" and value:match("^%x%x%x%x%x%x%x%x$") then
+        return value:lower()
+    end
+    return default
+end
+
+-- A slot's saved color as r, g, b from 0 to 1.
+function WTF.SlotColor(key)
+    local hex = WTF.db.tracker.colors[key]
+    return tonumber(hex:sub(3, 4), 16) / 255, tonumber(hex:sub(5, 6), 16) / 255, tonumber(hex:sub(7, 8), 16) / 255
+end
+
+WTF.PLATE_DOTS_OFFSET_MIN = 0
+WTF.PLATE_DOTS_OFFSET_MAX = 120
+-- Clears the name and EllesmereUI's debuff icons above it (author-tested in client:
+-- 4 covered the name, 40 the icons, 50 cleared both).
+WTF.DEFAULT_PLATE_DOTS_OFFSET = 50
+
+function WTF.SanitizePlateDotsOffset(value)
+    if not IsWholeNumber(value) then
+        return WTF.DEFAULT_PLATE_DOTS_OFFSET
+    end
+    return math.max(WTF.PLATE_DOTS_OFFSET_MIN, math.min(WTF.PLATE_DOTS_OFFSET_MAX, value))
+end
+
+-- Nightfall sound choices (Alerts): demon chirps and laughs by file ID, from
+-- the game's sound files as Leatrix Sounds lists them for this client
+-- (sound/creature/demonfelimp and hellish_imp), and three interface sounds by
+-- path. A number is a file ID, a string a file path.
+WTF.NIGHTFALL_SOUNDS = {
+    {key = "implaugh1", label = "Imp laugh 1", file = 639142},
+    {key = "implaugh2", label = "Imp laugh 2", file = 639144},
+    {key = "implaugh3", label = "Imp laugh 3", file = 639146},
+    {key = "implaugh4", label = "Imp laugh 4", file = 639148},
+    {key = "implaugh5", label = "Imp laugh 5", file = 639150},
+    {key = "implaugh6", label = "Imp laugh 6", file = 639152},
+    {key = "implaugh7", label = "Imp laugh 7", file = 639154},
+    {key = "impfunny", label = "Imp chuckle", file = 639140},
+    {key = "impattack1", label = "Imp attack chirp 1", file = 639100},
+    {key = "impattack2", label = "Imp attack chirp 2", file = 639104},
+    {key = "impspell", label = "Imp spell chirp", file = 639156},
+    {key = "hellishimp1", label = "Hellish imp 1", file = 1281685},
+    {key = "hellishimp2", label = "Hellish imp 2", file = 1281691},
+    {key = "raidwarning", label = "Raid warning", file = "Sound\\Interface\\RaidWarning.ogg"},
+    {key = "readycheck", label = "Ready check", file = "Sound\\Interface\\ReadyCheck.ogg"},
+    {key = "alarm", label = "Alarm clock", file = "Sound\\Interface\\AlarmClockWarning3.ogg"},
+}
+-- The author's pick after auditioning; players audition the rest.
+WTF.DEFAULT_NIGHTFALL_SOUND = "impspell"
+
+local ANNOUNCE_SWITCHES = {"summonGroup", "summonWhisper", "soulstoneGroup", "soulstoneWhisper",
+    "healthstoneWhisper"}
 
 function WTF.SanitizeDB(db)
     if type(db) ~= "table" then
@@ -145,12 +242,57 @@ function WTF.SanitizeDB(db)
         report = shards.report ~= false,
     }
     local stones = type(db.stones) == "table" and db.stones or {}
+    local soulstone = type(stones.soulstone) == "table" and stones.soulstone or nil
     db.stones = {
         enabled = stones.enabled ~= false,
         shown = stones.shown ~= false,
         locked = stones.locked == true,
         position = SanitizePosition(stones.position),
+        macros = stones.macros ~= false,
+        remindSoulstone = stones.remindSoulstone ~= false,
+        remindHealthstone = stones.remindHealthstone ~= false,
+        soulstone = soulstone and type(soulstone.name) == "string" and type(soulstone.ends) == "number"
+            and {name = soulstone.name, ends = soulstone.ends} or nil,
     }
+    local tracker = type(db.tracker) == "table" and db.tracker or {}
+    db.tracker = {
+        enabled = tracker.enabled ~= false,
+        placeholders = tracker.placeholders == true,
+        locked = tracker.locked == true,
+        position = SanitizePosition(tracker.position),
+        -- Bars by default (author-approved).
+        theme = tracker.theme == "compact" and "compact" or "bars",
+        plateDots = tracker.plateDots == true,
+        plateDotsOffset = WTF.SanitizePlateDotsOffset(tracker.plateDotsOffset),
+        colors = {},
+        onPlates = {},
+        colorsVersion = COLORS_VERSION,
+    }
+    for _, key in ipairs({"lastBane", "lastCurse", "lastControl"}) do
+        db.tracker[key] = type(tracker[key]) == "string" and tracker[key] or nil
+    end
+    local colors = type(tracker.colors) == "table" and tracker.colors or {}
+    local onPlates = type(tracker.onPlates) == "table" and tracker.onPlates or {}
+    for _, slot in ipairs(WTF.DOT_SLOTS) do
+        local color = WTF.SanitizeColor(colors[slot.key], slot.color)
+        if (tracker.colorsVersion or 1) < COLORS_VERSION and color == OLD_DEFAULT_COLORS[slot.key] then
+            color = slot.color
+        end
+        db.tracker.colors[slot.key] = color
+        if type(onPlates[slot.key]) == "boolean" then
+            db.tracker.onPlates[slot.key] = onPlates[slot.key]
+        else
+            db.tracker.onPlates[slot.key] = slot.plate
+        end
+    end
+    local alerts = type(db.alerts) == "table" and db.alerts or {}
+    local sound = WTF.DEFAULT_NIGHTFALL_SOUND
+    for _, choice in ipairs(WTF.NIGHTFALL_SOUNDS) do
+        if choice.key == alerts.nightfallSound then
+            sound = choice.key
+        end
+    end
+    db.alerts = {nightfall = alerts.nightfall == true, nightfallSound = sound}
     local announce = type(db.announce) == "table" and db.announce or {}
     local cleanAnnounce = {
         enabled = announce.enabled ~= false,
@@ -160,7 +302,11 @@ function WTF.SanitizeDB(db)
         cleanAnnounce[key] = announce[key] ~= false
     end
     for key, default in pairs(WTF.ANNOUNCE_DEFAULTS) do
-        cleanAnnounce[key] = WTF.SanitizeAnnouncement(announce[key], default)
+        local text = announce[key]
+        if IsOldDefault(key, text) then
+            text = default
+        end
+        cleanAnnounce[key] = WTF.SanitizeAnnouncement(text, default)
     end
     db.announce = cleanAnnounce
     return db
@@ -179,6 +325,54 @@ local function FindSlashConflict()
             end
         end
     end
+end
+
+-- Hardware input. The client lets AddOns delete or move items only during a
+-- key press or click, so such work waits for the next one. Core hooks every
+-- key press and every click on the game world, as RestedXP does for its junk
+-- deletion; the keyboard frame passes every key on to the game and is enabled
+-- only after the client confirms that.
+local inputHandlers, nextInput = {}, {}
+
+function WTF.AddInputHandler(handler)
+    inputHandlers[#inputHandlers + 1] = handler
+end
+
+-- Runs once, at the next key press or click.
+function WTF.RunOnNextInput(action)
+    nextInput[#nextInput + 1] = action
+end
+
+local function OnInput()
+    for _, handler in ipairs(inputHandlers) do
+        handler()
+    end
+    if #nextInput > 0 then
+        local actions = nextInput
+        nextInput = {}
+        for _, action in ipairs(actions) do
+            action()
+        end
+    end
+end
+
+local function InstallInputHooks()
+    local keys = CreateFrame("Frame", nil, UIParent)
+    if type(keys.SetPropagateKeyboardInput) == "function"
+        and type(keys.GetPropagateKeyboardInput) == "function" then
+        keys:SetPropagateKeyboardInput(true)
+        if keys:GetPropagateKeyboardInput() then
+            keys:SetScript("OnKeyDown", OnInput)
+            keys:EnableKeyboard(true)
+        end
+    end
+    WorldFrame:HookScript("OnMouseDown", OnInput)
+end
+
+-- /wtf reset: the Stones bar and the DoT tracker back to their default places.
+function WTF.ResetPositions()
+    WTF.ResetStonesPosition()
+    WTF.ResetTrackerPosition()
 end
 
 SLASH_WARLOCKTOOLSFOREVER1 = PRIMARY_SLASH
@@ -225,8 +419,12 @@ events:SetScript("OnEvent", function(self, event, loadedName)
     end
     -- Called directly rather than from each file's own PLAYER_LOGIN handler,
     -- so startup never depends on event handler order.
+    InstallInputHooks()
     WTF.InitializeShards()
     WTF.InitializeStones()
     WTF.InitializeAnnounce()
+    WTF.InitializeTracker()
+    WTF.InitializePlateDots()
+    WTF.InitializeAlerts()
     WTF.InitializeOptions()
 end)
