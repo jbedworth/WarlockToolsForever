@@ -37,13 +37,14 @@ local REPEAT_MESSAGE_SECONDS = 0.3
 -- Seconds a requested trade waits for the trade window to open.
 local TRADE_WAIT = 10
 local TRADE_SLOT_COUNT = 6
+local TRADE_LOG_SIZE = 8
 
 local REQUIRED = {
     {"C_SpellBook", "IsSpellKnown"}, {"C_Item", "GetItemCount"}, {"C_Item", "GetItemInfo"},
     {"_G", "InitiateTrade"}, {"_G", "ClickTradeButton"}, {"_G", "GetTradePlayerItemLink"},
 }
 
-local stones = {pending = false, lastMessage = nil, lastMessageTime = 0}
+local stones = {pending = false, lastMessage = nil, lastMessageTime = 0, tradeLog = {}}
 
 function WTF.CheckStoneCapabilities()
     for _, entry in ipairs(REQUIRED) do
@@ -379,15 +380,19 @@ local function FindItemSlot(itemID)
     end
 end
 
--- Whether the Healthstone WTF put in is still in your side of the trade.
-local function GiftInWindow(itemID)
-    for slot = 1, TRADE_SLOT_COUNT do
-        local link = GetTradePlayerItemLink(slot)
-        if type(link) == "string" and not WTF.IsSecret(link) and link:find("item:" .. itemID, 1, true) then
-            return true
-        end
-    end
-    return false
+-- The latest trade events, for /wtf debug_stones.
+local function LogTrade(event, ...)
+    local first, second = ...
+    table.insert(stones.tradeLog, 1, {time = GetTime(), event = event, first = WTF.Describe(first),
+        second = WTF.Describe(second)})
+    stones.tradeLog[TRADE_LOG_SIZE + 1] = nil
+end
+
+-- The gift whisper goes when the trade window opens for a trade the
+-- Healthstone button started (author's choice), not on completion.
+local function WhisperGift(trade)
+    stones.lastGift = trade.whisperTo or trade.target or "nobody (no target name)"
+    WTF.WhisperHealthstoneGift(trade.target, trade.whisperTo)
 end
 
 local function FreeTradeSlot()
@@ -434,7 +439,6 @@ function PlaceTradeStone(retry)
         end
         return
     end
-    stones.gift = {itemID = trade.itemID, target = trade.target, whisperTo = trade.whisperTo}
     stones.pendingTrade = nil
     WTF.Report("Healthstone in the trade window. Press Trade to give it.")
 end
@@ -706,10 +710,13 @@ end
 
 local events = CreateFrame("Frame")
 events:SetScript("OnEvent", function(_, event, ...)
+    if event == "TRADE_SHOW" or event == "TRADE_CLOSED" then
+        LogTrade(event, ...)
+    end
     if event == "TRADE_SHOW" then
-        stones.gift = nil
         local trade = stones.pendingTrade
         if trade and GetTime() - trade.time <= TRADE_WAIT then
+            WhisperGift(trade)
             PlaceTradeStone(false)
         else
             stones.pendingTrade = nil
@@ -717,24 +724,6 @@ events:SetScript("OnEvent", function(_, event, ...)
         return
     elseif event == "TRADE_CLOSED" then
         stones.pendingTrade = nil
-        return
-    elseif event == "TRADE_ACCEPT_UPDATE" then
-        -- Any change to the trade resets both accepts, so the last check
-        -- before completion sees the final contents.
-        if stones.gift then
-            stones.gift.inWindow = GiftInWindow(stones.gift.itemID)
-        end
-        return
-    elseif event == "UI_INFO_MESSAGE" then
-        -- The game confirms a completed trade with ERR_TRADE_COMPLETE; the
-        -- order of TRADE_CLOSED and this message is not relied on.
-        local _, message = ...
-        local gift = stones.gift
-        if gift and gift.inWindow and type(ERR_TRADE_COMPLETE) == "string" and not WTF.IsSecret(message)
-            and message == ERR_TRADE_COMPLETE then
-            stones.gift = nil
-            WTF.WhisperHealthstoneGift(gift.target, gift.whisperTo)
-        end
         return
     elseif event == "ADDON_ACTION_BLOCKED" or event == "ADDON_ACTION_FORBIDDEN" then
         if ... == addonName and stones.placing then
@@ -812,7 +801,7 @@ function WTF.InitializeStones()
     end
     for _, event in ipairs({"BAG_UPDATE_DELAYED", "SPELLS_CHANGED", "PLAYER_TARGET_CHANGED",
         "PLAYER_REGEN_ENABLED", "GET_ITEM_INFO_RECEIVED", "PLAYER_LEVEL_UP", "TRADE_SHOW", "TRADE_CLOSED",
-        "TRADE_ACCEPT_UPDATE", "UI_INFO_MESSAGE", "ADDON_ACTION_BLOCKED", "ADDON_ACTION_FORBIDDEN", "PLAYER_ENTERING_WORLD", "GROUP_JOINED"}) do
+        "ADDON_ACTION_BLOCKED", "ADDON_ACTION_FORBIDDEN", "PLAYER_ENTERING_WORLD", "GROUP_JOINED"}) do
         events:RegisterEvent(event)
     end
     for _, event in ipairs({"UNIT_SPELLCAST_SENT", "UNIT_SPELLCAST_SUCCEEDED"}) do
@@ -871,6 +860,12 @@ function WTF.ReportStoneDebug()
     local healthRank = WTF.HealthstoneRankForTarget()
     WTF.Report(string.format("debug_stones targetLevel=%s healthstoneRank=%s pending=%s",
         tostring(FriendlyPlayerLevel()), tostring(healthRank and healthRank.spell), tostring(stones.pending)))
+    WTF.Report(string.format("debug_stones lastGiftWhisper=%s", tostring(stones.lastGift)))
+    local now = GetTime()
+    for _, entry in ipairs(stones.tradeLog) do
+        WTF.Report(string.format("debug_stones trade %.1fs ago %s %s %s", now - entry.time, entry.event,
+            entry.first, entry.second))
+    end
     local _, numCharacter = GetNumMacros()
     WTF.Report(string.format("debug_stones macros enabled=%s available=%s missing=%s limit=%s used=%s",
         tostring(WTF.db.stones.macros), tostring(macros.available), tostring(macros.missing),

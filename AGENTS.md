@@ -74,6 +74,9 @@ module only after the author agrees its behavior.
   silently turned the macros off in client. Missing macro APIs are reported
   once. "Keep stone macros"
   (default on) turned off deletes them.
+- Spellstone and Firestone buttons and reminders are agreed future scope.
+  Until built, the Stones page shows four greyed-out "(Coming soon)"
+  switches (author-approved) that are never on and save nothing.
 - Healthstone middle-click (author-approved): `type3` item action for the best
   Healthstone carried, whatever the target.
 - Healthstones are unique per rank, so the create rank skips ranks already
@@ -128,10 +131,10 @@ module only after the author agrees its behavior.
   to the new defaults at login. Group means raid, else
   party, else nothing; Say is optional. SAY outdoors needs a hardware event and
   the success event is not one, so a blocked Say is reported once.
-- The Healthstone gift whisper goes to the friendly target named when the
-  trade was started, once, only when WTF placed the stone, it was still in
-  the window at the last `TRADE_ACCEPT_UPDATE`, and `UI_INFO_MESSAGE` brings
-  `ERR_TRADE_COMPLETE`. A new `TRADE_SHOW` forgets it.
+- The Healthstone gift whisper goes when the trade window opens
+  (`TRADE_SHOW` within 10 s of the button's trade), to the friendly target
+  named at the click, once, before WTF places the stone (author's choice:
+  not on completion, which in client sent nothing).
 - Texts are trimmed, single-line, at most 255 bytes, else the default. The
   Announce settings subpage is a canvas page with edit boxes.
 - If Forever adds meeting stones, announce that one is up (agreed, not built).

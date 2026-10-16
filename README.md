@@ -46,8 +46,8 @@ A small bar with a Soulstone and a Healthstone button. Drag it to move it (out
 of combat); lock it in the settings; `/wtf reset` puts it back.
 
 - **Left-click** uses the best stone you carry. A Soulstone goes on your
-  friendly target, or on you without one; Soulstones cannot be applied in
-  combat. A Healthstone is used on you, except with a friendly player
+  friendly target, grouped or not, or on you without one; Soulstones cannot
+  be applied in combat. A Healthstone is used on you, except with a friendly player
   targeted: then left-click **trades** them the best Healthstone they can use
   (you press **Trade** yourself), or, if you carry none for their level,
   creates one; left-click again to trade it.
@@ -66,6 +66,8 @@ of combat); lock it in the settings; `/wtf reset` puts it back.
   Turn **Keep stone macros** off on the Stones settings page to remove them.
   (On Forever, `/click` macros do not press AddOn buttons, so these macros
   use the game's own `/use` and `/cast`.)
+- Spellstone and Firestone buttons and reminders are planned; they show as
+  greyed-out **Coming soon** switches on the Stones settings page.
 - The game lets the buttons change only out of combat, so a stone made or used
   in combat updates them when combat ends.
 - **Stone status:** WTF remembers who has your Soulstone and says in chat when
@@ -78,8 +80,8 @@ of combat); lock it in the settings; `/wtf reset` puts it back.
 
 When your Ritual of Summoning starts, or a Soulstone use on another player
 succeeds, WTF tells your group and whispers the target. For a summon, the
-target is the player you have targeted. When someone accepts a Healthstone
-you trade with the Healthstone button, WTF whispers them. Each of the five
+target is the player you have targeted. When the trade window opens for a
+Healthstone you trade with the Healthstone button, WTF whispers the player. Each of the five
 messages has its own switch and text in **Options → AddOns → Warlock Tools Forever → Announce**:
 `%T` is the target's full name ("First Last", as the game shows it) and `%Z`
 your zone.

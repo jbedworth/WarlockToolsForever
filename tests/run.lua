@@ -185,7 +185,6 @@ local function fixture(options)
     -- The trade window: six slots; placing an item may need a key press or click.
     state.tradeSlots = {}
     env.InitiateTrade = function(unit) state.tradeWith = unit end
-    env.ERR_TRADE_COMPLETE = "Trade complete."
     env.GetTradePlayerItemLink = function(slot)
         if state.tradeSlots[slot] then return "item:" .. state.tradeSlots[slot] end
     end
@@ -1590,6 +1589,24 @@ test("the stone tooltip explains both clicks and the macro name", function()
     contains(state.tooltip[3], "Right-click: create Lesser Soulstone.")
     contains(state.tooltip[5], "the \"! Soulstone\" macro")
 end)
+test("Spellstone and Firestone show as greyed-out Coming soon switches", function()
+    local state = fixture()
+    for _, variable in ipairs({"WTF_STONES_SPELLSTONE", "WTF_STONES_FIRESTONE", "WTF_STONES_REMIND_SPELLSTONE",
+        "WTF_STONES_REMIND_FIRESTONE"}) do
+        local setting = state.settings[variable]
+        contains(setting.name, "(Coming soon)")
+        equal(setting:GetValue(), false)
+        setting:SetValue(true)
+        equal(setting:GetValue(), false, "never turns on")
+    end
+    local disabled = 0
+    for _, initializer in ipairs(state.categories.Stones.initializers) do
+        local predicate = initializer.modifyPredicates[1]
+        if predicate and predicate() == false then disabled = disabled + 1 end
+    end
+    equal(disabled, 4)
+    equal(state.wtf.db.stones.spellstone, nil, "nothing saved")
+end)
 test("debug_stones lists ranks, carried stones, and level requirements", function()
     local state = stonesFixture()
     state.clear()
@@ -1641,47 +1658,39 @@ test("without a Healthstone they can use, left-click creates one for them", func
     health.scripts.OnEnter(health)
     contains(state.tooltip[2], "then left-click again to trade it")
 end)
-test("a completed Healthstone trade whispers the recipient, with credit", function()
+test("the Healthstone gift whisper goes when the trade window opens", function()
     local state = stonesFixture({carried = {[5511] = 1}, bags = bagWith(5511),
         units = {target = {name = "Meatrod", surname = "Theog", player = true, friend = true, level = 20}}})
     state.clickButton(HEALTH, "LeftButton")
+    equal(#state.sent, 0, "nothing before the window opens")
     state.emit("TRADE_SHOW")
-    state.emit("TRADE_ACCEPT_UPDATE", 1, 0)
-    equal(#state.sent, 0, "nothing before the trade completes")
-    state.emit("TRADE_CLOSED")
-    state.emit("UI_INFO_MESSAGE", 0, "Trade complete.")
     equal(#state.sent, 1)
     equal(state.sent[1].chatType, "WHISPER")
     equal(state.sent[1].target, "Meatrod-Theog")
     equal(state.sent[1].message, "Here, have a Healthstone. Some poor creature's essence gives you more health! Courtesy of Warlock Tools Forever (WTF)")
-    state.emit("UI_INFO_MESSAGE", 0, "Trade complete.")
-    equal(#state.sent, 1, "once per trade")
-end)
-test("no gift whisper for a cancelled trade, a removed stone, or with it off", function()
-    local options = {carried = {[5511] = 1}, bags = bagWith(5511),
-        units = {target = {name = "Lowbie", player = true, friend = true, level = 20}}}
-    local state = stonesFixture(options)
-    state.clickButton(HEALTH, "LeftButton")
-    state.emit("TRADE_SHOW")
     state.emit("TRADE_CLOSED")
     state.emit("TRADE_SHOW")
-    state.emit("TRADE_ACCEPT_UPDATE", 1, 1)
-    state.emit("UI_INFO_MESSAGE", 0, "Trade complete.")
-    equal(#state.sent, 0, "a later trade WTF did not fill")
-    local removed = stonesFixture(options)
-    removed.clickButton(HEALTH, "LeftButton")
-    removed.emit("TRADE_SHOW")
-    removed.tradeSlots[1] = nil
-    removed.emit("TRADE_ACCEPT_UPDATE", 1, 1)
-    removed.emit("UI_INFO_MESSAGE", 0, "Trade complete.")
-    equal(#removed.sent, 0, "you took the stone back out")
+    equal(#state.sent, 1, "a later trade WTF did not start gets none")
+    state.clear()
+    state.slash("debug_stones")
+    local text = table.concat(state.messages, "|")
+    contains(text, "lastGiftWhisper=Meatrod-Theog")
+    contains(text, "TRADE_SHOW")
+end)
+test("no gift whisper for a late window, or with it off", function()
+    local options = {carried = {[5511] = 1}, bags = bagWith(5511),
+        units = {target = {name = "Lowbie", player = true, friend = true, level = 20}}}
+    local late = stonesFixture(options)
+    late.clickButton(HEALTH, "LeftButton")
+    late.now = late.now + 30
+    late.emit("TRADE_SHOW")
+    equal(#late.sent, 0)
     local off = stonesFixture(options)
     off.wtf.db.announce.healthstoneWhisper = false
     off.clickButton(HEALTH, "LeftButton")
     off.emit("TRADE_SHOW")
-    off.emit("TRADE_ACCEPT_UPDATE", 1, 1)
-    off.emit("UI_INFO_MESSAGE", 0, "Trade complete.")
     equal(#off.sent, 0)
+    equal(off.tradeSlots[1], 5511, "the stone still goes in")
 end)
 test("saved texts that match an old default gain the credit; edited ones do not", function()
     local state = fixture({db = {announce = {summonGroupText = "Summoning >> %T << click please",
@@ -1996,6 +2005,9 @@ test("the Announce page edits texts, switches, and the channel", function()
     row.edit.text = "typing"
     row.edit.scripts.OnEscapePressed(row.edit)
     equal(row.edit.text, "Port >> %T <<", "Escape undoes the edit")
+    row.edit.text = "Port >> %T <<\nnow"
+    row.edit.scripts.OnEnterPressed(row.edit)
+    equal(state.wtf.db.announce.summonGroupText, "Port >> %T << now", "a stray new line becomes a space")
     row.check.checked = false
     row.check.scripts.OnClick(row.check)
     equal(state.wtf.db.announce.summonGroup, false)
