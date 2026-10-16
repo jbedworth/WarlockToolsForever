@@ -20,8 +20,8 @@ from pathlib import Path
 
 
 ADDON = "WarlockToolsForever"
-RUNTIME_FILES = ("Commands.lua", "Core.lua", "Shards.lua", "Stones.lua", "Announce.lua", "Probe.lua",
-                 "Options.lua")
+RUNTIME_FILES = ("Commands.lua", "Core.lua", "Shards.lua", "Stones.lua", "Announce.lua", "Tracker.lua",
+                 "Dots.lua", "Alerts.lua", "Probe.lua", "Options.lua")
 TEXT_FILES = (ADDON + ".toc",) + RUNTIME_FILES + ("LICENSE",)
 # Runtime textures shipped in the package. WTF uses only built-in client
 # textures, so there are none; the TGA validator stays for future assets.
@@ -276,6 +276,10 @@ def _release_notes(version, changes):
   are never deleted. Set the limit in Options > AddOns or with `/wtf options`.
 - Stones and Announce: Soulstone and Healthstone buttons, and group and whisper
   messages for your summons and Soulstones, each with its own settings page.
+- Healthstone trading, Soulstone and Healthstone reminders, and an optional
+  Nightfall sound.
+- DoT tracker: color-coded timers for your DoTs, Bane, Curse, and Fear on up to eight mobs,
+  and optional DoT dots on nameplates.
 '''
 
 

@@ -12,5 +12,8 @@ Core.lua
 Shards.lua
 Stones.lua
 Announce.lua
+Tracker.lua
+Dots.lua
+Alerts.lua
 Probe.lua
 Options.lua
