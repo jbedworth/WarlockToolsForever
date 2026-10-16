@@ -318,6 +318,8 @@ local ANNOUNCE_ROWS = {
     {switch = "soulstoneGroup", label = "Soulstone: tell the group"},
     {switch = "soulstoneWhisper", label = "Soulstone: whisper the target"},
     {switch = "healthstoneWhisper", label = "Healthstone trade: whisper the player"},
+    {switch = "healthstoneEmote", label = "Healthstone created: emote (starts with your name; once a minute)"},
+    {switch = "soulstoneEmote", label = "Soulstone created: emote (starts with your name; once a minute)"},
 }
 local PAGE_LEFT = 16
 local ROW_GAP = 10

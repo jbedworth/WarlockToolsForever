@@ -233,7 +233,8 @@ local function fixture(options)
     env.IsInGroup = function() return state.group ~= nil end
     env.GetZoneText = function() return state.zone or "Redridge Mountains" end
     env.C_ChatInfo = {SendChatMessage = function(message, chatType, _, target)
-        if chatType == "SAY" and state.sayBlocked then
+        -- As in client, an emote outside a key press or click is blocked.
+        if (chatType == "SAY" and state.sayBlocked) or (chatType == "EMOTE" and not state.hardware) then
             state.emit("ADDON_ACTION_BLOCKED", "WarlockToolsForever", "UNKNOWN()")
             return
         end
@@ -1908,6 +1909,68 @@ test("a ritual that names no target uses your friendly player target", function(
     alone.emit("UNIT_SPELLCAST_SENT", "player", "", "ritual", 698)
     alone.emit("UNIT_SPELLCAST_START", "player", "ritual", 698)
     equal(#alone.sent, 0, "no friendly player target, no announcement")
+end)
+test("creating a stone emotes on your next key press, at most once a minute per stone", function()
+    local state = fixture()
+    cast(state, 6202, "")
+    equal(#state.sent, 0, "not from the cast event, which the game blocks")
+    state.press()
+    equal(#state.sent, 1)
+    equal(state.sent[1].chatType, "EMOTE")
+    equal(state.sent[1].message, "crushes a Soul Shard and forges a Healthstone from the screaming essence within. - via Warlock Tools Forever (WTF)")
+    cast(state, 5699, "")
+    state.press()
+    equal(#state.sent, 1, "a second Healthstone within the minute stays quiet")
+    cast(state, 693, "")
+    state.press()
+    equal(state.sent[2].message, "binds a captured soul into a Soulstone. Someone's afterlife just got an escape hatch. - via Warlock Tools Forever (WTF)")
+    state.press()
+    equal(#state.sent, 2, "sent once")
+    state.now = state.now + 61
+    cast(state, 6201, "")
+    state.now = state.now + 31
+    state.press()
+    equal(#state.sent, 2, "dropped when no key press came soon")
+    state.now = state.now + 61
+    cast(state, 6201, "", "UNIT_SPELLCAST_FAILED")
+    state.press()
+    equal(#state.sent, 2, "a failed cast sends nothing")
+    local off = fixture()
+    off.wtf.db.announce.healthstoneEmote = false
+    cast(off, 6201, "")
+    off.press()
+    equal(#off.sent, 0)
+end)
+test("debug_emote tries both chat functions from a timer and reports each", function()
+    local state = fixture()
+    state.env.SendChatMessage = function(message, chatType)
+        state.sent[#state.sent + 1] = {message = message, chatType = chatType, global = true}
+    end
+    state.slash("debug_emote")
+    state.clear()
+    state.now = state.now + 3
+    state.runTimers()
+    local text = table.concat(state.messages, "|")
+    contains(text, "debug_emote C_ChatInfo.SendChatMessage from a timer: blocked")
+    contains(text, "debug_emote SendChatMessage from a timer: not blocked")
+    equal(#state.sent, 1)
+    equal(state.sent[1].global, true)
+    equal(state.sent[1].chatType, "EMOTE")
+end)
+test("a blocked emote is reported once", function()
+    local state = fixture()
+    state.env.C_ChatInfo.SendChatMessage = function()
+        state.emit("ADDON_ACTION_BLOCKED", "WarlockToolsForever", "UNKNOWN()")
+    end
+    cast(state, 6201, "")
+    state.press()
+    state.now = state.now + 61
+    cast(state, 6201, "")
+    state.press()
+    local text = table.concat(state.messages, "|")
+    contains(text, "The game blocked the emote message. Turn it off in the Announce settings.")
+    local _, count = text:gsub("blocked the emote", "")
+    equal(count, 1)
 end)
 test("whispers go to the full First-Last name", function()
     -- In client, "Meatrod Theog" got no whisper: "No player named 'Meatrod'".

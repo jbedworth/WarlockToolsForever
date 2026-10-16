@@ -161,6 +161,15 @@ the automated test method, and the in-client checklist.
   yet `/click` macros still did nothing, for any AddOn button: on Forever
   `/click` does not press AddOn buttons. WTF writes stone macros with the
   game's own `/use` and `/cast` instead, as Consumable Connoisseur does.
+- The Healthstone gift whisper went out as the trade window opened, and the
+  Soulstone whisper reached the target.
+- An emote sent from Create Soulstone's `UNIT_SPELLCAST_SUCCEEDED` was
+  blocked ("The game blocked the emote message"), so emotes wait for the next
+  key press or click. `/wtf debug_emote` found an emote from a timer blocked
+  through both `C_ChatInfo.SendChatMessage` and the global
+  `SendChatMessage`, although RestedXP's solo level-up emote, sent with the
+  global from `PLAYER_LEVEL_UP`, goes out. The queued emote went out on the
+  next key press (moving) and on a world click.
 - A Soulstone applied to a friendly player outside your group, as before
   patch 2.1.0, which added the group requirement on other clients.
 - From the Healthstone button's PostClick, `InitiateTrade("target")` opened
@@ -261,8 +270,8 @@ and printing.
       with the zone. A Soulstone on a party member: the party line and the
       author's whisper. On yourself: nothing. Default texts credit
       Warlock Tools Forever (WTF).
-- [ ] Trade a Healthstone with the button: the player gets one whisper as the
-      trade window opens; `/wtf debug_stones` shows the trade events.
+- [ ] Create a Healthstone outdoors, then press a key: one emote; a second
+      within a minute stays quiet. The same for a Soulstone.
 - [ ] The Announce page edits, Enter and Escape, switches, the Say choice, and
       Defaults work and survive `/reload`.
 - [ ] DoT two mobs with Corruption, a Bane, and a Curse: the target's timers
