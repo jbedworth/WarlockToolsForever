@@ -52,7 +52,7 @@ Per-file changelogs need no manual text: each CI upload uses the version's
 
 ### Announce
 - When your Ritual of Summoning or a Soulstone use succeeds, tell your raid or party ("The ritual hungers! Click the portal to drag >> %T << through the Twisting Nether") and whisper the target.
-- When someone accepts a Healthstone you trade with the button, whisper them a thank-you.
+- When the trade window opens for a Healthstone you give with the button, whisper the player.
 - Every message has its own switch and editable text. The defaults credit Warlock Tools Forever (WTF); change them to anything you like.
 
 ### DoT tracker

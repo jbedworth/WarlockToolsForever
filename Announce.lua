@@ -2,7 +2,7 @@ local addonName, WTF = ...
 
 -- Announce: tell your group (or say it) and whisper the target when your
 -- Ritual of Summoning starts, or when a Soulstone use on someone succeeds;
--- whisper whoever accepts a Healthstone trade from the Stones button.
+-- whisper the player when a Healthstone trade from the Stones button opens.
 -- The target's name comes from the cast's UNIT_SPELLCAST_SENT event; a summon
 -- falls back to your friendly player target, since the ritual creates a portal
 -- and may not name one. Nothing is sent for yourself, and a Soulstone cast

@@ -161,6 +161,8 @@ the automated test method, and the in-client checklist.
   yet `/click` macros still did nothing, for any AddOn button: on Forever
   `/click` does not press AddOn buttons. WTF writes stone macros with the
   game's own `/use` and `/cast` instead, as Consumable Connoisseur does.
+- A Soulstone applied to a friendly player outside your group, as before
+  patch 2.1.0, which added the group requirement on other clients.
 - From the Healthstone button's PostClick, `InitiateTrade("target")` opened
   a trade and `ClickTradeButton` from `TRADE_SHOW` placed the stone in the
   window.
@@ -185,22 +187,20 @@ the automated test method, and the in-client checklist.
    nameplates), whether Forever's Bane auras match by name-derived spell IDs
    (`/wtf debug_tracker`), whether Fear and control show, and whether `UnitIsDead` and
    `UNIT_HEALTH` stay readable for nameplate units in combat.
-3. Whether a completed trade brings `UI_INFO_MESSAGE` with
-    `ERR_TRADE_COMPLETE`, which the Healthstone gift whisper waits for.
-4. Forever's Soulstone duration (30 minutes in Classic) and Shadow Trance spell
+3. Forever's Soulstone duration (30 minutes in Classic) and Shadow Trance spell
     ID (17941 in Classic); whether the three interface sound files exist.
-5. Whether `DeleteCursorItem` from a key press or world click works in combat
+4. Whether `DeleteCursorItem` from a key press or world click works in combat
    (RestedXP's users report deletion in and out of combat).
-6. Whether shards stack.
-7. Whether Shadowburn's shard arrives within its 9-second window, and whether
+5. Whether shards stack.
+6. Whether Shadowburn's shard arrives within its 9-second window, and whether
    any other source creates shards (the gain log). Forever's spell list and
    talents (wowhandbook.com, talentsforever.com) name Shadowburn's shard.
-8. Whether the `INV_Misc_Gem_Amethyst_02` TOC icon and the `INV_Misc_Orb_04`
+7. Whether the `INV_Misc_Gem_Amethyst_02` TOC icon and the `INV_Misc_Orb_04`
    and `INV_Stone_04` fallback stone icons render.
-9. Forever's Create Soulstone and Create Healthstone spell IDs, stone item IDs,
+8. Forever's Create Soulstone and Create Healthstone spell IDs, stone item IDs,
    and Healthstone level requirements (`/wtf debug_stones`); the tables hold
    Classic's IDs.
-10. Whether Say from a cast event is blocked outdoors, and which actions block
+9. Whether Say from a cast event is blocked outdoors, and which actions block
    accepting a summon (flying, trading, combat, death).
 
 ## Automated tests
@@ -261,8 +261,8 @@ and printing.
       with the zone. A Soulstone on a party member: the party line and the
       author's whisper. On yourself: nothing. Default texts credit
       Warlock Tools Forever (WTF).
-- [ ] Trade a Healthstone with the button and accept: the recipient gets one
-      whisper. Cancel, or take the stone out first: no whisper.
+- [ ] Trade a Healthstone with the button: the player gets one whisper as the
+      trade window opens; `/wtf debug_stones` shows the trade events.
 - [ ] The Announce page edits, Enter and Escape, switches, the Say choice, and
       Defaults work and survive `/reload`.
 - [ ] DoT two mobs with Corruption, a Bane, and a Curse: the target's timers

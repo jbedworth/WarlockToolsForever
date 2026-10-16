@@ -52,6 +52,18 @@ local function Flag(page, variable, name, group, key, default, tooltip, onChange
     return Settings.CreateCheckbox(page, setting, tooltip)
 end
 
+-- A greyed-out checkbox for a planned feature (author-approved): never on,
+-- never saved.
+local function ComingSoon(page, variable, name, tooltip)
+    local setting = Proxy(page, variable, Settings.VarType.Boolean, name .. " (Coming soon)", false,
+        function() return false end, function() end)
+    local initializer = Settings.CreateCheckbox(page, setting, tooltip)
+    if type(initializer.AddModifyPredicate) == "function" then
+        initializer:AddModifyPredicate(function() return false end)
+    end
+    return initializer
+end
+
 local function RefreshStones()
     if WTF.RefreshStones then
         WTF.RefreshStones()
@@ -109,11 +121,19 @@ local function AddStonesPage(parent)
         "Keep \"! Healthstone\" and \"! Soulstone\" in your character macros for your action bars: "
             .. "left-click uses your best stone, right-click creates one. Turning this off deletes them.",
         function() WTF.ApplyStoneMacros() end)
+    ComingSoon(page, "WTF_STONES_SPELLSTONE", "Spellstone button",
+        "A Spellstone button and macro: left-click uses it, right-click creates one.")
+    ComingSoon(page, "WTF_STONES_FIRESTONE", "Firestone button",
+        "A Firestone button and macro: left-click uses it, right-click creates one.")
     Flag(page, "WTF_STONES_REMIND_SOULSTONE", "Soulstone reminders", "stones", "remindSoulstone", true,
         "Say in chat when your Soulstone ends, and when none is up: on entering an instance, joining a group, "
             .. "or after a fight, at most every 10 minutes.")
     Flag(page, "WTF_STONES_REMIND_HEALTHSTONE", "Healthstone reminders", "stones", "remindHealthstone", true,
         "Say in chat when you carry no Healthstone, at the same times.")
+    ComingSoon(page, "WTF_STONES_REMIND_SPELLSTONE", "Spellstone reminders",
+        "Say in chat when you carry no Spellstone, at the same times.")
+    ComingSoon(page, "WTF_STONES_REMIND_FIRESTONE", "Firestone reminders",
+        "Say in chat when you carry no Firestone, at the same times.")
 end
 
 local function RefreshTracker()
@@ -297,12 +317,24 @@ local ANNOUNCE_ROWS = {
     {switch = "summonWhisper", label = "Ritual of Summoning: whisper the target"},
     {switch = "soulstoneGroup", label = "Soulstone: tell the group"},
     {switch = "soulstoneWhisper", label = "Soulstone: whisper the target"},
-    {switch = "healthstoneWhisper", label = "Healthstone trade: whisper who accepts it"},
+    {switch = "healthstoneWhisper", label = "Healthstone trade: whisper the player"},
 }
 local PAGE_LEFT = 16
 local ROW_GAP = 10
 local EDIT_INDENT = 8
 local EDIT_WIDTH = 560
+local PAGE_BOTTOM = 16
+local SCROLL_BAR_SPACE = 28
+-- Three lines show the longest default text whole (author's request).
+local EDIT_LINES = 3
+local EDIT_LINE_HEIGHT = 14
+local EDIT_PADDING = 6
+local EDIT_BACKDROP = {
+    bgFile = "Interface\\Buttons\\WHITE8X8",
+    edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+    edgeSize = 12,
+    insets = {left = 3, right = 3, top = 3, bottom = 3},
+}
 
 local function Text(parent, font, text)
     local label = parent:CreateFontString(nil, "ARTWORK", font)
@@ -321,20 +353,28 @@ end
 local function CreateAnnouncePage()
     local page = CreateFrame("Frame")
     page.rows, page.channels = {}, {}
-    local title = Text(page, "GameFontHighlightHuge", ANNOUNCE_TITLE)
+    -- The rows are taller than the Settings panel, so they scroll.
+    local scroll = CreateFrame("ScrollFrame", nil, page, "UIPanelScrollFrameTemplate")
+    scroll:SetPoint("TOPLEFT", 0, -4)
+    scroll:SetPoint("BOTTOMRIGHT", -SCROLL_BAR_SPACE, 4)
+    local content = CreateFrame("Frame", nil, scroll)
+    content:SetSize(EDIT_WIDTH + 2 * PAGE_LEFT, 1)
+    scroll:SetScrollChild(content)
+    page.scroll, page.content = scroll, content
+    local title = Text(content, "GameFontHighlightHuge", ANNOUNCE_TITLE)
     title:SetPoint("TOPLEFT", PAGE_LEFT, -16)
-    local help = Text(page, "GameFontHighlightSmall",
+    local help = Text(content, "GameFontHighlightSmall",
         "%T is the target's full name and %Z your zone. Press Enter to keep an edit, Escape to undo it. "
             .. "Nothing is sent for yourself or for a cast that fails.")
     help:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -8)
     help:SetWidth(EDIT_WIDTH)
 
-    local channelLabel = Text(page, "GameFontNormal", "Group messages go to")
+    local channelLabel = Text(content, "GameFontNormal", "Group messages go to")
     channelLabel:SetPoint("TOPLEFT", help, "BOTTOMLEFT", 0, -16)
     local previous = channelLabel
     for _, choice in ipairs({{value = "group", label = "Raid or party (nothing when alone)"},
         {value = "say", label = "Say (the game may block it outdoors)"}}) do
-        local radio = CheckButton(page, "UIRadioButtonTemplate", choice.label)
+        local radio = CheckButton(content, "UIRadioButtonTemplate", choice.label)
         radio:SetPoint("TOPLEFT", previous, "BOTTOMLEFT", 0, -6)
         radio.value = choice.value
         radio:SetScript("OnClick", function(self)
@@ -346,7 +386,7 @@ local function CreateAnnouncePage()
     end
 
     for index, row in ipairs(ANNOUNCE_ROWS) do
-        local check = CheckButton(page, "UICheckButtonTemplate", row.label)
+        local check = CheckButton(content, "UICheckButtonTemplate", row.label)
         if index == 1 then
             check:SetPoint("TOPLEFT", previous, "BOTTOMLEFT", 0, -18)
         else
@@ -355,14 +395,27 @@ local function CreateAnnouncePage()
         check:SetScript("OnClick", function(self)
             WTF.db.announce[row.switch] = self:GetChecked() == true
         end)
-        local edit = CreateFrame("EditBox", nil, page, "InputBoxTemplate")
-        edit:SetSize(EDIT_WIDTH, 20)
-        edit:SetPoint("TOPLEFT", check, "BOTTOMLEFT", EDIT_INDENT, -2)
+        -- A wrapping box: messages are one chat line, so Enter keeps the
+        -- edit instead of starting a new line.
+        local box = CreateFrame("Frame", nil, content, "BackdropTemplate")
+        box:SetSize(EDIT_WIDTH, EDIT_LINES * EDIT_LINE_HEIGHT + 2 * EDIT_PADDING)
+        box:SetPoint("TOPLEFT", check, "BOTTOMLEFT", EDIT_INDENT, -2)
+        box:SetBackdrop(EDIT_BACKDROP)
+        box:SetBackdropColor(0, 0, 0, 0.6)
+        box:SetBackdropBorderColor(0.5, 0.5, 0.5, 1)
+        local edit = CreateFrame("EditBox", nil, box)
+        edit:SetMultiLine(true)
+        edit:SetFontObject(ChatFontNormal)
+        edit:SetWidth(EDIT_WIDTH - 2 * EDIT_PADDING)
+        edit:SetPoint("TOPLEFT", EDIT_PADDING, -EDIT_PADDING)
         edit:SetAutoFocus(false)
         edit:SetMaxBytes(WTF.ANNOUNCE_MAX_LENGTH + 1)
+        box:EnableMouse(true)
+        box:SetScript("OnMouseDown", function() edit:SetFocus() end)
         local key = row.switch .. "Text"
         local function Commit(self)
-            WTF.db.announce[key] = WTF.SanitizeAnnouncement(self:GetText(), WTF.ANNOUNCE_DEFAULTS[key])
+            local text = self:GetText():gsub("[\r\n]+", " ")
+            WTF.db.announce[key] = WTF.SanitizeAnnouncement(text, WTF.ANNOUNCE_DEFAULTS[key])
             self:SetText(WTF.db.announce[key])
         end
         edit:SetScript("OnEnterPressed", function(self)
@@ -375,10 +428,20 @@ local function CreateAnnouncePage()
             self:ClearFocus()
         end)
         page.rows[#page.rows + 1] = {check = check, edit = edit, switch = row.switch, key = key}
-        previous = edit
+        previous = box
+    end
+    local last = previous
+
+    -- The scroll range covers the rows once they are laid out.
+    local function FitContent()
+        local top, bottom = content:GetTop(), last:GetBottom()
+        if type(top) == "number" and type(bottom) == "number" then
+            content:SetHeight(top - bottom + PAGE_BOTTOM)
+        end
     end
 
     function page:OnRefresh()
+        FitContent()
         local settings = WTF.db.announce
         for _, radio in ipairs(self.channels) do
             radio:SetChecked(settings.channel == radio.value)
@@ -417,7 +480,7 @@ function WTF.InitializeOptions()
         RefreshStones)
     Flag(category, "WTF_ANNOUNCE_ENABLED", "Announce", "announce", "enabled", true,
         "Tell your group and whisper the target when your Ritual of Summoning or a Soulstone use succeeds, "
-            .. "and whisper whoever accepts a Healthstone you trade.")
+            .. "and whisper the player when a Healthstone trade opens.")
     Flag(category, "WTF_TRACKER_ENABLED", "DoT tracker", "tracker", "enabled", true,
         "A row per mob you DoT, with the time left on your DoTs, Bane, Curse, and Fear.",
         RefreshTracker)
