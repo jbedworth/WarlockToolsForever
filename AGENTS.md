@@ -9,6 +9,14 @@ module only after the author agrees its behavior.
 
 ### Soul Shards (built)
 
+- Shard counter (author-approved, inspired by Pentacle): an unnamed plain
+  frame (not secure, so it updates and moves in combat) with the Soul Shard
+  icon and the carried count, outlined: green at or above the limit, red at
+  or below the Low shard warning setting (0-10, default 2, author's choice),
+  white between.
+  Updates on `BAG_UPDATE_DELAYED` and limit changes; on by default, with
+  show and lock switches; its place is saved per character and reset by
+  `/wtf reset`.
 - Deletes Soul Shards (item 6265) that a shard source creates above the carried
   limit, with no prompt or popup. The client allows `DeleteCursorItem` only
   during a hardware event (verified: from event handlers it raised
@@ -271,7 +279,8 @@ general frameworks, or speculative modules without agreement.
 - README.md is the user-facing overview, TESTING.md the verification method,
   source evidence, and in-client checklist, docs/RELEASE_PLAN.md the release
   process, docs/CURSEFORGE_LISTING.md the CurseForge form text, and CHANGELOG.md
-  the per-release change list.
+  the per-release change list. artwork/ holds the original logo (SVG source and
+  PNG renders) for project pages; it never enters the runtime package.
 - Documentation describes purpose, design, rules, and methodology. Do not add
   dated status reports or test-result logs to the docs; CHANGELOG.md is the
   release record.

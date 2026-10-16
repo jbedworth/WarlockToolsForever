@@ -64,6 +64,12 @@ local function ComingSoon(page, variable, name, tooltip)
     return initializer
 end
 
+local function RefreshShardCounter()
+    if WTF.RefreshShardCounter then
+        WTF.RefreshShardCounter()
+    end
+end
+
 local function RefreshStones()
     if WTF.RefreshStones then
         WTF.RefreshStones()
@@ -83,6 +89,7 @@ local function AddShardPage(parent)
             end
             shards.autoLimit = value == true
             Settings.NotifyUpdate("WTF_SHARDS_LIMIT")
+            RefreshShardCounter()
         end)
     local autoInitializer = Settings.CreateCheckbox(page, auto,
         "Keep as many Soul Shards as your soul bags hold, or 6 without a soul bag.")
@@ -95,6 +102,7 @@ local function AddShardPage(parent)
             if not WTF.db.shards.autoLimit then
                 WTF.db.shards.limit = WTF.SanitizeShardLimit(value)
             end
+            RefreshShardCounter()
         end)
     local options = Settings.CreateSliderOptions(WTF.SHARD_LIMIT_MIN, WTF.SHARD_LIMIT_MAX, 1)
     if type(MinimalSliderWithSteppersMixin) == "table" and type(options.SetLabelFormatter) == "function" then
@@ -108,6 +116,25 @@ local function AddShardPage(parent)
 
     Flag(page, "WTF_SHARDS_REPORT", "Report deletions in chat", "shards", "report", true,
         "Print one chat line for each Soul Shard WTF deletes.")
+    local counterInitializer = Flag(page, "WTF_SHARDS_COUNTER", "Show the shard counter", "shards", "counter",
+        true, "A Soul Shard icon with your shard count: red when low, green at your limit. Drag it to move it.",
+        RefreshShardCounter)
+    local low = Proxy(page, "WTF_SHARDS_COUNTER_LOW", Settings.VarType.Number, "Low shard warning",
+        WTF.DEFAULT_SHARD_LOW,
+        function() return WTF.db.shards.counterLow end,
+        function(value)
+            WTF.db.shards.counterLow = WTF.SanitizeShardLow(value)
+            RefreshShardCounter()
+        end)
+    local lowOptions = Settings.CreateSliderOptions(WTF.SHARD_LOW_MIN, WTF.SHARD_LOW_MAX, 1)
+    if type(MinimalSliderWithSteppersMixin) == "table" and type(lowOptions.SetLabelFormatter) == "function" then
+        lowOptions:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right)
+    end
+    local lowInitializer = Settings.CreateSlider(page, low, lowOptions,
+        "The counter turns red at this many Soul Shards or fewer.")
+    lowInitializer:SetParentInitializer(counterInitializer, function() return WTF.db.shards.counter end)
+    Flag(page, "WTF_SHARDS_COUNTER_LOCKED", "Lock the shard counter", "shards", "counterLocked", false,
+        "Stop the counter from being dragged. /wtf reset moves it back to its default place.")
 end
 
 local function AddStonesPage(parent)

@@ -1,0 +1,65 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024" role="img" aria-labelledby="title description">
+  <title id="title">Warlock Tools Forever</title>
+  <desc id="description">An original glowing violet pentacle, edged in gold, with a small soul gem at its heart, on a rich dark-brown field framed by a fine gold border.</desc>
+  <defs>
+    <radialGradient id="background" cx="50%" cy="42%" r="70%">
+      <stop offset="0" stop-color="#49301c"/>
+      <stop offset="0.6" stop-color="#2b190f"/>
+      <stop offset="1" stop-color="#170e09"/>
+    </radialGradient>
+    <linearGradient id="gold" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#f4d38b"/>
+      <stop offset="0.32" stop-color="#d5a956"/>
+      <stop offset="0.64" stop-color="#96703a"/>
+      <stop offset="1" stop-color="#e9bf6a"/>
+    </linearGradient>
+    <linearGradient id="violet" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#cf8cff"/>
+      <stop offset="0.5" stop-color="#8a3bd6"/>
+      <stop offset="1" stop-color="#4f178a"/>
+    </linearGradient>
+    <radialGradient id="aura" cx="50%" cy="50%" r="50%">
+      <stop offset="0" stop-color="#9b4de0" stop-opacity="0.35"/>
+      <stop offset="0.7" stop-color="#5a1a96" stop-opacity="0.22"/>
+      <stop offset="1" stop-color="#2a0b4a" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="gem" cx="40%" cy="35%" r="70%">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="0.35" stop-color="#d6a2ff"/>
+      <stop offset="1" stop-color="#5a1a96"/>
+    </radialGradient>
+    <filter id="shadow" x="-35%" y="-35%" width="170%" height="170%">
+      <feDropShadow dx="0" dy="14" stdDeviation="12" flood-color="#080502" flood-opacity="0.7"/>
+    </filter>
+    <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="12"/>
+    </filter>
+  </defs>
+  <path d="M0 0H1024V1024H0Z" fill="url(#background)"/>
+  <rect x="46" y="46" width="932" height="932" rx="94" fill="none" stroke="url(#gold)" stroke-width="5"/>
+  <rect x="62" y="62" width="900" height="900" rx="80" fill="none" stroke="#b48b45" stroke-opacity="0.28" stroke-width="2"/>
+  <path d="M512 91 L525 108 L512 125 L499 108 Z M512 899 L525 916 L512 933 L499 916 Z" fill="url(#gold)"/>
+  <!-- A violet aura behind the pentacle. -->
+  <circle cx="512" cy="480" r="360" fill="url(#aura)"/>
+  <g filter="url(#shadow)">
+    <circle cx="512" cy="480" r="300" fill="#1a0c22" fill-opacity="0.55"/>
+    <!-- Glow pass: the pentacle blurred, then drawn sharp on top. -->
+    <g filter="url(#glow)" opacity="0.55">
+      <circle cx="512" cy="480" r="300" fill="none" stroke="#b56cff" stroke-width="30"/>
+      <path d="M512.0 226.6 L660.9 685.0 L271.0 401.7 L753.0 401.7 L363.1 685.0 Z" fill="none" stroke="#b56cff" stroke-width="30" stroke-linejoin="miter"/>
+    </g>
+    <!-- Gold edges, then the violet band and star. -->
+    <circle cx="512" cy="480" r="300" fill="none" stroke="url(#gold)" stroke-width="30"/>
+    <circle cx="512" cy="480" r="300" fill="none" stroke="url(#violet)" stroke-width="22"/>
+    <path d="M512.0 226.6 L660.9 685.0 L271.0 401.7 L753.0 401.7 L363.1 685.0 Z" fill="none" stroke="url(#gold)" stroke-width="30" stroke-linejoin="miter"/>
+    <path d="M512.0 226.6 L660.9 685.0 L271.0 401.7 L753.0 401.7 L363.1 685.0 Z" fill="none" stroke="url(#violet)" stroke-width="22" stroke-linejoin="miter"/>
+    <!-- Fine outer and inner rings, as on the other Forever logos. -->
+    <circle cx="512" cy="480" r="338" fill="none" stroke="#f0ca78" stroke-opacity="0.45" stroke-width="2"/>
+    <circle cx="512" cy="480" r="350" fill="none" stroke="#b48b45" stroke-opacity="0.35" stroke-width="2" stroke-dasharray="3 12"/>
+    <!-- Soul gem at the heart. -->
+    <circle cx="512" cy="480" r="46" fill="#b56cff" opacity="0.6" filter="url(#glow)"/>
+    <path d="M512 436 L544 480 L512 524 L480 480 Z" fill="url(#gem)" stroke="url(#gold)" stroke-width="6" stroke-linejoin="round"/>
+  </g>
+  <path d="M359 850H457 M567 850H665" fill="none" stroke="#b98e47" stroke-opacity="0.5" stroke-width="3" stroke-linecap="round"/>
+  <path d="M512 837 L524 850 L512 863 L500 850 Z" fill="url(#gold)"/>
+</svg>

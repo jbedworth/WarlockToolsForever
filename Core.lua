@@ -57,7 +57,7 @@ end
 local REQUIRED_NAMESPACE = {
     "ParseCommand", "HandleCommand",
     "CheckShardCapabilities", "InitializeShards", "ReportShardStatus", "ReportShardDebug",
-    "DebugDeleteShard",
+    "DebugDeleteShard", "RefreshShardCounter", "ResetShardCounterPosition",
     "CheckStoneCapabilities", "InitializeStones", "ResetStonesPosition", "ReportStoneDebug",
     "ReportStoneStatus", "RemindStones", "ApplyStoneMacros", "AddInputHandler", "RunOnNextInput", "ReportClickDebug",
     "InitializeAnnounce", "FormatAnnouncement", "ReportAnnounceDebug", "DebugEmote", "FriendlyTargetNames",
@@ -93,6 +93,11 @@ end
 WTF.SHARD_LIMIT_MIN = 1
 WTF.SHARD_LIMIT_MAX = 60
 WTF.DEFAULT_SHARD_LIMIT = 6
+-- The shard counter turns red at or below this. Two by default: one
+-- Soulstone, one Healthstone, and one summon take three shards.
+WTF.SHARD_LOW_MIN = 0
+WTF.SHARD_LOW_MAX = 10
+WTF.DEFAULT_SHARD_LOW = 2
 
 local function IsWholeNumber(value)
     return type(value) == "number" and value == math.floor(value)
@@ -103,6 +108,13 @@ function WTF.SanitizeShardLimit(value)
         return WTF.DEFAULT_SHARD_LIMIT
     end
     return math.max(WTF.SHARD_LIMIT_MIN, math.min(WTF.SHARD_LIMIT_MAX, value))
+end
+
+function WTF.SanitizeShardLow(value)
+    if not IsWholeNumber(value) then
+        return WTF.DEFAULT_SHARD_LOW
+    end
+    return math.max(WTF.SHARD_LOW_MIN, math.min(WTF.SHARD_LOW_MAX, value))
 end
 
 -- Chat messages longer than this are cut by the client.
@@ -243,6 +255,10 @@ function WTF.SanitizeDB(db)
         autoLimit = shards.autoLimit ~= false,
         limit = WTF.SanitizeShardLimit(shards.limit),
         report = shards.report ~= false,
+        counter = shards.counter ~= false,
+        counterLocked = shards.counterLocked == true,
+        counterLow = WTF.SanitizeShardLow(shards.counterLow),
+        counterPosition = SanitizePosition(shards.counterPosition),
     }
     local stones = type(db.stones) == "table" and db.stones or {}
     local soulstone = type(stones.soulstone) == "table" and stones.soulstone or nil
@@ -374,6 +390,7 @@ end
 
 -- /wtf reset: the Stones bar and the DoT tracker back to their default places.
 function WTF.ResetPositions()
+    WTF.ResetShardCounterPosition()
     WTF.ResetStonesPosition()
     WTF.ResetTrackerPosition()
 end

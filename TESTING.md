@@ -246,6 +246,10 @@ and printing.
       first key press after combat if the client refuses in combat.
 - [ ] Typing in chat, movement keys, and key bindings all still work with WTF
       loaded (the key hook passes every key on).
+- [ ] The shard counter shows your count, red at or below the Low shard warning and
+      green at your limit, legible on the icon; it
+      updates as shards come and go, also in combat. Drag, lock, hide, and
+      `/wtf reset` it; its place survives `/reload`.
 - [ ] Move shards from the bank above the limit: none are deleted. Then Drain
       Soul once: only the new shard is deleted.
 - [ ] Hold an item on the cursor while a shard is created: nothing is deleted

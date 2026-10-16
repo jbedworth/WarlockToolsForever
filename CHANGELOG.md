@@ -8,6 +8,7 @@ notes and the CurseForge changelog, and fails if that section is missing.
 
 - First public beta for WoW: Forever.
 - Soul Shard management: shards that Drain Soul or Shadowburn creates above your limit are deleted with no prompt, on your next key press or click (the game allows item deletion only then). Shards you move into your bags yourself are never deleted.
+- Shard counter: a movable Soul Shard icon with your shard count, red when low (a setting, 2 by default) and green at your limit.
 - The limit matches your soul bags' size, including a soul bag in the reagent bag slot, or 6 without a soul bag; you can set your own in Options > AddOns > Warlock Tools Forever > Soul Shards.
 - Stones: a movable bar with Soulstone and Healthstone buttons. Left-click uses your best stone (a Soulstone on your friendly target, or yourself); right-click creates your best rank, and the Healthstone button creates the best rank your friendly player target can use.
 - Announce: when your Ritual of Summoning starts, or a Soulstone use on another player succeeds, tell your raid or party and whisper the target. Each message has its own switch and editable text.
