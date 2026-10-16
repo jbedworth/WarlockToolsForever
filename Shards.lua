@@ -17,6 +17,18 @@ local SHARD_SOURCES = {
     {id = 17877, window = 9},  -- Shadowburn
 }
 local GAIN_LOG_SIZE = 10
+-- The shard counter: a movable Soul Shard icon with your count.
+local COUNTER_SIZE = 40
+-- The icon is dimmed and the number enlarged so red and green read on the
+-- bright shard (in client, red on the magenta icon was hard to read).
+local COUNTER_ICON_SHADE = 0.45
+local COUNTER_FONT_GROWTH = 2
+local COUNTER_DEFAULT_POINT = {"CENTER", "CENTER", -260, -160}
+local COUNTER_ICON = "Interface\\Icons\\INV_Misc_Gem_Amethyst_02"
+local GOLD = {1, 0.82, 0}
+local WHITE = {1, 1, 1}
+local RED = {1, 0.2, 0.2}
+local GREEN = {0.3, 1, 0.3}
 
 local REQUIRED_CONTAINER = {
     "GetContainerNumSlots", "GetContainerNumFreeSlots", "GetContainerItemInfo",
@@ -263,10 +275,111 @@ local function OnInput()
     end
 end
 
+local counter
+
+local function CounterColor(count)
+    if count >= WTF.GetShardLimit() then
+        return GREEN
+    elseif count <= WTF.db.shards.counterLow then
+        return RED
+    end
+    return WHITE
+end
+
+-- Green at or above your limit, red at or below the low setting, white between.
+function WTF.RefreshShardCounter()
+    if not counter then
+        return
+    end
+    if not WTF.db.shards.counter then
+        counter:Hide()
+        return
+    end
+    local count = WTF.CountShards()
+    local color = CounterColor(count)
+    counter.count:SetText(count)
+    counter.count:SetTextColor(color[1], color[2], color[3])
+    counter:Show()
+end
+
+local function PlaceCounter()
+    local position = WTF.db.shards.counterPosition
+    counter:ClearAllPoints()
+    if position then
+        counter:SetPoint(position.point, UIParent, position.relativePoint, position.x, position.y)
+    else
+        local point = COUNTER_DEFAULT_POINT
+        counter:SetPoint(point[1], UIParent, point[2], point[3], point[4])
+    end
+end
+
+local function ShowCounterTooltip(frame)
+    local limit, source = WTF.GetShardLimit()
+    GameTooltip:SetOwner(frame, "ANCHOR_RIGHT")
+    GameTooltip:SetText("Soul Shards")
+    GameTooltip:AddLine(string.format("%d of %d (%s limit)", WTF.CountShards(), limit, source), 1, 1, 1)
+    if not WTF.db.shards.counterLocked then
+        GameTooltip:AddLine("Drag to move. /wtf reset moves it back.", 0.7, 0.7, 0.7, true)
+    end
+    GameTooltip:Show()
+end
+
+-- A plain frame, not a secure one, so it moves and updates in combat too.
+local function CreateCounter()
+    counter = CreateFrame("Frame", nil, UIParent)
+    WTF.shardCounter = counter
+    counter:SetSize(COUNTER_SIZE, COUNTER_SIZE)
+    counter:SetClampedToScreen(true)
+    counter:SetMovable(true)
+    counter:EnableMouse(true)
+    counter:RegisterForDrag("LeftButton")
+    counter.icon = counter:CreateTexture(nil, "ARTWORK")
+    counter.icon:SetAllPoints()
+    counter.icon:SetTexCoord(0.07, 0.93, 0.07, 0.93)
+    local icon = type(C_Item.GetItemIconByID) == "function" and C_Item.GetItemIconByID(SOUL_SHARD_ITEM_ID)
+    counter.icon:SetTexture(icon or COUNTER_ICON)
+    counter.icon:SetVertexColor(COUNTER_ICON_SHADE, COUNTER_ICON_SHADE, COUNTER_ICON_SHADE)
+    local border = CreateFrame("Frame", nil, counter, "BackdropTemplate")
+    border:SetPoint("TOPLEFT", -3, 3)
+    border:SetPoint("BOTTOMRIGHT", 3, -3)
+    border:SetBackdrop({edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border", edgeSize = 10})
+    border:SetBackdropBorderColor(GOLD[1], GOLD[2], GOLD[3])
+    counter.count = counter:CreateFontString(nil, "OVERLAY", "NumberFontNormalHuge")
+    counter.count:SetPoint("CENTER", 0, 0)
+    -- A thick outline and a shadow keep red and green legible on the icon.
+    local font, size = counter.count:GetFont()
+    if font then
+        counter.count:SetFont(font, size + COUNTER_FONT_GROWTH, "THICKOUTLINE")
+    end
+    counter.count:SetShadowColor(0, 0, 0, 1)
+    counter.count:SetShadowOffset(1, -1)
+    counter:SetScript("OnDragStart", function(self)
+        if not WTF.db.shards.counterLocked then
+            self:StartMoving()
+        end
+    end)
+    counter:SetScript("OnDragStop", function(self)
+        self:StopMovingOrSizing()
+        local point, _, relativePoint, x, y = self:GetPoint()
+        WTF.db.shards.counterPosition = {point = point, relativePoint = relativePoint, x = x, y = y}
+    end)
+    counter:SetScript("OnEnter", ShowCounterTooltip)
+    counter:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    PlaceCounter()
+end
+
+function WTF.ResetShardCounterPosition()
+    WTF.db.shards.counterPosition = nil
+    if counter then
+        PlaceCounter()
+    end
+end
+
 local function OnBagsChanged()
     local slots, count = Scan()
     local gains = FindGains(state.slots, slots)
     state.slots = slots
+    WTF.RefreshShardCounter()
     if #gains > 0 then
         local created = InCreationWindow()
         local amount = 0
@@ -333,6 +446,8 @@ function WTF.InitializeShards()
         WTF.Report("Drain Soul was not found, so Soul Shard deletion stays off. Run /wtf debug_shards.")
     end
     state.slots = Scan()
+    CreateCounter()
+    WTF.RefreshShardCounter()
     WTF.AddInputHandler(OnInput)
     for _, event in ipairs({"BAG_UPDATE_DELAYED", "PLAYER_ENTERING_WORLD",
         "ADDON_ACTION_BLOCKED", "ADDON_ACTION_FORBIDDEN"}) do

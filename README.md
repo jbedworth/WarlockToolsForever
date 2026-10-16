@@ -39,6 +39,11 @@ every key on to the game unchanged.
   deletion, WTF puts the shard back, says so once, and stops deleting until
   you `/reload`.
 - Each deletion prints one chat line; you can turn that off.
+- **Shard counter:** a Soul Shard icon on screen with your shard count: red
+  when low (2 or fewer by default; **Low shard warning** sets it), green at
+  your limit. Hover it for the count and the limit; drag it
+  where you want it. Lock it or hide it on the Soul Shards settings page, and
+  `/wtf reset` moves it back.
 
 ## Stones
 
