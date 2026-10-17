@@ -154,7 +154,7 @@ WTF.ANNOUNCE_DEFAULTS = {
     soulstoneEmoteText = "binds a captured soul into a Soulstone. Someone's afterlife just got an escape hatch. - via Warlock Tools Forever (WTF)",
     healthstoneWhisperText = "Here, have a Healthstone. Some poor creature's essence gives you more health! Courtesy of Warlock Tools Forever (WTF)",
     -- Control (author-approved): %T the mob, %M its raid marker in chat.
-    fearGroupText = "Fearing >> %T << %M. Let it run; chase it and you bring friends" .. WTF.ANNOUNCE_CREDIT,
+    fearGroupText = "Fearing >> %T <<. Let it run; chase it and you bring friends" .. WTF.ANNOUNCE_CREDIT,
     banishGroupText = "Banishing >> %T << %M to the Twisting Nether. Hands off until it comes back" .. WTF.ANNOUNCE_CREDIT,
     enslaveGroupText = "Enslaving >> %T <<. It works for me now; leave my new pet alone" .. WTF.ANNOUNCE_CREDIT,
     howlGroupText = "Howl of Terror! Everything nearby is about to run screaming" .. WTF.ANNOUNCE_CREDIT,

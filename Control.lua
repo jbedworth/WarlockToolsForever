@@ -12,8 +12,11 @@ local _, WTF = ...
 -- dies or the longest such spell could have ended. A dim line stays behind
 -- each bar, so a spell that broke early shows as gone.
 --
--- On cast, WTF can tell the group (Announce) and, when the cast succeeds,
--- mark the mob with a raid marker chosen per spell. The combat log is closed,
+-- On cast, WTF can tell the group (Announce) and, when a single-target
+-- control spell (Banish) succeeds, mark the mob with the moon (author-approved:
+-- the marker tells the group the mob is out of the fight, and one marker slot
+-- is all WTF should take in a group, so Fear, often on several mobs, marks
+-- nothing). The combat log is closed,
 -- so a resist cannot be seen; a successful cast counts as landed.
 --
 -- Clicking a row recasts its spell on its mob: a secure macro targets the mob
@@ -26,8 +29,8 @@ local _, WTF = ...
 -- Demon and Howl of Terror only announce: an enslaved demon is your pet, and
 -- Howl of Terror has no single target.
 WTF.CONTROL_SPELLS = {
-    {key = "fear", label = "Fear", ids = {5782, 6213, 6215}, longest = 20, bar = true, marker = 0},
-    {key = "banish", label = "Banish", ids = {710, 18647}, longest = 30, bar = true, marker = 3},
+    {key = "fear", label = "Fear", ids = {5782, 6213, 6215}, longest = 20, bar = true},
+    {key = "banish", label = "Banish", ids = {710, 18647}, longest = 30, bar = true, marker = 5},
     {key = "enslave", label = "Enslave Demon", ids = {1098, 11725, 11726}},
     {key = "howl", label = "Howl of Terror", ids = {5484, 17928}, untargeted = true},
 }
@@ -43,6 +46,8 @@ WTF.RAID_MARKERS = {
     {index = 7, label = "Cross", code = "{cross}"},
     {index = 8, label = "Skull", code = "{skull}"},
 }
+local MARKERS_VERSION = 2
+local OLD_BANISH_MARKER = 3
 WTF.CONTROL_SCALE_MIN = 50
 WTF.CONTROL_SCALE_MAX = 150
 WTF.CONTROL_SCALE_STEP = 5
@@ -100,10 +105,16 @@ function WTF.SanitizeControl(saved, sanitizePosition)
     saved = type(saved) == "table" and saved or {}
     local markers = type(saved.markers) == "table" and saved.markers or {}
     local clean = {enabled = saved.enabled ~= false, position = sanitizePosition(saved.position),
-        scale = WTF.SanitizeControlScale(saved.scale), markers = {}}
+        scale = WTF.SanitizeControlScale(saved.scale), markers = {}, markersVersion = MARKERS_VERSION}
     for _, spell in ipairs(WTF.CONTROL_SPELLS) do
-        if spell.bar then
-            clean.markers[spell.key] = ValidMarker(markers[spell.key]) and markers[spell.key] or spell.marker
+        if spell.marker then
+            local marker = ValidMarker(markers[spell.key]) and markers[spell.key] or spell.marker
+            -- Banish's first default was the diamond; it moves to the moon once.
+            if (saved.markersVersion or 1) < MARKERS_VERSION and marker == OLD_BANISH_MARKER
+                and spell.key == "banish" then
+                marker = spell.marker
+            end
+            clean.markers[spell.key] = marker
         end
     end
     return clean
@@ -431,7 +442,7 @@ end
 -- Casts --------------------------------------------------------------------------
 
 local function MarkerCode(spell)
-    local index = spell.bar and WTF.db.control.markers[spell.key] or 0
+    local index = spell.marker and WTF.db.control.markers[spell.key] or 0
     for _, marker in ipairs(WTF.RAID_MARKERS) do
         if marker.index == index then
             return marker.code or ""

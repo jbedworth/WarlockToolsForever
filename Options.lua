@@ -265,7 +265,7 @@ local function AddControlPage(parent)
         return container:GetData()
     end
     for _, spell in ipairs(WTF.CONTROL_SPELLS) do
-        if spell.bar then
+        if spell.marker then
             local marker = Proxy(page, "WTF_CONTROL_MARKER_" .. spell.key:upper(), Settings.VarType.Number,
                 spell.label .. " marker", spell.marker,
                 function() return WTF.db.control.markers[spell.key] end,
@@ -555,8 +555,8 @@ local ANNOUNCE_ROWS = {
     {switch = "healthstoneWhisper", label = "Healthstone trade: whisper the player"},
     {switch = "healthstoneEmote", label = "Healthstone created: emote (starts with your name; once a minute)"},
     {switch = "soulstoneEmote", label = "Soulstone created: emote (starts with your name; once a minute)"},
-    {switch = "fearGroup", label = "Fear: tell the group as you start casting (%M: its marker)"},
-    {switch = "banishGroup", label = "Banish: tell the group as you start casting (%M: its marker)"},
+    {switch = "fearGroup", label = "Fear: tell the group as you start casting"},
+    {switch = "banishGroup", label = "Banish: tell the group as you start casting (%M: its moon)"},
     {switch = "enslaveGroup", label = "Enslave Demon: tell the group as you start casting"},
     {switch = "howlGroup", label = "Howl of Terror: tell the group"},
 }

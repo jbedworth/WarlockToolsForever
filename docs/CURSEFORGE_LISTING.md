@@ -67,7 +67,7 @@ Per-file changelogs need no manual text: each CI upload uses the version's
 ### Control bar
 - Tracker with a countdown bar for each mob you fear or banish.
 - Each bar tracks the time left on the effect.
-- Banish marks its mob with the diamond (pick any marker per spell), and Fear, Banish, Enslave Demon, and Howl of Terror can tell your group as you cast.
+- Banish marks its mob with the moon so your group leaves it alone, and Fear, Banish, Enslave Demon, and Howl of Terror can tell your group as you cast.
 - Click a row to cast it on that mob again.
 
 ### Cooldown chimes

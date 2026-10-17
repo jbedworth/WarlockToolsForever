@@ -312,8 +312,8 @@ and printing.
       in chat.
 - [ ] Control bar: Fear two mobs and Banish a third: a row each, draining,
       following the mobs as you tab, empty when one breaks, gone when it
-      dies. Banish puts the diamond on its mob. In a party, each cast starts
-      with its group message (Banish with {diamond} as an icon). Fear a mob
+      dies. Banish puts the moon on its mob; Fear marks nothing. In a party, each
+      cast starts with its group message (Banish with {moon} as an icon). Fear a mob
       before the pull, then click its row in combat after it breaks: it
       recasts on that mob and returns to your target; with the mob gone,
       nothing is cast. `/wtf debug_control` lists the IDs (check Forever's).

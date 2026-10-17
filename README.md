@@ -166,8 +166,9 @@ left, in the same style as the DoT tracker's Bars theme. Several mobs at once
 are fine. It follows each mob as you change target, empties when the spell
 breaks early, and goes when the mob dies.
 
-- **Raid markers:** a mob you Banish gets the diamond when the cast lands.
-  Pick a marker (or none) for Fear and Banish on the Control settings page.
+- **Raid marker:** a mob you Banish gets the moon when the cast lands, so your
+  group knows it is out of the fight (change it on the Control settings page).
+  Fear marks nothing, so WTF uses only one marker slot in a group.
 - **Group messages:** Fear, Banish, Enslave Demon, and Howl of Terror can tell
   your party or raid as you start casting, with the mob's name and marker
   (Announce page).

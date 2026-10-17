@@ -307,8 +307,10 @@ module only after the author agrees its behavior.
   row. A row goes when the mob dies, after the longest such spell plus 5 s
   (Fear 20, Banish 30), or never when the cast fails.
 - A raid marker per spell when the cast succeeds (Control page; Banish
-  diamond, Fear none by default; skipped when already set). %M puts its chat
-  code in the message ("{diamond}"), and is dropped with its space when none.
+  moon by default; author-approved: single-target control only, one marker
+  slot in a group, so Fear never marks and has no marker setting; skipped
+  when already set). %M puts its chat code in the message ("{moon}"). An
+  earlier default diamond moves to the moon once (`markersVersion`).
 - Click to recast: each row has a fixed secure click slot under it
   (`WarlockToolsForeverControlClick1`..5) with `/cleartarget`, `/targetexact
   <mob>`, `/cast [@target,harm,nodead] <spell>`, `/targetlasttarget`, set
