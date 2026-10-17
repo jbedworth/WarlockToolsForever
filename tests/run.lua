@@ -731,12 +731,30 @@ local function fixture(options)
     end
 
     for _, name in ipairs(options.remove or {}) do env[name] = nil end
+    -- Other AddOns shipping Shield.lua, as MTF does: {addon, version, before};
+    -- each gets its own namespace, and a test initializes it or not.
+    state.copies = {}
+    local function loadShieldCopy(spec)
+        local source = assert(io.open("Shield.lua")):read("*a")
+        source = source:gsub("local VERSION = %d+", "local VERSION = " .. spec.version)
+        local chunk = assert(loadstring(source, "=" .. spec.addon .. "/Shield.lua"))
+        setfenv(chunk, env)
+        local namespace = {}
+        chunk(spec.addon, namespace)
+        state.copies[spec.addon] = namespace
+    end
+    for _, spec in ipairs(options.shieldCopies or {}) do
+        if spec.before then loadShieldCopy(spec) end
+    end
     state.wtf = {}
     for _, path in ipairs(options.files or RUNTIME_FILES) do
         local chunk, message = loadfile(path)
         if not chunk then error(message) end
         setfenv(chunk, env)
         chunk("WarlockToolsForever", state.wtf)
+    end
+    for _, spec in ipairs(options.shieldCopies or {}) do
+        if not spec.before then loadShieldCopy(spec) end
     end
     env.WarlockToolsForeverDB = options.db
     state.env = env
@@ -2081,6 +2099,39 @@ test("each chime has its own sound from the Cooldown Manager's catalog, and choo
     state.clear()
     state.slash("debug_chimes")
     contains(state.messages[1], "debug_chimes deathcoil name=Death Coil")
+end)
+
+test("a copy registered first whose AddOn stays off does not keep WTF's display away", function()
+    -- MTF loads first (folder order) but stays off on a Warlock.
+    local state = fixture({shieldCopies = {{addon = "MageToolsForever", version = 2, before = true}}})
+    equal(state.wtf.ShieldDisplay.IsOwner(), true, "only running copies take part")
+    equal(state.wtf.ShieldDisplay.frame ~= nil, true, "WTF draws the ring")
+    state.clear()
+    state.slash("debug_shield")
+    contains(table.concat(state.messages, "|"),
+        "owner=WarlockToolsForever copies=MageToolsForever v2, WarlockToolsForever v2 (running)")
+end)
+test("a newer running copy takes over, and WTF says which AddOn shows the display", function()
+    local state = fixture({shieldCopies = {{addon = "ShieldForever", version = 3}}})
+    equal(state.wtf.ShieldDisplay.frame ~= nil, true, "drawing while it is the only one running")
+    local other = state.copies.ShieldForever.ShieldDisplay
+    other.Initialize({settings = function() return other.Sanitize({}) end, report = function() end})
+    equal(state.wtf.ShieldDisplay.frame, nil, "WTF stood down")
+    equal(other.frame ~= nil, true, "the newer copy draws")
+    contains(state.last(), "The shield display is shown by ShieldForever")
+end)
+test("a Warlock's icon row holds Shadow Ward, Sacrifice, and Power Word: Shield, one spot each", function()
+    local state = fixture()
+    local ring = state.wtf.ShieldDisplay.frame
+    local keys = {}
+    for _, slot in ipairs(ring.icons.slots) do keys[#keys + 1] = slot.key end
+    table.sort(keys)
+    equal(table.concat(keys, ","), "powerwordshield,sacrifice,shadowward", "no Mage shields")
+    local ward, sacrifice, shield = ring.iconButtons.shadowward, ring.iconButtons.sacrifice,
+        ring.iconButtons.powerwordshield
+    local x1, x2, x3 = ward.points[1][4], sacrifice.points[1][4], shield.points[1][4]
+    equal(x2 - x1, x3 - x2, "evenly spaced")
+    equal(x1 < x2, true, "never on top of each other; your own shields first")
 end)
 
 test("a frame dropped near another snaps beside it, 20 apart and lined up", function()
