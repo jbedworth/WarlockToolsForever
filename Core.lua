@@ -501,7 +501,7 @@ function WTF.Lock()
     WTF.SetFramesLocked(true)
 end
 
--- /wtf reset: the Stones bar and the DoT tracker back to their default places.
+-- /wtf reset: the Stones bar, the DoT tracker, and the shard counter back to their default places.
 function WTF.ResetPositions()
     WTF.ResetShardCounterPosition()
     WTF.ResetStonesPosition()
