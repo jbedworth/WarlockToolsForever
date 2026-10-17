@@ -50,6 +50,21 @@ local function GroupChannel()
     end
 end
 
+-- A group message as the other announcements send it: raid or party (or Say
+-- when chosen), nothing when alone, and only while Announce is on. Returns
+-- whether it was sent.
+function WTF.SendGroupAnnouncement(message)
+    if not WTF.db.announce.enabled then
+        return false
+    end
+    local channel = GroupChannel()
+    if not channel then
+        return false
+    end
+    SendChat(message, channel)
+    return true
+end
+
 function WTF.FormatAnnouncement(text, target)
     local zone = GetZoneText() or ""
     -- gsub replacement strings treat % specially, so escape names first.

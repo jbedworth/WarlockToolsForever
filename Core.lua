@@ -12,6 +12,17 @@ function WTF.Report(message)
     DEFAULT_CHAT_FRAME:AddMessage("WTF: " .. tostring(message))
 end
 
+-- An action that failed: said in chat and in red at the top of the screen,
+-- so a click never fails silently (author-approved, as MTF does).
+local WARNING_COLOR = {1, 0.1, 0.1}
+
+function WTF.Warn(message)
+    WTF.Report(message)
+    if type(UIErrorsFrame) == "table" and type(UIErrorsFrame.AddMessage) == "function" then
+        UIErrorsFrame:AddMessage("WTF: " .. tostring(message), WARNING_COLOR[1], WARNING_COLOR[2], WARNING_COLOR[3])
+    end
+end
+
 -- Combat data can be a secret value on the target client: code may store and
 -- pass it on, but never compare, concatenate, or print it.
 function WTF.IsSecret(value)
@@ -60,17 +71,27 @@ local REQUIRED_NAMESPACE = {
     "DebugDeleteShard", "RefreshShardCounter", "ResetShardCounterPosition",
     "CheckStoneCapabilities", "InitializeStones", "ResetStonesPosition", "ReportStoneDebug", "RefreshStonesMover",
     "ReportStoneStatus", "RemindStones", "ApplyStoneMacros", "AddInputHandler", "RunOnNextInput", "ReportClickDebug",
-    "InitializeAnnounce", "FormatAnnouncement", "ReportAnnounceDebug", "DebugEmote", "FriendlyTargetNames",
+    "Warn", "RegisterMovable", "BeginDrag", "EndDrag", "ScaleKeepingCenter",
+    "InitializeReminders", "RefreshReminders", "ResetRemindersPosition", "ReportRemindersDebug",
+    "SanitizeReminders", "SendGroupAnnouncement", "CharacterMacrosAvailable", "WriteCharacterMacro",
+    "DeleteCharacterMacro", "ApplyControlMacros",
+    "InitializeControl", "RefreshControl", "ResetControlPosition", "ReportControlDebug", "SanitizeControl", "InitializeAnnounce", "FormatAnnouncement", "ReportAnnounceDebug", "DebugEmote", "FriendlyTargetNames",
     "WhisperHealthstoneGift",
     "CheckTrackerCapabilities", "InitializeTracker", "ResetTrackerPosition", "RefreshTracker",
     "ReportTrackerDebug", "TrackerCandidateFilters", "TrackerKnowsSlot", "SetTrackerTheme",
     "InitializePlateDots", "RefreshPlateDots", "HasTrackableDots", "ApplyTrackerColors", "ApplyDotColors",
     "InitializeAlerts", "ApplyNightfallSound", "PreviewNightfallSound", "HasNightfallSound",
-    "ReportRestrictions",
+    "InitializeChimes", "PreviewChime", "ReportChimesDebug", "SanitizeChimes", "AvailableChimeSounds",
+    "ChimeSoundGroups", "ChimeSoundParts", "ChimeSoundLabel",
+    "ReportRestrictions", "InitializeShield", "RefreshShield", "ResetShieldPosition", "ReportShieldDebug",
     "InitializeOptions", "OpenSettings",
 }
 
 local function CheckInstalledFiles()
+    if type(WTF.ShieldDisplay) ~= "table" or type(WTF.ShieldDisplay.Initialize) ~= "function" then
+        return false, "AddOn files are from different versions (missing Shield.lua). Reinstall every "
+            .. "Warlock Tools Forever file, then restart the client."
+    end
     for _, name in ipairs(REQUIRED_NAMESPACE) do
         if type(WTF[name]) ~= "function" then
             return false, "AddOn files are from different versions (missing " .. name
@@ -133,6 +154,11 @@ WTF.ANNOUNCE_DEFAULTS = {
     healthstoneEmoteText = "crushes a Soul Shard and forges a Healthstone from the screaming essence within. - via Warlock Tools Forever (WTF)",
     soulstoneEmoteText = "binds a captured soul into a Soulstone. Someone's afterlife just got an escape hatch. - via Warlock Tools Forever (WTF)",
     healthstoneWhisperText = "Here, have a Healthstone. Some poor creature's essence gives you more health! Courtesy of Warlock Tools Forever (WTF)",
+    -- Control (author-approved): %T the mob, %M its raid marker in chat.
+    fearGroupText = "Fearing >> %T <<. Let it run; chase it and you bring friends" .. WTF.ANNOUNCE_CREDIT,
+    banishGroupText = "Banishing >> %T << %M to the Twisting Nether. Hands off until it comes back" .. WTF.ANNOUNCE_CREDIT,
+    enslaveGroupText = "Enslaving >> %T <<. It works for me now; leave my new pet alone" .. WTF.ANNOUNCE_CREDIT,
+    howlGroupText = "Howl of Terror! Everything nearby is about to run screaming" .. WTF.ANNOUNCE_CREDIT,
 }
 -- Saved copies of earlier defaults, never edited, become the new ones.
 local OLD_ANNOUNCE_DEFAULTS = {
@@ -220,30 +246,33 @@ end
 -- Nightfall sound choices (Alerts): demon chirps and laughs by file ID, from
 -- the game's sound files as Leatrix Sounds lists them for this client
 -- (sound/creature/demonfelimp and hellish_imp), and three interface sounds by
--- path. A number is a file ID, a string a file path.
+-- path. A number is a file ID, a string a file path. Labels are "Group: Name"
+-- for the nested menu. The game's aura sounds take only sound files, not the
+-- Cooldown Manager's sound kits, so the cooldown chimes' catalog is not here.
 WTF.NIGHTFALL_SOUNDS = {
-    {key = "implaugh1", label = "Imp laugh 1", file = 639142},
-    {key = "implaugh2", label = "Imp laugh 2", file = 639144},
-    {key = "implaugh3", label = "Imp laugh 3", file = 639146},
-    {key = "implaugh4", label = "Imp laugh 4", file = 639148},
-    {key = "implaugh5", label = "Imp laugh 5", file = 639150},
-    {key = "implaugh6", label = "Imp laugh 6", file = 639152},
-    {key = "implaugh7", label = "Imp laugh 7", file = 639154},
-    {key = "impfunny", label = "Imp chuckle", file = 639140},
-    {key = "impattack1", label = "Imp attack chirp 1", file = 639100},
-    {key = "impattack2", label = "Imp attack chirp 2", file = 639104},
-    {key = "impspell", label = "Imp spell chirp", file = 639156},
-    {key = "hellishimp1", label = "Hellish imp 1", file = 1281685},
-    {key = "hellishimp2", label = "Hellish imp 2", file = 1281691},
-    {key = "raidwarning", label = "Raid warning", file = "Sound\\Interface\\RaidWarning.ogg"},
-    {key = "readycheck", label = "Ready check", file = "Sound\\Interface\\ReadyCheck.ogg"},
-    {key = "alarm", label = "Alarm clock", file = "Sound\\Interface\\AlarmClockWarning3.ogg"},
+    {key = "implaugh1", label = "Imp: Laugh 1", file = 639142},
+    {key = "implaugh2", label = "Imp: Laugh 2", file = 639144},
+    {key = "implaugh3", label = "Imp: Laugh 3", file = 639146},
+    {key = "implaugh4", label = "Imp: Laugh 4", file = 639148},
+    {key = "implaugh5", label = "Imp: Laugh 5", file = 639150},
+    {key = "implaugh6", label = "Imp: Laugh 6", file = 639152},
+    {key = "implaugh7", label = "Imp: Laugh 7", file = 639154},
+    {key = "impfunny", label = "Imp: Chuckle", file = 639140},
+    {key = "impattack1", label = "Imp: Attack chirp 1", file = 639100},
+    {key = "impattack2", label = "Imp: Attack chirp 2", file = 639104},
+    {key = "impspell", label = "Imp: Spell chirp", file = 639156},
+    {key = "hellishimp1", label = "Hellish imp: Cackle 1", file = 1281685},
+    {key = "hellishimp2", label = "Hellish imp: Cackle 2", file = 1281691},
+    {key = "raidwarning", label = "Interface: Raid warning", file = "Sound\\Interface\\RaidWarning.ogg"},
+    {key = "readycheck", label = "Interface: Ready check", file = "Sound\\Interface\\ReadyCheck.ogg"},
+    {key = "alarm", label = "Interface: Alarm clock", file = "Sound\\Interface\\AlarmClockWarning3.ogg"},
 }
 -- The author's pick after auditioning; players audition the rest.
 WTF.DEFAULT_NIGHTFALL_SOUND = "impspell"
 
 local ANNOUNCE_SWITCHES = {"summonGroup", "summonWhisper", "soulstoneGroup", "soulstoneWhisper",
-    "healthstoneWhisper", "healthstoneEmote", "soulstoneEmote"}
+    "healthstoneWhisper", "healthstoneEmote", "soulstoneEmote", "fearGroup", "banishGroup", "enslaveGroup",
+    "howlGroup"}
 
 function WTF.SanitizeDB(db)
     if type(db) ~= "table" then
@@ -327,8 +356,24 @@ function WTF.SanitizeDB(db)
     -- One lock for every frame (author-approved, as MTF), locked by default;
     -- each frame reads its own copy, and the tracker shows its sample rows
     -- while unlocked, since it can only be dragged while it shows.
+    if WTF.SanitizeChimes then
+        db.chimes = WTF.SanitizeChimes(db.chimes)
+    end
+    if WTF.SanitizeReminders then
+        db.reminders = WTF.SanitizeReminders(db.reminders, SanitizePosition)
+    end
+    if WTF.SanitizeControl then
+        db.control = WTF.SanitizeControl(db.control, SanitizePosition)
+    end
+    -- The shield display is a self-contained component; it owns its defaults.
+    if WTF.ShieldDisplay then
+        db.shield = WTF.ShieldDisplay.Sanitize(db.shield)
+    end
     db.locked = db.locked ~= false
     db.grid = db.grid ~= false
+    if type(db.shield) == "table" then
+        db.shield.locked = db.locked
+    end
     db.stones.locked = db.locked
     db.tracker.locked = db.locked
     db.tracker.placeholders = not db.locked
@@ -475,20 +520,45 @@ end
 
 -- /wtf unlock and /wtf lock, and the main page's "Unlock frames to move them":
 -- every movable WTF frame together (author-approved, as MTF does).
+-- The shield display (Shield.lua) is a component MTF ships too; WTF hands it
+-- WTF's settings and chat, and it decides whether this copy draws. With both
+-- AddOns installed, one display shows, from the newest copy.
+function WTF.InitializeShield()
+    WTF.ShieldDisplay.Initialize({settings = function() return WTF.db.shield end, report = WTF.Report,
+        unlockHint = "Drag to move · /wtf lock when done"})
+end
+
+function WTF.RefreshShield()
+    WTF.ShieldDisplay.Refresh()
+    WTF.ShieldDisplay.ApplyBreakSound()
+end
+
+function WTF.ResetShieldPosition()
+    WTF.ShieldDisplay.ResetPosition()
+end
+
+function WTF.ReportShieldDebug()
+    WTF.ShieldDisplay.ReportDebug(WTF.Report)
+end
+
 function WTF.SetFramesLocked(locked)
     WTF.db.locked = locked
     WTF.db.stones.locked = locked
     WTF.db.tracker.locked = locked
     WTF.db.tracker.placeholders = not locked
     WTF.db.shards.counterLocked = locked
+    WTF.db.shield.locked = locked
     WTF.RefreshTracker()
     WTF.RefreshStonesMover()
     WTF.RefreshShardCounter()
+    WTF.RefreshShield()
+    WTF.RefreshReminders()
+    WTF.RefreshControl()
     WTF.RefreshGrid()
     if locked then
-        WTF.Report("Stones bar, DoT tracker, and shard counter locked.")
+        WTF.Report("All WTF frames locked.")
     else
-        WTF.Report("Stones bar, DoT tracker, and shard counter unlocked: drag them where you want, "
+        WTF.Report("All WTF frames unlocked: drag them where you want (Shift-drag moves a snapped group), "
             .. "then type /wtf lock.")
     end
 end
@@ -506,6 +576,12 @@ function WTF.ResetPositions()
     WTF.ResetShardCounterPosition()
     WTF.ResetStonesPosition()
     WTF.ResetTrackerPosition()
+    WTF.ResetShieldPosition()
+    WTF.ResetRemindersPosition()
+    WTF.ResetControlPosition()
+    if InCombatLockdown() then
+        WTF.Report("WTF frames move back to their default places after combat.")
+    end
 end
 
 SLASH_WARLOCKTOOLSFOREVER1 = PRIMARY_SLASH
@@ -557,8 +633,12 @@ events:SetScript("OnEvent", function(self, event, loadedName)
     WTF.InitializeStones()
     WTF.InitializeAnnounce()
     WTF.InitializeTracker()
+    WTF.InitializeControl()
     WTF.InitializePlateDots()
     WTF.InitializeAlerts()
+    WTF.InitializeShield()
+    WTF.InitializeChimes()
+    WTF.InitializeReminders()
     WTF.InitializeOptions()
     WTF.RefreshGrid()
 end)

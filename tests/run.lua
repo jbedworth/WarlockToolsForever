@@ -24,8 +24,8 @@ local function contains(actual, fragment, context)
     end
 end
 
-local RUNTIME_FILES = {"Commands.lua", "Core.lua", "Shards.lua", "Stones.lua", "Announce.lua", "Tracker.lua",
-    "Dots.lua", "Alerts.lua", "Probe.lua", "Options.lua"}
+local RUNTIME_FILES = {"Commands.lua", "Core.lua", "Layout.lua", "Shards.lua", "Stones.lua", "Announce.lua", "Tracker.lua",
+    "Dots.lua", "Control.lua", "Alerts.lua", "Shield.lua", "Chimes.lua", "Reminders.lua", "Probe.lua", "Options.lua"}
 local SHARD = 6265
 local SPELLS = {[1120] = "Drain Soul", [11675] = "Drain Soul", [686] = "Shadow Bolt", [172] = "Corruption",
     [6222] = "Corruption", [980] = "Curse of Agony", [698] = "Ritual of Summoning",
@@ -33,7 +33,11 @@ local SPELLS = {[1120] = "Drain Soul", [11675] = "Drain Soul", [686] = "Shadow B
     [693] = "Create Soulstone", [20752] = "Create Soulstone",
     [17877] = "Shadowburn", [18871] = "Shadowburn",
     [348] = "Immolate", [18265] = "Siphon Life", [5782] = "Fear", [702] = "Curse of Weakness",
-    [6201] = "Create Healthstone", [6202] = "Create Healthstone", [5699] = "Create Healthstone"}
+    [6201] = "Create Healthstone", [6202] = "Create Healthstone", [5699] = "Create Healthstone",
+    [6789] = "Death Coil", [5484] = "Howl of Terror", [6229] = "Shadow Ward", [18708] = "Fel Domination",
+    [710] = "Banish", [1098] = "Enslave Demon", [6358] = "Seduction", [712] = "Summon Succubus",
+    [687] = "Demon Skin", [706] = "Demon Armor", [11735] = "Demon Armor",
+    [17962] = "Conflagrate", [18288] = "Amplify Curse", [1122] = "Inferno", [603] = "Bane of Doom"}
 local ITEMS = {[5232] = {"Minor Soulstone", 18}, [16892] = {"Lesser Soulstone", 30},
     [5512] = {"Minor Healthstone", 1}, [5511] = {"Lesser Healthstone", 12}, [5509] = {"Healthstone", 24}}
 local DRAIN_SOUL_RANK_4 = 11675
@@ -72,6 +76,17 @@ local function fixture(options)
     for key, value in pairs(options.globals or {}) do env[key] = value end
     env.DEFAULT_CHAT_FRAME = {AddMessage = function(_, message)
         state.messages[#state.messages + 1] = message
+    end}
+    -- Absorbs: always secret, as the client's UnitGetTotalAbsorbs is.
+    state.absorb = secret()
+    state.secrets[state.absorb] = true
+    env.UnitGetTotalAbsorbs = function(unit) equal(unit, "player") return state.absorb end
+    env.UnitHealthMax = function(unit) equal(unit, "player") return 1500 end
+    env.AbbreviateNumbers = function(value) return {abbreviated = value} end
+    -- The red text at the top of the screen.
+    state.errors = {}
+    env.UIErrorsFrame = {AddMessage = function(_, message, r, g, b)
+        state.errors[#state.errors + 1] = {text = message, r = r, g = g, b = b}
     end}
     state.toc = {}
     for text in io.lines("WarlockToolsForever.toc") do
@@ -112,7 +127,11 @@ local function fixture(options)
     }
     env.C_SpellBook = {}
     if not options.noSpellBook then
-        env.C_SpellBook.IsSpellKnown = function(id) return state.known[id] == true end
+        -- isPet asks your summoned demon's spellbook.
+        env.C_SpellBook.IsSpellKnown = function(id, isPet)
+            if isPet then return (state.petKnown or {})[id] == true end
+            return state.known[id] == true
+        end
     end
     state.timers = {}
     env.C_Timer = {After = function(seconds, callback)
@@ -147,14 +166,21 @@ local function fixture(options)
         return {itemIndexOffset = 0, numSpellBookItems = #state.spellbook}
     end
     -- As in client, each item has a type: 1 learned, 2 learned later (FutureSpell).
-    env.C_SpellBook.GetSpellBookItemInfo = function(index)
+    -- The pet spellbook: state.petSpellbook entries {spellID, name}.
+    env.C_SpellBook.HasPetSpells = function() return #(state.petSpellbook or {}), "DEMON" end
+    env.UnitCreatureFamily = function(unit) return state.petFamily end
+    env.C_SpellBook.GetSpellBookItemInfo = function(index, bank)
+        if bank == 1 then
+            local petItem = (state.petSpellbook or {})[index]
+            return petItem and {spellID = petItem.spellID, name = petItem.name, itemType = 1}
+        end
         local item = state.spellbook[index]
         if item then
             return {spellID = item.spellID, name = item.name, itemType = item.itemType or 1}
         end
     end
     env.Enum = env.Enum or {}
-    env.Enum.SpellBookSpellBank = {Player = 0}
+    env.Enum.SpellBookSpellBank = {Player = 0, Pet = 1}
     env.Enum.SpellBookItemType = {None = 0, Spell = 1, FutureSpell = 2, PetAction = 3, Flyout = 4}
     env.Enum.StatusBarTimerDirection = {ElapsedTime = 0, RemainingTime = 1}
     env.C_ClassColor = {GetClassColor = function(class)
@@ -162,13 +188,39 @@ local function fixture(options)
         return {r = 0.53, g = 0.53, b = 0.93}
     end}
     env.UnitIsDead = function(unit) return state.units[unit] ~= nil and state.units[unit].dead == true end
+    -- Raid markers, by the unit's GUID.
+    state.marks = {}
+    -- As on Forever, the marker index is secret in combat.
+    env.GetRaidTargetIndex = function(unit)
+        if state.combat then
+            local value = secret()
+            state.secrets[value] = true
+            return value
+        end
+        local data = state.units[unit]
+        return data and state.marks[data.guid or data.name]
+    end
+    -- As in client, setting the marker a unit already has clears it.
+    env.SetRaidTarget = function(unit, index)
+        local data = state.units[unit]
+        local key = data.guid or data.name
+        if state.marks[key] == index then index = nil end
+        state.marks[key] = index
+        state.markCount = (state.markCount or 0) + 1
+        state.markedUnit = unit
+    end
+    env.UnitIsDeadOrGhost = function(unit) return state.units[unit] ~= nil and state.units[unit].dead == true end
     -- State drivers: "[@unit,harm,nodead] show; hide", evaluated by the game.
     state.drivers = {}
     function state.applyDrivers()
         for frame, driver in pairs(state.drivers) do
             local unit = driver:match("@(%a+)")
             local data = state.units[unit]
-            frame.shown = data ~= nil and not data.friend and not data.dead
+            if driver == "[combat] hide; show" then
+                frame.shown = not state.combat
+            else
+                frame.shown = data ~= nil and not data.friend and not data.dead
+            end
         end
     end
     env.RegisterStateDriver = function(frame, kind, driver)
@@ -227,6 +279,22 @@ local function fixture(options)
         table.remove(state.macros, index - 120)
     end
     env.PlaySoundFile = function(file, channel) state.played = {file = file, channel = channel} end
+    -- Sound kits: a few SOUNDKIT names, and every kit played.
+    state.sounds = {}
+    env.SOUNDKIT = {UI_ORDERHALL_TALENT_READY_TOAST = 73281, RAID_WARNING = 8959, READY_CHECK = 8960}
+    env.PlaySound = function(kit, channel) state.sounds[#state.sounds + 1] = {kit = kit, channel = channel} end
+    -- Cooldowns: readable out of combat, secret in it, as on Forever.
+    state.cooldowns = {}
+    env.C_Spell.GetSpellCooldown = function(id)
+        local cooldown = state.cooldowns[id]
+        if not cooldown then return {startTime = 0, duration = 0, isEnabled = true} end
+        if state.combat then
+            local start, duration = secret(), secret()
+            state.secrets[start], state.secrets[duration] = true, true
+            return {startTime = start, duration = duration, isEnabled = true}
+        end
+        return {startTime = cooldown.start, duration = cooldown.duration, isEnabled = true}
+    end
     -- Wall-clock seconds, as WoW's time().
     env.time = function() return 1000000 + math.floor(state.now) end
     env.IsInRaid = function() return state.group == "raid" end
@@ -388,6 +456,14 @@ local function fixture(options)
         end,
         -- In client these may answer in combat: nothing for a secret aura.
         GetAuraDataBySpellName = function(unit, name, filter)
+            -- Your buffs (state.buffs, or a unit's own): unreadable in combat.
+            if filter == "HELPFUL" then
+                if state.combat then error("Auras cannot be accessed when secret while tainted") end
+                if unit ~= "player" then
+                    return ((state.units[unit] or {}).buffs or {})[name]
+                end
+                return (state.buffs or {})[name]
+            end
             for _, aura in ipairs(auras(unit, filter)) do
                 if aura.name == name then return aura end
             end
@@ -498,13 +574,37 @@ local function fixture(options)
                 return object
             end,
             OpenToCategory = function(id) state.opened = id end,
+            InitDropdown = function(dropdown, setting, inserter)
+                dropdown.setting, dropdown.inserter = setting, inserter
+            end,
             NotifyUpdate = function(variable) state.notified[#state.notified + 1] = variable end,
         }
     end
 
     state.worldHooks = {}
     -- A 1000 x 800 screen.
-    env.UIParent = {GetWidth = function() return 1000 end, GetHeight = function() return 800 end}
+    env.UIParent = {GetWidth = function() return 1000 end, GetHeight = function() return 800 end,
+        GetEffectiveScale = function() return 1 end}
+    env.IsShiftKeyDown = function() return state.shift == true end
+    local SPOTS = {CENTER = {0.5, 0.5}, BOTTOMLEFT = {0, 0}, BOTTOM = {0.5, 0}, BOTTOMRIGHT = {1, 0},
+        LEFT = {0, 0.5}, RIGHT = {1, 0.5}, TOPLEFT = {0, 1}, TOP = {0.5, 1}, TOPRIGHT = {1, 1}}
+    -- Screen position of a frame's center, from its last point.
+    function state.absCenter(frame)
+        if frame == env.UIParent or frame == nil then return 500, 400 end
+        local point = frame.points[#frame.points]
+        if not point then return 500, 400 end
+        local relative = point[2] or env.UIParent
+        if type(relative) ~= "table" then relative = env.UIParent end
+        local relativeScale = relative.GetEffectiveScale and relative:GetEffectiveScale() or 1
+        local rx, ry = state.absCenter(relative)
+        local rw = relative == env.UIParent and 1000 or (relative.width or 0) * relativeScale
+        local rh = relative == env.UIParent and 800 or (relative.height or 0) * relativeScale
+        local spot, own = SPOTS[point[3]] or SPOTS.CENTER, SPOTS[point[1]] or SPOTS.CENTER
+        local scale = frame:GetEffectiveScale()
+        local width, height = (frame.width or 0) * scale, (frame.height or 0) * scale
+        return rx + (spot[1] - 0.5) * rw - (own[1] - 0.5) * width + (point[4] or 0) * scale,
+            ry + (spot[2] - 0.5) * rh - (own[2] - 0.5) * height + (point[5] or 0) * scale
+    end
     env.WorldFrame = {HookScript = function(_, script, callback) state.worldHooks[script] = callback end}
     local function widget(kind, name, parent, template)
         local object = {kind = kind, name = name, parent = parent, template = template, events = {},
@@ -513,11 +613,30 @@ local function fixture(options)
         function object:SetBackdropBorderColor(...) self.backdropBorder = {...} end
         function object:SetBackdrop(backdrop) self.backdrop = backdrop end
         function object:SetStatusBarColor(...) self.barColor = {...} end
+        function object:SetStatusBarTexture(texture) self.statusBarTexture = texture end
         function object:SetColorTexture(...) self.color = {...} end
         function object:SetWidth(width) self.width = width end
         function object:EnableMouse(value) self.mouseDisabled = value == false end
         function object:SetHeight(height) self.height = height end
         function object:SetSize(width, height) self.width, self.height = width, height end
+        -- As in client, secure frames refuse layout changes in combat.
+        function object:SetScale(value)
+            if state.combat and self.protected then error("SetScale in combat") end
+            self.scale = value
+        end
+        function object:GetWidth() return self.width or 0 end
+        function object:GetHeight() return self.height or 0 end
+        function object:GetEffectiveScale()
+            local parentScale = 1
+            if self.parent and self.parent.GetEffectiveScale then parentScale = self.parent:GetEffectiveScale() end
+            return (self.scale or 1) * parentScale
+        end
+        -- As in client, in the frame's own units.
+        function object:GetCenter()
+            local x, y = state.absCenter(self)
+            local scale = self:GetEffectiveScale()
+            return x / scale, y / scale
+        end
         function object:SetFrameLevel(level) self.level = level end
         function object:SetParent(newParent) self.parent = newParent end
         function object:IsForbidden() return self.forbidden == true end
@@ -558,10 +677,19 @@ local function fixture(options)
             self.shown = false
         end
         function object:IsShown() return self.shown end
-        function object:SetPoint(...) self.points[#self.points + 1] = {...} end
-        function object:ClearAllPoints() self.points = {} end
+        function object:IsProtected() return self.protected == true end
+        function object:SetPoint(...)
+            if state.combat and self.protected then error("SetPoint in combat") end
+            self.points[#self.points + 1] = {...}
+        end
+        function object:ClearAllPoints()
+            if state.combat and self.protected then error("ClearAllPoints in combat") end
+            self.points = {}
+        end
         function object:GetPoint()
+            -- As in client, a frame with no points returns nothing.
             local point = self.points[#self.points]
+            if not point then return end
             return point[1], point[2], point[3], point[4], point[5]
         end
         function object:StartMoving() self.moving = true end
@@ -573,6 +701,19 @@ local function fixture(options)
         function object:SetChecked(value) self.checked = value == true end
         function object:GetChecked() return self.checked end
         function object:CreateTexture() return widget("Texture", nil, self) end
+        function object:CreateAnimationGroup()
+            local group = {playing = false}
+            function group:SetLooping(looping) self.looping = looping end
+            function group:CreateAnimation(kind)
+                return setmetatable({kind = kind}, {__index = function() return function() end end})
+            end
+            function group:Play() self.playing = true end
+            function group:Stop() self.playing = false end
+            function group:IsPlaying() return self.playing end
+            self.animation = group
+            return group
+        end
+        function object:EnableMouseWheel(value) self.wheel = value == true end
         function object:AddAuraSlot(key, filter, slotOptions)
             self.slots = self.slots or {}
             local button = widget("Button", nil, self)
@@ -600,6 +741,8 @@ local function fixture(options)
             if type(key) == "string" and key:match("^%u") then return function() end end
         end})
     end
+    -- UIParent can hold text, as the shield display's debug writes on it.
+    env.UIParent.CreateFontString = function(self) return widget("FontString", nil, self) end
     env.CreateFrame = function(kind, name, parent, template)
         local frame = widget(kind, name, parent, template)
         if name then env[name] = frame end
@@ -625,12 +768,30 @@ local function fixture(options)
     end
 
     for _, name in ipairs(options.remove or {}) do env[name] = nil end
+    -- Other AddOns shipping Shield.lua, as MTF does: {addon, version, before};
+    -- each gets its own namespace, and a test initializes it or not.
+    state.copies = {}
+    local function loadShieldCopy(spec)
+        local source = assert(io.open("Shield.lua")):read("*a")
+        source = source:gsub("local VERSION = %d+", "local VERSION = " .. spec.version)
+        local chunk = assert(loadstring(source, "=" .. spec.addon .. "/Shield.lua"))
+        setfenv(chunk, env)
+        local namespace = {}
+        chunk(spec.addon, namespace)
+        state.copies[spec.addon] = namespace
+    end
+    for _, spec in ipairs(options.shieldCopies or {}) do
+        if spec.before then loadShieldCopy(spec) end
+    end
     state.wtf = {}
     for _, path in ipairs(options.files or RUNTIME_FILES) do
         local chunk, message = loadfile(path)
         if not chunk then error(message) end
         setfenv(chunk, env)
         chunk("WarlockToolsForever", state.wtf)
+    end
+    for _, spec in ipairs(options.shieldCopies or {}) do
+        if not spec.before then loadShieldCopy(spec) end
     end
     env.WarlockToolsForeverDB = options.db
     state.env = env
@@ -788,8 +949,8 @@ test("a missing client API disables WTF with one message naming it", function()
     equal(state.categories["Warlock Tools Forever"], nil, "no settings page")
 end)
 test("a mixed install of old and new files is reported at login", function()
-    local state = fixture({files = {"Commands.lua", "Core.lua", "Shards.lua", "Stones.lua", "Announce.lua",
-        "Tracker.lua", "Dots.lua", "Alerts.lua", "Options.lua"}})
+    local state = fixture({files = {"Commands.lua", "Core.lua", "Layout.lua", "Shards.lua", "Stones.lua", "Announce.lua",
+        "Tracker.lua", "Dots.lua", "Control.lua", "Alerts.lua", "Shield.lua", "Chimes.lua", "Reminders.lua", "Options.lua"}})
     equal(state.wtf.available, false)
     contains(state.last(), "missing ReportRestrictions")
 end)
@@ -1397,6 +1558,16 @@ test("debug_click shows each button's actions and the key-down setting", functio
     contains(state.messages[3], "button1 type=item item=item:5511")
     contains(state.messages[5], "button3 type=item item=item:5511")
 end)
+test("a failed stone click is said in chat and in red at the top of the screen", function()
+    local state = fixture({known = {[6201] = true}})
+    state.clickButton("WarlockToolsForeverHealthstone", "MiddleButton")
+    contains(state.last(), "No Healthstone in your bags")
+    equal(#state.errors, 1)
+    contains(state.errors[1].text, "WTF: No Healthstone in your bags")
+    equal(state.errors[1].r, 1)
+    equal(state.errors[1].g, 0.1, "red")
+end)
+
 local function macroBody(state, name)
     for _, macro in ipairs(state.macros) do
         if macro.name == name then return macro.body end
@@ -1563,13 +1734,15 @@ test("the Stones bar drags unless locked or in combat, and remembers its place",
     local bar, soul = state.env.WarlockToolsForeverStones, state.env[SOUL]
     soul.scripts.OnDragStart(soul)
     equal(bar.moving, true)
-    bar:SetPoint("TOPLEFT", nil, "TOPLEFT", 10, -20)
+    bar:ClearAllPoints()
+    bar:SetPoint("CENTER", nil, "BOTTOMLEFT", 110, 220)
     soul.scripts.OnDragStop(soul)
-    equal(state.wtf.db.stones.position.x, 10)
-    state.wtf.db.stones.locked = true
+    equal(state.wtf.db.stones.position.relativePoint, "BOTTOMLEFT")
+    equal(state.wtf.db.stones.position.x, 110)
+    state.slash("lock")
     soul.scripts.OnDragStart(soul)
     equal(bar.moving, false)
-    state.wtf.db.stones.locked = false
+    state.slash("unlock")
     state.combat = true
     bar.scripts.OnDragStart(bar)
     equal(bar.moving, false)
@@ -1617,11 +1790,12 @@ test("the shard counter drags unless locked, saves its place, and resets", funct
     state.slash("unlock")
     counter.scripts.OnDragStart(counter)
     equal(counter.moving, true)
-    counter:SetPoint("TOPLEFT", state.env.UIParent, "TOPLEFT", 10, -20)
+    counter:ClearAllPoints()
+    counter:SetPoint("CENTER", state.env.UIParent, "BOTTOMLEFT", 90, 700)
     counter.scripts.OnDragStop(counter)
-    equal(state.wtf.db.shards.counterPosition.point, "TOPLEFT")
-    equal(state.wtf.db.shards.counterPosition.y, -20)
-    state.wtf.db.shards.counterLocked = true
+    equal(state.wtf.db.shards.counterPosition.point, "CENTER")
+    equal(state.wtf.db.shards.counterPosition.y, 700)
+    state.slash("lock")
     counter.scripts.OnDragStart(counter)
     equal(counter.moving, false, "locked")
     state.slash("reset")
@@ -1630,6 +1804,599 @@ test("the shard counter drags unless locked, saves its place, and resets", funct
     local saved = fixture({db = {shards = {counterPosition = {point = "TOP", relativePoint = "TOP", x = 1, y = 2}}}})
     equal(saved.wtf.shardCounter.points[1][1], "TOP", "the place survives a reload")
 end)
+-- Control bar --------------------------------------------------------------------------
+
+local FEAR, BANISH, ENSLAVE, HOWL = 5782, 710, 1098, 5484
+
+local function controlFixture(extra)
+    local options = {known = {[FEAR] = true, [BANISH] = true}, units = {
+        target = {name = "Boar", guid = "Creature-1"},
+        nameplate3 = {name = "Boar", guid = "Creature-1"},
+        nameplate4 = {name = "Imp", guid = "Creature-2"},
+    }}
+    for key, value in pairs(extra or {}) do options[key] = value end
+    return fixture(options)
+end
+
+local function castAt(state, spellID, unit)
+    state.units.target = state.units[unit]
+    local name = state.units[unit].name
+    state.emit("UNIT_SPELLCAST_SENT", "player", name, "cast-" .. spellID .. unit, spellID)
+    state.emit("UNIT_SPELLCAST_SUCCEEDED", "player", "cast-" .. spellID .. unit, spellID)
+end
+
+local function controlRow(state, index)
+    return state.env["WarlockToolsForeverControlRow" .. index]
+end
+
+test("each mob you Fear or Banish gets its own bar, bound to its unit", function()
+    local state = controlFixture()
+    castAt(state, FEAR, "nameplate3")
+    castAt(state, BANISH, "nameplate4")
+    state.emit("PLAYER_TARGET_CHANGED")
+    local first, second = controlRow(state, 1), controlRow(state, 2)
+    equal(first.shown, true)
+    equal(first.name.text, "Boar")
+    equal(first.container.unit, "nameplate3", "its nameplate once you target another mob")
+    equal(second.name.text, "Imp")
+    equal(second.container.unit, "target", "your target first")
+    state.units.focus = state.units.nameplate4
+    state.emit("PLAYER_FOCUS_CHANGED")
+    equal(second.container.unit, "focus", "your focus before anything, as it never drops")
+    equal(first.container.slots[1].ids[FEAR], true, "the slot takes Fear")
+    equal(first.container.slots[1].ids[BANISH], true, "and Banish")
+    equal(first.container.slots[1].filter, "HARMFUL|PLAYER")
+    equal(controlRow(state, 3).shown, false)
+    castAt(state, FEAR, "nameplate3")
+    equal(controlRow(state, 3).shown, false, "a recast on the same mob keeps its row")
+    state.units.nameplate4.dead = true
+    state.emit("UNIT_HEALTH", "nameplate4")
+    equal(second.shown, false, "gone when the mob dies")
+    state.now = state.now + 26
+    state.runTimers()
+    equal(first.shown, false, "gone once the longest Fear is over")
+end)
+test("a landed Banish gets the moon; Fear never marks, so WTF takes one marker slot", function()
+    local state = controlFixture()
+    castAt(state, BANISH, "nameplate4")
+    equal(state.marks["Creature-2"], 5, "the moon")
+    castAt(state, FEAR, "nameplate3")
+    equal(state.marks["Creature-1"], nil)
+    equal(state.settings.WTF_CONTROL_MARKER_FEAR, nil, "no marker setting for Fear")
+    castAt(state, BANISH, "nameplate4")
+    equal(state.markCount, 1, "an existing marker is left alone")
+    local old = fixture({db = {control = {markers = {banish = 3}}}})
+    equal(old.wtf.db.control.markers.banish, 5, "the old diamond default becomes the moon")
+    local chosen = fixture({db = {control = {markers = {banish = 8}, markersVersion = 2}}})
+    equal(chosen.wtf.db.control.markers.banish, 8, "a marker you chose stays")
+end)
+test("a Banish cast on the mob under the mouse is tracked and marked", function()
+    local state = controlFixture()
+    state.units.target = nil
+    state.units.mouseover = {name = "Felguard", guid = "Creature-8"}
+    state.emit("UNIT_SPELLCAST_SENT", "player", "Felguard", "cast-mo", BANISH)
+    state.emit("UNIT_SPELLCAST_SUCCEEDED", "player", "cast-mo", BANISH)
+    equal(controlRow(state, 1).name.text, "Felguard", "tracked")
+    equal(state.marks["Creature-8"], 5, "the moon, through mouseover")
+    equal(controlRow(state, 1).container.unit, "none", "rows never bind to mouseover")
+end)
+test("a Banish that lands in combat still gets its marker, on your target", function()
+    local state = controlFixture()
+    state.units.target = state.units.nameplate4
+    state.emit("UNIT_SPELLCAST_SENT", "player", "Imp", "cast-b", BANISH)
+    state.combat = true
+    state.emit("UNIT_SPELLCAST_SUCCEEDED", "player", "cast-b", BANISH)
+    equal(state.marks["Creature-2"], 5, "marked although the marker cannot be read in combat")
+    equal(state.markedUnit, "target")
+    -- A recast in combat on the same mob must not toggle the marker off.
+    state.emit("UNIT_SPELLCAST_SENT", "player", "Imp", "cast-b2", BANISH)
+    state.emit("UNIT_SPELLCAST_SUCCEEDED", "player", "cast-b2", BANISH)
+    equal(state.marks["Creature-2"], 5, "still the moon after a recast")
+end)
+test("control spells tell the group as the cast starts, with the marker in chat", function()
+    local state = controlFixture({group = "party", known = {[FEAR] = true, [BANISH] = true, [ENSLAVE] = true}})
+    castAt(state, BANISH, "nameplate4")
+    equal(state.sent[1].chatType, "PARTY")
+    equal(state.sent[1].message, "Banishing >> Imp << {moon} to the Twisting Nether. Hands off until it comes back"
+        .. " - via Warlock Tools Forever (WTF)")
+    castAt(state, FEAR, "nameplate3")
+    equal(state.sent[2].message, "Fearing >> Boar <<. Let it run; chase it and you bring friends"
+        .. " - via Warlock Tools Forever (WTF)")
+    castAt(state, ENSLAVE, "nameplate4")
+    contains(state.sent[3].message, "Enslaving >> Imp <<")
+    state.emit("UNIT_SPELLCAST_SENT", "player", "", "cast-howl", HOWL)
+    contains(state.sent[4].message, "Howl of Terror! Everything nearby")
+    castAt(state, FEAR, "nameplate3")
+    equal(#state.sent, 4, "not again within a few seconds")
+    state.wtf.db.announce.banishGroup = false
+    state.now = state.now + 5
+    castAt(state, BANISH, "nameplate4")
+    equal(#state.sent, 4, "its switch")
+    local alone = controlFixture()
+    castAt(alone, FEAR, "nameplate3")
+    equal(#alone.sent, 0, "nothing when alone")
+end)
+local RECAST_BANISH_IMP = "/cast [@focus,harm,nodead] Banish\n/stopmacro [@focus,exists]\n/cleartarget"
+    .. "\n/targetexact Imp\n/cast [@target,harm,nodead] Banish\n/targetlasttarget"
+
+test("clicking a Banish row recasts on your focus, or with none on the mob by name", function()
+    local state = controlFixture()
+    castAt(state, BANISH, "nameplate4")
+    local click = state.env.WarlockToolsForeverControlClick1
+    equal(click.protected, true, "a secure button")
+    equal(click.shown, true)
+    equal(click.attributes.macrotext1, RECAST_BANISH_IMP)
+    state.combat = true
+    -- Started in combat: the click waits for combat to end.
+    state.units.nameplate5 = {name = "Voidwalker", guid = "Creature-3"}
+    castAt(state, BANISH, "nameplate5")
+    equal(controlRow(state, 2).name.text, "Voidwalker", "the bar shows in combat")
+    equal(state.env.WarlockToolsForeverControlClick2.attributes.macrotext1, nil)
+    state.combat = false
+    state.emit("PLAYER_REGEN_ENABLED")
+    contains(state.env.WarlockToolsForeverControlClick2.attributes.macrotext1, "/targetexact Voidwalker")
+    equal(state.env.WarlockToolsForeverControlClick3.shown, false, "no click area without a mob")
+end)
+test("Fear rows show the timer but have no click, so no click Fears the wrong mob", function()
+    local state = controlFixture()
+    castAt(state, FEAR, "nameplate3")
+    equal(controlRow(state, 1).name.text, "Boar")
+    local click = state.env.WarlockToolsForeverControlClick1
+    equal(click.shown, false)
+    equal(click.attributes.macrotext1, nil)
+end)
+test("a Banish row whose click is set keeps its slot until combat ends", function()
+    local state = controlFixture()
+    castAt(state, BANISH, "nameplate4")
+    local click1 = state.env.WarlockToolsForeverControlClick1
+    contains(click1.attributes.macrotext1, "/targetexact Imp")
+    state.combat = true
+    state.units.nameplate4.dead = true
+    state.emit("UNIT_HEALTH", "nameplate4")
+    equal(controlRow(state, 1).shown, false, "the Imp is gone")
+    castAt(state, FEAR, "nameplate3")
+    equal(controlRow(state, 1).shown, false, "its row is not reused while its click still names the Imp")
+    equal(controlRow(state, 2).name.text, "Boar")
+    state.combat = false
+    state.emit("PLAYER_REGEN_ENABLED")
+    equal(click1.attributes.macrotext1, nil, "cleared after combat")
+    equal(click1.shown, false)
+    state.units.nameplate5 = {name = "Wolf", guid = "Creature-3"}
+    castAt(state, FEAR, "nameplate5")
+    equal(controlRow(state, 1).name.text, "Wolf", "then free again")
+end)
+test("a Banish that fails out of combat gives back its row and click", function()
+    local state = controlFixture()
+    state.units.target = state.units.nameplate4
+    state.emit("UNIT_SPELLCAST_SENT", "player", "Imp", "cast-a", BANISH)
+    local click1 = state.env.WarlockToolsForeverControlClick1
+    equal(click1.shown, true, "set as the cast starts")
+    state.emit("UNIT_SPELLCAST_INTERRUPTED", "player", "cast-a", BANISH)
+    equal(click1.shown, false)
+    equal(click1.attributes.macrotext1, nil)
+    for index = 1, 5 do
+        state.units["nameplate" .. (10 + index)] = {name = "Mob" .. index, guid = "Creature-1" .. index}
+        state.units.target = state.units["nameplate" .. (10 + index)]
+        state.emit("UNIT_SPELLCAST_SENT", "player", "Mob" .. index, "cast-f" .. index, BANISH)
+        state.emit("UNIT_SPELLCAST_FAILED", "player", "cast-f" .. index, BANISH)
+    end
+    castAt(state, FEAR, "nameplate3")
+    equal(controlRow(state, 1).name.text, "Boar", "failed casts never use up the rows")
+end)
+test("a size change in combat waits for combat, so rows stay on their click slots", function()
+    local state = controlFixture()
+    castAt(state, FEAR, "nameplate3")
+    state.combat = true
+    state.settings.WTF_CONTROL_SCALE:SetValue(80)
+    equal(controlRow(state, 1).scale, 1, "unchanged in combat")
+    equal(state.env.WarlockToolsForeverControl.scale, 1)
+    state.combat = false
+    state.emit("PLAYER_REGEN_ENABLED")
+    equal(controlRow(state, 1).scale, 0.8)
+    equal(state.env.WarlockToolsForeverControl.scale, 0.8, "together")
+end)
+test("a row never binds to mouseover, which changes with the pointer", function()
+    local state = controlFixture()
+    state.units.mouseover = {name = "Ghoul", guid = "Creature-9"}
+    state.emit("UNIT_SPELLCAST_SENT", "player", "Ghoul", "cast-m", FEAR)
+    state.emit("UNIT_SPELLCAST_SUCCEEDED", "player", "cast-m", FEAR)
+    equal(controlRow(state, 1).name.text, "Ghoul", "a Fear cast through mouseover is tracked")
+    equal(controlRow(state, 1).container.unit, "none", "but the row does not bind to the pointer's unit")
+    state.units.nameplate6 = state.units.mouseover
+    state.emit("NAME_PLATE_UNIT_ADDED", "nameplate6")
+    equal(controlRow(state, 1).container.unit, "nameplate6", "its nameplate instead")
+end)
+test("a feared mob's nameplate shows a Fear countdown, also after its plate comes back", function()
+    local state = controlFixture()
+    state.emit("NAME_PLATE_UNIT_ADDED", "nameplate3")
+    local plate = state.plates.nameplate3
+    local timer = state.wtf.fearPlateTimers.nameplate3
+    equal(timer.parent, plate, "a timer under the nameplate")
+    equal(timer.points[1][1], "TOP")
+    equal(timer.points[1][2], plate)
+    equal(timer.container.unit, "nameplate3")
+    local slot = timer.container.slots[1]
+    equal(slot.key, "fear")
+    equal(slot.filter, "HARMFUL|PLAYER", "only your Fear")
+    equal(slot.ids[FEAR], true)
+    equal(slot.ids[BANISH], nil, "Fear only")
+    equal(slot.button.display.barOptions.direction, 1, "drains with the time left")
+    -- Out of plate range and back, on another plate: the timer follows.
+    state.emit("NAME_PLATE_UNIT_REMOVED", "nameplate3")
+    equal(timer.container.unit, "none")
+    state.units.nameplate8 = state.units.nameplate3
+    state.emit("NAME_PLATE_UNIT_ADDED", "nameplate8")
+    equal(timer.container.unit, "nameplate8", "the same timer, reused, on the new plate")
+    state.settings.WTF_CONTROL_PLATE_TIMERS:SetValue(false)
+    equal(timer.container.unit, "none", "its switch")
+    state.clear()
+    state.slash("debug_control")
+    contains(table.concat(state.messages, "|"), "plateTimers=false attached=0")
+end)
+test("control macros appear only for the spells you know; Seduction needs your Succubus", function()
+    local state = controlFixture({known = {[FEAR] = true}})
+    equal(macroBody(state, "! Fear"), "#showtooltip Fear\n/cast [@mouseover,harm,nodead][harm,nodead] Fear",
+        "the mob under the mouse, else your target; no focus")
+    equal(macroBody(state, "! Banish"), nil, "no Banish before you learn it")
+    equal(macroBody(state, "! Seduction"), nil, "no Seduction before Summon Succubus")
+    state.known[BANISH] = true
+    state.emit("SPELLS_CHANGED")
+    equal(macroBody(state, "! Banish"), "#showtooltip Banish\n/focus [@mouseover,harm,nodead][nocombat,harm,nodead]"
+        .. "\n/cast [@focus,harm,nodead] Banish")
+    state.known[712] = true
+    state.emit("SPELLS_CHANGED")
+    equal(macroBody(state, "! Seduction"), nil, "Summon Succubus alone is not enough: no Grimoire yet")
+    -- The Succubus learns Seduction from its Grimoire.
+    state.petKnown = {[6358] = true}
+    state.emit("UNIT_PET", "player")
+    contains(macroBody(state, "! Seduction"), "/cast [@focus,harm,nodead,pet:Succubus/Incubus] Seduction",
+        "does nothing unless your pet is a Succubus or an Incubus")
+    state.combat = true
+    state.settings.WTF_CONTROL_MACROS:SetValue(false)
+    equal(macroBody(state, "! Banish") ~= nil, true, "macros change only out of combat")
+    state.combat = false
+    state.emit("PLAYER_REGEN_ENABLED")
+    equal(macroBody(state, "! Banish"), nil, "turning them off deletes them")
+    equal(macroBody(state, "! Seduction"), nil)
+    equal(macroBody(state, "! Fear"), nil)
+end)
+test("an Incubus that knows Seduction by its own ID gets the macro too; one that does not, none", function()
+    local state = controlFixture({known = {[FEAR] = true, [713] = true}})
+    -- An Incubus out, before its Grimoire.
+    state.petFamily = "Incubus"
+    state.petSpellbook = {{spellID = 99001, name = "Lash of Pain"}}
+    state.emit("UNIT_PET", "player")
+    equal(macroBody(state, "! Seduction"), nil, "no Seduction yet")
+    -- Its Grimoire teaches Seduction under another ID: found by name.
+    state.petSpellbook[2] = {spellID = 99002, name = "Seduction"}
+    state.emit("SPELLS_CHANGED")
+    contains(macroBody(state, "! Seduction"), "pet:Succubus/Incubus")
+    -- Dismissed: the macro stays, and does nothing without the demon.
+    state.petSpellbook, state.petFamily = nil, nil
+    state.emit("UNIT_PET", "player")
+    equal(macroBody(state, "! Seduction") ~= nil, true)
+    state.clear()
+    state.slash("debug_control")
+    contains(table.concat(state.messages, "|"), "debug_control pet=nil seduction=false")
+end)
+test("unlocked, the control bar shows samples to drag; debug_control reports the rows", function()
+    local state = controlFixture()
+    state.slash("unlock")
+    equal(controlRow(state, 1).name.text, "Fear (sample)")
+    equal(controlRow(state, 2).name.text, "Banish (sample)")
+    equal(state.env.WarlockToolsForeverControl.mover.shown, true)
+    state.slash("lock")
+    equal(controlRow(state, 1).shown, false)
+    state.settings.WTF_CONTROL_ENABLED:SetValue(false)
+    castAt(state, FEAR, "nameplate3")
+    equal(controlRow(state, 1).shown, false, "its switch")
+    state.clear()
+    state.slash("debug_control")
+    contains(state.messages[1], "debug_control available=true known=true")
+end)
+
+-- Demon Armor reminder ---------------------------------------------------------------
+
+local DEMON_SKIN, DEMON_ARMOR = 687, 706
+
+test("the Demon Armor icon pulses while it is missing; a click casts your armor", function()
+    local state = fixture({known = {[DEMON_SKIN] = true, [DEMON_ARMOR] = true}})
+    local icon = state.env.WarlockToolsForeverReminder_armor
+    equal(icon.shown, true)
+    equal(icon.glow.animation.playing, true, "the border pulses")
+    equal(icon.protected, true, "a secure button")
+    equal(icon.attributes.type1, "spell")
+    equal(icon.attributes.spell1, "Demon Armor", "your best")
+    equal(icon.attributes.unit1, "player")
+    state.emit("UNIT_SPELLCAST_SUCCEEDED", "player", "cast-1", DEMON_SKIN)
+    state.emit("UNIT_AURA", "player")
+    equal(icon.attributes.spell1, "Demon Skin", "the armor you used last")
+    equal(state.wtf.db.reminders.last.armor, "Demon Skin")
+    state.buffs = {["Demon Skin"] = {name = "Demon Skin"}}
+    state.emit("UNIT_AURA", "player")
+    equal(icon.shown, false, "Demon Skin counts")
+    equal(icon.attributes.type1, nil)
+end)
+test("the reminder hides for combat, reads no buffs then, and follows its switch", function()
+    local state = fixture({known = {[DEMON_ARMOR] = true}})
+    local icon, holder = state.env.WarlockToolsForeverReminder_armor, state.env.WarlockToolsForeverReminders
+    equal(state.drivers[holder], "[combat] hide; show")
+    state.combat = true
+    state.applyDrivers()
+    equal(holder.shown, false)
+    state.emit("UNIT_AURA", "player")
+    state.combat = false
+    state.applyDrivers()
+    state.emit("PLAYER_REGEN_ENABLED")
+    equal(holder.shown, true)
+    state.settings.WTF_REMINDERS_ENABLED:SetValue(false)
+    equal(icon.shown, false)
+    local unknown = fixture()
+    equal(unknown.env.WarlockToolsForeverReminder_armor.shown, false, "not before you learn Demon Skin")
+end)
+test("unlocked, the reminder drags, snaps, and resizes with the mouse wheel", function()
+    local state = fixture()
+    state.slash("unlock")
+    local icon = state.env.WarlockToolsForeverReminder_armor
+    equal(icon.shown, true, "a sample to place")
+    equal(icon.attributes.type1, nil, "dragging never casts")
+    local x, y = state.absCenter(icon)
+    icon.scripts.OnMouseWheel(icon, 1)
+    equal(state.wtf.db.reminders.icons.armor.scale, 110)
+    local nx, ny = state.absCenter(icon)
+    equal(math.floor(nx + 0.5), math.floor(x + 0.5), "resizing keeps the center")
+    equal(math.floor(ny + 0.5), math.floor(y + 0.5))
+    state.slash("lock")
+    icon.scripts.OnMouseWheel(icon, 1)
+    equal(state.wtf.db.reminders.icons.armor.scale, 110, "locked icons do not resize")
+    state.slash("reset")
+    equal(state.wtf.db.reminders.icons.armor.scale, 100)
+    state.clear()
+    state.slash("debug_reminders")
+    contains(state.messages[1], "debug_reminders armor on=true known=false")
+end)
+
+-- Magnetic frames -------------------------------------------------------------------
+
+local function centerOf(state, frame)
+    local x, y = state.absCenter(frame)
+    return math.floor(x + 0.5), math.floor(y + 0.5)
+end
+
+local function dropAt(state, frame, x, y, handle)
+    handle = handle or frame
+    handle.scripts.OnDragStart(handle)
+    frame:ClearAllPoints()
+    frame:SetPoint("CENTER", nil, "BOTTOMLEFT", x / frame:GetEffectiveScale(), y / frame:GetEffectiveScale())
+    handle.scripts.OnDragStop(handle)
+end
+
+test("WTF ships the shield display: it follows its switch and the lock", function()
+    local state = fixture()
+    local ring = state.wtf.ShieldDisplay.frame
+    equal(state.settings.WTF_SHIELD_ENABLED:GetValue(), true, "on by default")
+    state.slash("unlock")
+    equal(ring.shown, true, "a sample to drag")
+    equal(state.wtf.db.shield.locked, false)
+    state.slash("lock")
+    equal(state.wtf.db.shield.locked, true)
+    state.settings.WTF_SHIELD_ENABLED:SetValue(false)
+    equal(state.wtf.db.shield.enabled, false)
+    state.clear()
+    state.slash("debug_shield")
+    contains(state.messages[1], "debug_shield UnitGetTotalAbsorbs=function")
+end)
+
+-- Cooldown chimes ----------------------------------------------------------------
+
+local DEATH_COIL = 6789
+
+local function wait(state, seconds)
+    state.now = state.now + seconds
+    state.runTimers()
+end
+
+test("a chime plays just before Death Coil is ready again, also in combat", function()
+    local state = fixture()
+    state.combat = true
+    state.emit("UNIT_SPELLCAST_SUCCEEDED", "player", "cast-1", DEATH_COIL)
+    wait(state, 0.1)
+    wait(state, 119)
+    equal(#state.sounds, 0, "not yet")
+    wait(state, 0.5)
+    equal(#state.sounds, 1, "half a second early")
+    equal(state.sounds[1].kit, 73281, "Talent ready by default")
+    equal(state.sounds[1].channel, "Master")
+end)
+test("out of combat the real cooldown is read and learned; switches turn chimes off", function()
+    local state = fixture()
+    state.cooldowns[DEATH_COIL] = {start = state.now, duration = 90}
+    state.emit("UNIT_SPELLCAST_SUCCEEDED", "player", "cast-1", DEATH_COIL)
+    wait(state, 0.1)
+    equal(state.wtf.db.chimes.learned.deathcoil, 90, "Forever's own cooldown")
+    wait(state, 89.5)
+    equal(#state.sounds, 1)
+    state.settings.WTF_CHIME_DEATHCOIL:SetValue(false)
+    state.emit("UNIT_SPELLCAST_SUCCEEDED", "player", "cast-2", DEATH_COIL)
+    wait(state, 100)
+    equal(#state.sounds, 1, "its switch")
+    state.settings.WTF_CHIME_DEATHCOIL:SetValue(true)
+    state.settings.WTF_CHIMES_ENABLED:SetValue(false)
+    state.emit("UNIT_SPELLCAST_SUCCEEDED", "player", "cast-3", DEATH_COIL)
+    wait(state, 100)
+    equal(#state.sounds, 1, "the module switch")
+end)
+test("each chime has its own sound from the Cooldown Manager's catalog, and choosing one plays it", function()
+    local state = fixture()
+    local sound = state.settings.WTF_CHIME_SOUND_HOWL
+    equal(sound:GetValue(), "talent")
+    sound:SetValue("impactspopclick")
+    equal(state.wtf.db.chimes.sounds.howl, "impactspopclick")
+    equal(state.sounds[#state.sounds].kit, 316434, "previewed: the Cooldown Manager's Pop click")
+    equal(state.wtf.db.chimes.sounds.deathcoil, "talent", "Death Coil keeps its own")
+    sound:SetValue("nonsense")
+    equal(state.wtf.db.chimes.sounds.howl, "impactspopclick", "unknown keys are ignored")
+    local saved = fixture({db = {chimes = {sounds = {howl = "bogus"}, lead = 7, spells = {inferno = true}}}})
+    equal(saved.wtf.db.chimes.sounds.howl, "talent")
+    equal(saved.wtf.db.chimes.lead, 3, "clamped")
+    equal(saved.wtf.db.chimes.spells.inferno, true)
+    state.clear()
+    state.slash("debug_chimes")
+    contains(state.messages[1], "debug_chimes deathcoil name=Death Coil")
+end)
+
+test("a copy registered first whose AddOn stays off does not keep WTF's display away", function()
+    -- MTF loads first (folder order) but stays off on a Warlock.
+    local state = fixture({shieldCopies = {{addon = "MageToolsForever", version = 3, before = true}}})
+    equal(state.wtf.ShieldDisplay.IsOwner(), true, "only running copies take part")
+    equal(state.wtf.ShieldDisplay.frame ~= nil, true, "WTF draws the ring")
+    state.clear()
+    state.slash("debug_shield")
+    contains(table.concat(state.messages, "|"),
+        "owner=WarlockToolsForever copies=MageToolsForever v3, WarlockToolsForever v3 (running)")
+    equal(table.concat(state.messages, "|"):find("failed", 1, true), nil, "every debug step ran")
+end)
+test("a newer running copy takes over, and WTF says which AddOn shows the display", function()
+    local state = fixture({shieldCopies = {{addon = "ShieldForever", version = 4}}})
+    equal(state.wtf.ShieldDisplay.frame ~= nil, true, "drawing while it is the only one running")
+    local other = state.copies.ShieldForever.ShieldDisplay
+    other.Initialize({settings = function() return other.Sanitize({}) end, report = function() end})
+    equal(state.wtf.ShieldDisplay.frame, nil, "WTF stood down")
+    equal(other.frame ~= nil, true, "the newer copy draws")
+    contains(state.last(), "The shield display is shown by ShieldForever")
+end)
+test("a Warlock's icon row holds Shadow Ward, Sacrifice, and Power Word: Shield, one spot each", function()
+    local state = fixture()
+    local ring = state.wtf.ShieldDisplay.frame
+    local keys = {}
+    for _, slot in ipairs(ring.icons.slots) do keys[#keys + 1] = slot.key end
+    table.sort(keys)
+    equal(table.concat(keys, ","), "blessingofprotection,powerwordshield,sacrifice,shadowward",
+        "no Mage or Paladin-only shields")
+    local ward, sacrifice, shield = ring.iconButtons.shadowward, ring.iconButtons.sacrifice,
+        ring.iconButtons.powerwordshield
+    local x1, x2, x3 = ward.points[1][4], sacrifice.points[1][4], shield.points[1][4]
+    equal(x2 - x1, x3 - x2, "evenly spaced")
+    equal(x1 < x2, true, "never on top of each other; your own shields first")
+end)
+
+test("a bubble drains in the innermost crescent; in combat the display stays up for one", function()
+    local state = fixture({spellbook = {}})
+    local ring = state.wtf.ShieldDisplay.frame
+    local bubble = ring.iconButtons.blessingofprotection
+    local bar = bubble.display.bar
+    contains(bar.statusBarTexture, "ShieldArcInnermost")
+    equal(bar.barColor[1], 1, "gold")
+    equal(bubble.display.barOptions.direction, 1, "drains with its time left")
+    equal(ring.timedBars.blessingofprotection, bar)
+    equal(ring.shown, false, "nothing up out of combat")
+    -- In combat, a Blessing of Protection from a Paladin cannot be read, so
+    -- the display stays shown and the engine draws the bubble when it is up.
+    state.combat = true
+    state.emit("PLAYER_REGEN_DISABLED")
+    equal(ring.shown, true)
+    state.combat = false
+    state.emit("PLAYER_REGEN_ENABLED")
+    equal(ring.shown, false, "hidden again once buffs can be read")
+    state.slash("unlock")
+    contains(ring.sample.children[2].texture, "ShieldArcInnermost", "the sample shows it too")
+end)
+
+test("a frame dropped near another snaps beside it, 20 apart and lined up", function()
+    local state = stonesFixture()
+    state.slash("unlock")
+    local bar, counter = state.env.WarlockToolsForeverStones, state.wtf.shardCounter
+    dropAt(state, bar, 400, 300)
+    local barX, barY = centerOf(state, bar)
+    local barHalfW, barHalfH = bar.width / 2, bar.height / 2
+    local half = counter.width / 2
+    -- Dropped a little right of the bar, near its top edge: tops line up.
+    dropAt(state, counter, barX + barHalfW + 20 + half + 6, barY + barHalfH - (counter.height / 2) + 5)
+    local x, y = centerOf(state, counter)
+    equal(x, barX + barHalfW + 20 + half, "20 past the bar's right edge")
+    equal(y + counter.height / 2, barY + barHalfH, "tops aligned")
+    -- Under the bar, near its left edge: lefts line up.
+    dropAt(state, counter, barX - barHalfW + half + 4, barY - barHalfH - 20 - counter.height / 2 - 7)
+    x, y = centerOf(state, counter)
+    equal(x - half, barX - barHalfW, "lefts aligned")
+    equal(y + counter.height / 2, barY - barHalfH - 20, "20 below")
+    -- Far away: it stays where it lands.
+    dropAt(state, counter, 900, 100)
+    equal(select(1, centerOf(state, counter)), 900)
+end)
+test("Shift-dragging a frame moves every frame snapped to it", function()
+    local state = stonesFixture()
+    state.slash("unlock")
+    local bar, counter = state.env.WarlockToolsForeverStones, state.wtf.shardCounter
+    dropAt(state, bar, 400, 300)
+    local barX, barY = centerOf(state, bar)
+    dropAt(state, counter, barX + bar.width / 2 + 20 + counter.width / 2 + 3, barY)
+    local counterX, counterY = centerOf(state, counter)
+    state.shift = true
+    dropAt(state, bar, 150, 760)
+    local newBarX, newBarY = centerOf(state, bar)
+    local movedX, movedY = centerOf(state, counter)
+    equal(movedX - newBarX, counterX - barX, "the counter came along, the same distance away")
+    equal(movedY - newBarY, counterY - barY)
+    equal(state.wtf.db.shards.counterPosition.relativePoint, "BOTTOMLEFT", "each saved on its own")
+    state.shift = false
+    dropAt(state, bar, 600, 600)
+    equal(select(1, centerOf(state, counter)), movedX, "without Shift the bar leaves alone")
+end)
+test("a Shift-dragged group that snaps keeps its spacing", function()
+    local state = stonesFixture()
+    state.slash("unlock")
+    local bar, counter = state.env.WarlockToolsForeverStones, state.wtf.shardCounter
+    local tracker = state.env.WarlockToolsForeverTracker
+    dropAt(state, bar, 400, 300)
+    local barX, barY = centerOf(state, bar)
+    dropAt(state, counter, barX + bar.width / 2 + 20 + counter.width / 2, barY)
+    local gapX = select(1, centerOf(state, counter)) - barX
+    -- Drop the group just off a spot beside the tracker, so it snaps.
+    local trackerX, trackerY = centerOf(state, tracker)
+    local spotY = trackerY - tracker.height / 2 - 20 - bar.height / 2
+    state.shift = true
+    dropAt(state, bar, trackerX - tracker.width / 2 + bar.width / 2 + 5, spotY - 6)
+    local newBarX, newBarY = centerOf(state, bar)
+    equal(newBarY, math.floor(spotY + 0.5), "the group snapped")
+    equal(select(1, centerOf(state, counter)) - newBarX, gapX, "the counter kept its place beside the bar")
+    equal(select(2, centerOf(state, counter)), newBarY)
+end)
+test("a drop after combat began waits, then snaps and saves the group when combat ends", function()
+    local state = stonesFixture()
+    state.slash("unlock")
+    local bar, counter = state.env.WarlockToolsForeverStones, state.wtf.shardCounter
+    dropAt(state, bar, 400, 300)
+    local barX, barY = centerOf(state, bar)
+    dropAt(state, counter, barX + bar.width / 2 + 20 + counter.width / 2, barY)
+    local gapX = select(1, centerOf(state, counter)) - barX
+    local saved = state.wtf.db.shards.counterPosition
+    state.shift = true
+    bar.scripts.OnDragStart(bar)
+    bar:ClearAllPoints()
+    bar:SetPoint("CENTER", nil, "BOTTOMLEFT", 200, 600)
+    state.combat = true
+    bar.scripts.OnDragStop(bar)
+    equal(state.wtf.db.shards.counterPosition, saved, "nothing saved in combat")
+    state.combat = false
+    state.emit("PLAYER_REGEN_ENABLED")
+    equal(state.wtf.db.shards.counterPosition.relativePoint, "BOTTOMLEFT", "saved once combat ends")
+    equal(select(1, centerOf(state, counter)) - select(1, centerOf(state, bar)), gapX, "the group kept together")
+end)
+test("frames do not drag in combat or while locked", function()
+    local state = stonesFixture()
+    local bar = state.env.WarlockToolsForeverStones
+    bar.scripts.OnDragStart(bar)
+    equal(bar.moving, nil, "locked by default")
+    state.slash("unlock")
+    state.combat = true
+    bar.scripts.OnDragStart(bar)
+    equal(bar.moving, nil, "not in combat")
+    local before = state.wtf.db.stones.position
+    bar.scripts.OnDragStop(bar)
+    equal(state.wtf.db.stones.position, before, "a drop without a drag saves nothing")
+end)
+
 test("one lock for every WTF frame, locked by default, with no per-frame switches", function()
     local state = fixture({db = {stones = {locked = false}, tracker = {locked = false, placeholders = true}}})
     local db = state.wtf.db
@@ -1654,7 +2421,7 @@ test("/wtf unlock and /wtf lock move every WTF frame together", function()
     equal(db.tracker.locked, false)
     equal(db.tracker.placeholders, true, "sample rows to drag the tracker by")
     equal(db.shards.counterLocked, false)
-    contains(state.last(), "drag them where you want, then type /wtf lock.")
+    contains(state.last(), "All WTF frames unlocked: drag them where you want")
     equal(state.env.WarlockToolsForeverStones.mover.shown, true, "outlined")
     equal(state.wtf.shardCounter.mover.shown, true)
     equal(state.settings.WTF_UNLOCKED:GetValue(), true, "the main page's switch follows")
@@ -1665,7 +2432,7 @@ test("/wtf unlock and /wtf lock move every WTF frame together", function()
     equal(db.tracker.locked, true)
     equal(db.tracker.placeholders, false)
     equal(db.shards.counterLocked, true)
-    equal(state.last(), "WTF: Stones bar, DoT tracker, and shard counter locked.")
+    equal(state.last(), "WTF: All WTF frames locked.")
 end)
 test("unlocked, a grid shows the screen's center; it follows its switch and the lock", function()
     local state = fixture()
@@ -1693,7 +2460,7 @@ test("/wtf reset moves the Stones bar back, after combat if needed", function()
     state.combat = true
     state.slash("reset")
     equal(state.wtf.db.stones.position, nil)
-    contains(state.last(), "moves back after combat")
+    equal(state.last(), "WTF: WTF frames move back to their default places after combat.")
     state.combat = false
     state.emit("PLAYER_REGEN_ENABLED")
     equal(bar.points[1][1], "CENTER")
@@ -1953,8 +2720,77 @@ test("the Alerts page has the switch and a sound dropdown under it", function()
     equal(dropdown.parentInitializer, page.initializers[1])
     local choices = dropdown.choices()
     equal(#choices, 16)
-    equal(choices[1].label, "Imp laugh 1")
-    equal(choices[14].label, "Raid warning")
+    equal(choices[1].label, "Imp: Laugh 1")
+    equal(choices[14].label, "Interface: Raid warning")
+end)
+
+-- A menu description as the client's menu API builds it: buttons open submenus.
+local function menuDescription()
+    local description = {entries = {}}
+    function description:CreateButton(text)
+        local submenu = menuDescription()
+        submenu.text = text
+        self.entries[#self.entries + 1] = submenu
+        return submenu
+    end
+    function description:CreateRadio(text, isSelected, setSelected, data)
+        local radio = {text = text, data = data, isSelected = isSelected, setSelected = setSelected}
+        self.entries[#self.entries + 1] = radio
+        return radio
+    end
+    return description
+end
+
+-- Opens a dropdown as the client would: a pooled control, with Blizzard's
+-- own builder, is initialized for it.
+local function openMenu(dropdown, setting)
+    dropdown.GetSetting = function() return setting end
+    local control = {Dropdown = {}}
+    function control:SetupDropdownMenu() self.blizzardMenu = true end
+    function control:Init(initializer)
+        self:SetupDropdownMenu(self.Dropdown, initializer.setting, nil, nil, initializer)
+    end
+    dropdown:InitFrame(control)
+    control:Init(dropdown)
+    local root = menuDescription()
+    control.Dropdown.inserter(control.Dropdown.setting, root)
+    return root, control
+end
+
+local function groupNames(root)
+    local names = {}
+    for _, entry in ipairs(root.entries) do names[#names + 1] = entry.text end
+    return table.concat(names, ",")
+end
+
+test("the Nightfall sound is picked from a menu of submenus", function()
+    local state = fixture()
+    local page = state.categories.Alerts
+    local dropdown, setting = page.initializers[2], state.settings.WTF_ALERTS_NIGHTFALL_SOUND
+    equal(dropdown.data.forceSteppersHidden, true)
+    local root = openMenu(dropdown, setting)
+    equal(groupNames(root), "Imp,Hellish imp,Interface")
+    local imp = root.entries[1]
+    equal(imp.entries[1].text, "Laugh 1", "names inside their group")
+    imp.entries[1].setSelected(imp.entries[1].data)
+    equal(state.wtf.db.alerts.nightfallSound, "implaugh1")
+    equal(state.played.file, 639142, "choosing one plays it")
+    equal(dropdown.getSelectionTextFunc(), "Imp: Laugh 1")
+end)
+test("each chime's sound menu has the Cooldown Manager's groups; other dropdowns keep Blizzard's", function()
+    local state = fixture()
+    local page = state.categories["Cooldown Chimes"]
+    local setting = state.settings.WTF_CHIME_SOUND_DEATHCOIL
+    local dropdown
+    for _, initializer in ipairs(page.initializers) do
+        if initializer.setting == setting then dropdown = initializer end
+    end
+    local root, control = openMenu(dropdown, setting)
+    equal(groupNames(root), "Interface,Animals,Devices,Impacts,Instruments,Short,Warcraft 2,Warcraft 3")
+    equal(control.blizzardMenu, nil, "WTF's own menu")
+    control.Dropdown.inserter = nil
+    control:Init({setting = {}})
+    equal(control.blizzardMenu, true, "another dropdown gets Blizzard's menu")
 end)
 
 -- Announce ---------------------------------------------------------------------
@@ -2500,10 +3336,11 @@ test("the tracker drags by its rows unless locked, and /wtf reset moves it back"
     state.slash("unlock")
     state.targetRow.scripts.OnDragStart(state.targetRow)
     equal(state.anchor.moving, true)
-    state.anchor:SetPoint("TOP", nil, "TOP", 5, -5)
+    state.anchor:ClearAllPoints()
+    state.anchor:SetPoint("CENTER", nil, "BOTTOMLEFT", 300, 600)
     state.targetRow.scripts.OnDragStop(state.targetRow)
-    equal(state.wtf.db.tracker.position.point, "TOP")
-    state.wtf.db.tracker.locked = true
+    equal(state.wtf.db.tracker.position.x, 300)
+    state.slash("lock")
     state.targetRow.scripts.OnDragStart(state.targetRow)
     equal(state.anchor.moving, false)
     state.slash("reset")
@@ -2511,7 +3348,7 @@ test("the tracker drags by its rows unless locked, and /wtf reset moves it back"
     equal(state.anchor.points[1][1], "CENTER")
     state.combat = true
     state.slash("reset")
-    contains(state.last(), "moves back after combat")
+    equal(state.last(), "WTF: WTF frames move back to their default places after combat.")
 end)
 test("the tracker module switch hides it", function()
     local state = trackerFixture()

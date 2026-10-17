@@ -9,11 +9,16 @@
 
 Commands.lua
 Core.lua
+Layout.lua
 Shards.lua
 Stones.lua
 Announce.lua
 Tracker.lua
 Dots.lua
+Control.lua
 Alerts.lua
+Shield.lua
+Chimes.lua
+Reminders.lua
 Probe.lua
 Options.lua
