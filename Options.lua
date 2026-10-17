@@ -280,6 +280,11 @@ local function AddControlPage(parent)
                 .. spell.label .. " lands, and %M in its message. In a raid only the leader and assistants mark.")
         end
     end
+    Flag(page, "WTF_CONTROL_MACROS", "Keep control macros", "control", "macros", true,
+        "Keep \"! Banish\" and \"! Seduction\" in your character macros for your action bars, each once you "
+            .. "know its spell: it focuses the hostile mob under your mouse (or your target, out of combat) and "
+            .. "casts on your focus. Seduction casts only while your pet is a Succubus. Turning this off deletes "
+            .. "them.", function() WTF.ApplyControlMacros() end)
     Flag(page, "WTF_CONTROL_PLATE_TIMERS", "Fear timers on nameplates", "control", "plateTimers", true,
         "A thin bar under each feared mob's nameplate that drains with your Fear's time left, so you see which "
             .. "one is about to break; click its nameplate to target it.", RefreshControl)
