@@ -683,6 +683,9 @@ function WTF.InitializeOptions()
         "A crescent beside your character that fills with your remaining shield: Shadow Ward, your "
             .. "Voidwalker's Sacrifice, or a shield another player puts on you, like Power Word: Shield.",
         RefreshShield)
+    Flag(category, "WTF_REMINDERS_ENABLED", "Demon Armor reminder", "reminders", "enabled", true,
+        "An icon with a pulsing border while you lack Demon Armor (or Demon Skin), out of combat. Click it "
+            .. "to cast your armor.", function() WTF.RefreshReminders() end)
     Flag(category, "WTF_CHIMES_ENABLED", "Cooldown chimes", "chimes", "enabled", true,
         "A sound just before Death Coil, Howl of Terror, and your other chosen spells are ready again.")
     local unlocked = Proxy(category, "WTF_UNLOCKED", Settings.VarType.Boolean, "Unlock frames to move them", false,

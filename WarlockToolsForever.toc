@@ -18,5 +18,6 @@ Dots.lua
 Alerts.lua
 Shield.lua
 Chimes.lua
+Reminders.lua
 Probe.lua
 Options.lua

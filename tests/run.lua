@@ -25,7 +25,7 @@ local function contains(actual, fragment, context)
 end
 
 local RUNTIME_FILES = {"Commands.lua", "Core.lua", "Layout.lua", "Shards.lua", "Stones.lua", "Announce.lua", "Tracker.lua",
-    "Dots.lua", "Alerts.lua", "Shield.lua", "Chimes.lua", "Probe.lua", "Options.lua"}
+    "Dots.lua", "Alerts.lua", "Shield.lua", "Chimes.lua", "Reminders.lua", "Probe.lua", "Options.lua"}
 local SHARD = 6265
 local SPELLS = {[1120] = "Drain Soul", [11675] = "Drain Soul", [686] = "Shadow Bolt", [172] = "Corruption",
     [6222] = "Corruption", [980] = "Curse of Agony", [698] = "Ritual of Summoning",
@@ -35,6 +35,7 @@ local SPELLS = {[1120] = "Drain Soul", [11675] = "Drain Soul", [686] = "Shadow B
     [348] = "Immolate", [18265] = "Siphon Life", [5782] = "Fear", [702] = "Curse of Weakness",
     [6201] = "Create Healthstone", [6202] = "Create Healthstone", [5699] = "Create Healthstone",
     [6789] = "Death Coil", [5484] = "Howl of Terror", [6229] = "Shadow Ward", [18708] = "Fel Domination",
+    [687] = "Demon Skin", [706] = "Demon Armor", [11735] = "Demon Armor",
     [17962] = "Conflagrate", [18288] = "Amplify Curse", [1122] = "Inferno", [603] = "Bane of Doom"}
 local ITEMS = {[5232] = {"Minor Soulstone", 18}, [16892] = {"Lesser Soulstone", 30},
     [5512] = {"Minor Healthstone", 1}, [5511] = {"Lesser Healthstone", 12}, [5509] = {"Healthstone", 24}}
@@ -175,13 +176,18 @@ local function fixture(options)
         return {r = 0.53, g = 0.53, b = 0.93}
     end}
     env.UnitIsDead = function(unit) return state.units[unit] ~= nil and state.units[unit].dead == true end
+    env.UnitIsDeadOrGhost = function(unit) return state.units[unit] ~= nil and state.units[unit].dead == true end
     -- State drivers: "[@unit,harm,nodead] show; hide", evaluated by the game.
     state.drivers = {}
     function state.applyDrivers()
         for frame, driver in pairs(state.drivers) do
             local unit = driver:match("@(%a+)")
             local data = state.units[unit]
-            frame.shown = data ~= nil and not data.friend and not data.dead
+            if driver == "[combat] hide; show" then
+                frame.shown = not state.combat
+            else
+                frame.shown = data ~= nil and not data.friend and not data.dead
+            end
         end
     end
     env.RegisterStateDriver = function(frame, kind, driver)
@@ -647,6 +653,19 @@ local function fixture(options)
         function object:SetChecked(value) self.checked = value == true end
         function object:GetChecked() return self.checked end
         function object:CreateTexture() return widget("Texture", nil, self) end
+        function object:CreateAnimationGroup()
+            local group = {playing = false}
+            function group:SetLooping(looping) self.looping = looping end
+            function group:CreateAnimation(kind)
+                return setmetatable({kind = kind}, {__index = function() return function() end end})
+            end
+            function group:Play() self.playing = true end
+            function group:Stop() self.playing = false end
+            function group:IsPlaying() return self.playing end
+            self.animation = group
+            return group
+        end
+        function object:EnableMouseWheel(value) self.wheel = value == true end
         function object:AddAuraSlot(key, filter, slotOptions)
             self.slots = self.slots or {}
             local button = widget("Button", nil, self)
@@ -863,7 +882,7 @@ test("a missing client API disables WTF with one message naming it", function()
 end)
 test("a mixed install of old and new files is reported at login", function()
     local state = fixture({files = {"Commands.lua", "Core.lua", "Layout.lua", "Shards.lua", "Stones.lua", "Announce.lua",
-        "Tracker.lua", "Dots.lua", "Alerts.lua", "Shield.lua", "Chimes.lua", "Options.lua"}})
+        "Tracker.lua", "Dots.lua", "Alerts.lua", "Shield.lua", "Chimes.lua", "Reminders.lua", "Options.lua"}})
     equal(state.wtf.available, false)
     contains(state.last(), "missing ReportRestrictions")
 end)
@@ -1717,6 +1736,67 @@ test("the shard counter drags unless locked, saves its place, and resets", funct
     local saved = fixture({db = {shards = {counterPosition = {point = "TOP", relativePoint = "TOP", x = 1, y = 2}}}})
     equal(saved.wtf.shardCounter.points[1][1], "TOP", "the place survives a reload")
 end)
+-- Demon Armor reminder ---------------------------------------------------------------
+
+local DEMON_SKIN, DEMON_ARMOR = 687, 706
+
+test("the Demon Armor icon pulses while it is missing; a click casts your armor", function()
+    local state = fixture({known = {[DEMON_SKIN] = true, [DEMON_ARMOR] = true}})
+    local icon = state.env.WarlockToolsForeverReminder_armor
+    equal(icon.shown, true)
+    equal(icon.glow.animation.playing, true, "the border pulses")
+    equal(icon.protected, true, "a secure button")
+    equal(icon.attributes.type1, "spell")
+    equal(icon.attributes.spell1, "Demon Armor", "your best")
+    equal(icon.attributes.unit1, "player")
+    state.emit("UNIT_SPELLCAST_SUCCEEDED", "player", "cast-1", DEMON_SKIN)
+    state.emit("UNIT_AURA", "player")
+    equal(icon.attributes.spell1, "Demon Skin", "the armor you used last")
+    equal(state.wtf.db.reminders.last.armor, "Demon Skin")
+    state.buffs = {["Demon Skin"] = {name = "Demon Skin"}}
+    state.emit("UNIT_AURA", "player")
+    equal(icon.shown, false, "Demon Skin counts")
+    equal(icon.attributes.type1, nil)
+end)
+test("the reminder hides for combat, reads no buffs then, and follows its switch", function()
+    local state = fixture({known = {[DEMON_ARMOR] = true}})
+    local icon, holder = state.env.WarlockToolsForeverReminder_armor, state.env.WarlockToolsForeverReminders
+    equal(state.drivers[holder], "[combat] hide; show")
+    state.combat = true
+    state.applyDrivers()
+    equal(holder.shown, false)
+    state.emit("UNIT_AURA", "player")
+    state.combat = false
+    state.applyDrivers()
+    state.emit("PLAYER_REGEN_ENABLED")
+    equal(holder.shown, true)
+    state.settings.WTF_REMINDERS_ENABLED:SetValue(false)
+    equal(icon.shown, false)
+    local unknown = fixture()
+    equal(unknown.env.WarlockToolsForeverReminder_armor.shown, false, "not before you learn Demon Skin")
+end)
+test("unlocked, the reminder drags, snaps, and resizes with the mouse wheel", function()
+    local state = fixture()
+    state.slash("unlock")
+    local icon = state.env.WarlockToolsForeverReminder_armor
+    equal(icon.shown, true, "a sample to place")
+    equal(icon.attributes.type1, nil, "dragging never casts")
+    local x, y = state.absCenter(icon)
+    icon.scripts.OnMouseWheel(icon, 1)
+    equal(state.wtf.db.reminders.icons.armor.scale, 110)
+    local nx, ny = state.absCenter(icon)
+    equal(math.floor(nx + 0.5), math.floor(x + 0.5), "resizing keeps the center")
+    equal(math.floor(ny + 0.5), math.floor(y + 0.5))
+    state.slash("lock")
+    icon.scripts.OnMouseWheel(icon, 1)
+    equal(state.wtf.db.reminders.icons.armor.scale, 110, "locked icons do not resize")
+    state.slash("reset")
+    equal(state.wtf.db.reminders.icons.armor.scale, 100)
+    state.clear()
+    state.slash("debug_reminders")
+    contains(state.messages[1], "debug_reminders armor on=true known=false")
+end)
+
 -- Magnetic frames -------------------------------------------------------------------
 
 local function centerOf(state, frame)
