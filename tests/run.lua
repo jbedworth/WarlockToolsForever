@@ -597,6 +597,7 @@ local function fixture(options)
         function object:EnableMouse(value) self.mouseDisabled = value == false end
         function object:SetHeight(height) self.height = height end
         function object:SetSize(width, height) self.width, self.height = width, height end
+        function object:SetScale(value) self.scale = value end
         function object:GetWidth() return self.width or 0 end
         function object:GetHeight() return self.height or 0 end
         function object:GetEffectiveScale()
@@ -1854,6 +1855,67 @@ test("clicking a row recasts its spell on its mob; a click begun in combat follo
     state.emit("PLAYER_REGEN_ENABLED")
     contains(state.env.WarlockToolsForeverControlClick3.attributes.macrotext1, "/targetexact Wolf")
     equal(state.env.WarlockToolsForeverControlClick4.shown, false, "no click area without a mob")
+end)
+test("a row whose click is set keeps its slot until combat ends, so no click casts on the wrong mob", function()
+    local state = controlFixture()
+    castAt(state, FEAR, "nameplate3")
+    local click1 = state.env.WarlockToolsForeverControlClick1
+    contains(click1.attributes.macrotext1, "/targetexact Boar")
+    state.combat = true
+    state.units.nameplate3.dead = true
+    state.emit("UNIT_HEALTH", "nameplate3")
+    equal(controlRow(state, 1).shown, false, "the Boar is gone")
+    castAt(state, FEAR, "nameplate4")
+    equal(controlRow(state, 1).shown, false, "its row is not reused while its click still names the Boar")
+    equal(controlRow(state, 2).name.text, "Imp")
+    state.combat = false
+    state.emit("PLAYER_REGEN_ENABLED")
+    equal(click1.attributes.macrotext1, nil, "cleared after combat")
+    equal(click1.shown, false)
+    state.units.nameplate5 = {name = "Wolf", guid = "Creature-3"}
+    castAt(state, FEAR, "nameplate5")
+    equal(controlRow(state, 1).name.text, "Wolf", "then free again")
+end)
+test("a cast that fails out of combat gives back its row and click", function()
+    local state = controlFixture()
+    state.units.target = state.units.nameplate3
+    state.emit("UNIT_SPELLCAST_SENT", "player", "Boar", "cast-a", FEAR)
+    local click1 = state.env.WarlockToolsForeverControlClick1
+    equal(click1.shown, true, "set as the cast starts")
+    state.emit("UNIT_SPELLCAST_INTERRUPTED", "player", "cast-a", FEAR)
+    equal(click1.shown, false)
+    equal(click1.attributes.macrotext1, nil)
+    for index = 1, 5 do
+        state.units["nameplate" .. (10 + index)] = {name = "Mob" .. index, guid = "Creature-1" .. index}
+        state.units.target = state.units["nameplate" .. (10 + index)]
+        state.emit("UNIT_SPELLCAST_SENT", "player", "Mob" .. index, "cast-f" .. index, FEAR)
+        state.emit("UNIT_SPELLCAST_FAILED", "player", "cast-f" .. index, FEAR)
+    end
+    castAt(state, FEAR, "nameplate4")
+    equal(controlRow(state, 1).name.text, "Imp", "failed casts never use up the rows")
+end)
+test("a size change in combat waits for combat, so rows stay on their click slots", function()
+    local state = controlFixture()
+    castAt(state, FEAR, "nameplate3")
+    state.combat = true
+    state.settings.WTF_CONTROL_SCALE:SetValue(80)
+    equal(controlRow(state, 1).scale, 1, "unchanged in combat")
+    equal(state.env.WarlockToolsForeverControl.scale, 1)
+    state.combat = false
+    state.emit("PLAYER_REGEN_ENABLED")
+    equal(controlRow(state, 1).scale, 0.8)
+    equal(state.env.WarlockToolsForeverControl.scale, 0.8, "together")
+end)
+test("a row never binds to mouseover, which changes with the pointer", function()
+    local state = controlFixture()
+    state.units.mouseover = {name = "Ghoul", guid = "Creature-9"}
+    state.emit("UNIT_SPELLCAST_SENT", "player", "Ghoul", "cast-m", FEAR)
+    state.emit("UNIT_SPELLCAST_SUCCEEDED", "player", "cast-m", FEAR)
+    equal(controlRow(state, 1).shown, false, "a mob seen only under the pointer is not tracked")
+    state.units.nameplate6 = state.units.mouseover
+    state.emit("UNIT_SPELLCAST_SENT", "player", "Ghoul", "cast-n", FEAR)
+    state.emit("UNIT_SPELLCAST_SUCCEEDED", "player", "cast-n", FEAR)
+    equal(controlRow(state, 1).container.unit, "nameplate6", "its nameplate instead")
 end)
 test("unlocked, the control bar shows samples to drag; debug_control reports the rows", function()
     local state = controlFixture()

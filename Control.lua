@@ -186,7 +186,8 @@ local function KnowsAny()
     return false
 end
 
--- The unit showing this mob now: its nameplate, else target, focus, or mouseover.
+-- The unit showing this mob now: its nameplate, else target or focus. Not
+-- mouseover: it changes with the pointer and has no event WTF rebinds on.
 local function FindUnit(guid)
     if not guid then
         return nil
@@ -197,7 +198,7 @@ local function FindUnit(guid)
             return unit
         end
     end
-    for _, unit in ipairs({"target", "focus", "mouseover"}) do
+    for _, unit in ipairs({"target", "focus"}) do
         if ReadGUID(unit) == guid then
             return unit
         end
@@ -236,7 +237,6 @@ local function Layout()
     local sample = not WTF.db.locked
     anchor.mover:SetShown(sample)
     for index, row in ipairs(control.rows) do
-        row:SetScale(settings.scale / 100)
         if not settings.enabled then
             row:Hide()
         elseif row.guid then
@@ -259,9 +259,11 @@ local function ApplyClicks()
     end
     control.clickDirty = false
     local settings = WTF.db.control
+    -- Rows scale with their click slots, so they never drift apart in combat.
     anchor:SetScale(settings.scale / 100)
     anchor:SetShown(settings.enabled and (KnowsAny() or not WTF.db.locked))
     for _, row in ipairs(control.rows) do
+        row:SetScale(settings.scale / 100)
         local holder, name, spell = row.holder, row.clickName, row.clickSpell
         if name and spell then
             -- A missing mob leaves no target, so nothing else is cast on.
@@ -291,8 +293,11 @@ local function RowFor(guid, name)
             return row
         end
     end
+    -- A row is free once its click slot is empty too: a slot's action can be
+    -- cleared only out of combat, so a mob forgotten in combat keeps its
+    -- slot until then, and no other mob gets a click that casts on it.
     for _, row in ipairs(control.rows) do
-        if not row.guid and not row.clickName then
+        if not row.guid and not row.clickName and not row.holder.mobName then
             return row
         end
     end
@@ -485,6 +490,7 @@ local function OnCastSent(target, castGUID, spellID)
         local row = RowFor(guid, target)
         if row and not row.guid then
             row.clickName, row.clickSpell = target, C_Spell.GetSpellName(spellID)
+            control.casts[castGUID].row = row
             ApplyClicks()
         end
     end
@@ -550,7 +556,14 @@ events:SetScript("OnEvent", function(_, event, unit, first, second, third)
         OnCastSucceeded(first)
     elseif event == "UNIT_SPELLCAST_FAILED" or event == "UNIT_SPELLCAST_INTERRUPTED" then
         if not WTF.IsSecret(first) then
+            local cast = control.casts[first]
             control.casts[first] = nil
+            -- A cast that never landed gives back the row it reserved.
+            local row = cast and cast.row
+            if row and not row.guid then
+                row.clickName, row.clickSpell = nil, nil
+                ApplyClicks()
+            end
         end
     elseif event == "UNIT_HEALTH" then
         for _, row in ipairs(control.rows) do
