@@ -145,8 +145,14 @@ function WTF.EndDrag(frame)
     local x, y = Box(frame)
     local snapX, snapY = SnapPoint(frame, inGroup)
     local shiftX, shiftY = (snapX or x) - x, (snapY or y) - y
-    for _, member in ipairs(group) do
+    -- Every center first: followers are still anchored to the dragged frame,
+    -- so moving it first would move them too, and the shift would apply twice.
+    local centers = {}
+    for index, member in ipairs(group) do
         local memberX, memberY = Box(member)
-        MoveTo(member, memberX + shiftX, memberY + shiftY)
+        centers[index] = {memberX + shiftX, memberY + shiftY}
+    end
+    for index, member in ipairs(group) do
+        MoveTo(member, centers[index][1], centers[index][2])
     end
 end

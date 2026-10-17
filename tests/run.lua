@@ -2062,6 +2062,25 @@ test("Shift-dragging a frame moves every frame snapped to it", function()
     dropAt(state, bar, 600, 600)
     equal(select(1, centerOf(state, counter)), movedX, "without Shift the bar leaves alone")
 end)
+test("a Shift-dragged group that snaps keeps its spacing", function()
+    local state = stonesFixture()
+    state.slash("unlock")
+    local bar, counter = state.env.WarlockToolsForeverStones, state.wtf.shardCounter
+    local tracker = state.env.WarlockToolsForeverTracker
+    dropAt(state, bar, 400, 300)
+    local barX, barY = centerOf(state, bar)
+    dropAt(state, counter, barX + bar.width / 2 + 20 + counter.width / 2, barY)
+    local gapX = select(1, centerOf(state, counter)) - barX
+    -- Drop the group just off a spot beside the tracker, so it snaps.
+    local trackerX, trackerY = centerOf(state, tracker)
+    local spotY = trackerY - tracker.height / 2 - 20 - bar.height / 2
+    state.shift = true
+    dropAt(state, bar, trackerX - tracker.width / 2 + bar.width / 2 + 5, spotY - 6)
+    local newBarX, newBarY = centerOf(state, bar)
+    equal(newBarY, math.floor(spotY + 0.5), "the group snapped")
+    equal(select(1, centerOf(state, counter)) - newBarX, gapX, "the counter kept its place beside the bar")
+    equal(select(2, centerOf(state, counter)), newBarY)
+end)
 test("frames do not drag in combat or while locked", function()
     local state = stonesFixture()
     local bar = state.env.WarlockToolsForeverStones
