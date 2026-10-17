@@ -1,6 +1,6 @@
 local _, WTF = ...
 
--- Magnetic frames (author-approved, as MTF's buff reminders, improved): while
+-- Magnetic frames (author-approved, shared with MTF): while
 -- frames are unlocked, a frame dropped near another snaps beside it, GAP apart,
 -- lined up by their tops, centers, or bottoms (or lefts, centers, or rights
 -- when stacked), whichever is nearest. Frames that far apart and lined up are
@@ -8,6 +8,7 @@ local _, WTF = ...
 -- snaps as one to the frames outside it. Each module registers its frame with
 -- a function that saves the frame's position; positions save as the frame's
 -- center from UIParent's bottom left. Dragging happens only out of combat.
+-- The same file as MTF's Layout.lua but for the namespace.
 
 local GAP = 20
 local SNAP_RANGE = 24
