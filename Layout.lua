@@ -101,6 +101,13 @@ local function SnapPoint(frame, skip)
     return bestX, bestY
 end
 
+-- Changes a frame's scale without moving its center, and saves it.
+function WTF.ScaleKeepingCenter(frame, scale)
+    local x, y = Box(frame)
+    frame:SetScale(scale)
+    MoveTo(frame, x, y)
+end
+
 function WTF.BeginDrag(frame)
     if WTF.db.locked or InCombatLockdown() then
         return

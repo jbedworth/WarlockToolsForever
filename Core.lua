@@ -71,7 +71,9 @@ local REQUIRED_NAMESPACE = {
     "DebugDeleteShard", "RefreshShardCounter", "ResetShardCounterPosition",
     "CheckStoneCapabilities", "InitializeStones", "ResetStonesPosition", "ReportStoneDebug", "RefreshStonesMover",
     "ReportStoneStatus", "RemindStones", "ApplyStoneMacros", "AddInputHandler", "RunOnNextInput", "ReportClickDebug",
-    "Warn", "RegisterMovable", "BeginDrag", "EndDrag", "InitializeAnnounce", "FormatAnnouncement", "ReportAnnounceDebug", "DebugEmote", "FriendlyTargetNames",
+    "Warn", "RegisterMovable", "BeginDrag", "EndDrag", "ScaleKeepingCenter",
+    "InitializeReminders", "RefreshReminders", "ResetRemindersPosition", "ReportRemindersDebug",
+    "SanitizeReminders", "InitializeAnnounce", "FormatAnnouncement", "ReportAnnounceDebug", "DebugEmote", "FriendlyTargetNames",
     "WhisperHealthstoneGift",
     "CheckTrackerCapabilities", "InitializeTracker", "ResetTrackerPosition", "RefreshTracker",
     "ReportTrackerDebug", "TrackerCandidateFilters", "TrackerKnowsSlot", "SetTrackerTheme",
@@ -349,6 +351,9 @@ function WTF.SanitizeDB(db)
     if WTF.SanitizeChimes then
         db.chimes = WTF.SanitizeChimes(db.chimes)
     end
+    if WTF.SanitizeReminders then
+        db.reminders = WTF.SanitizeReminders(db.reminders, SanitizePosition)
+    end
     -- The shield display is a self-contained component; it owns its defaults.
     if WTF.ShieldDisplay then
         db.shield = WTF.ShieldDisplay.Sanitize(db.shield)
@@ -536,6 +541,7 @@ function WTF.SetFramesLocked(locked)
     WTF.RefreshStonesMover()
     WTF.RefreshShardCounter()
     WTF.RefreshShield()
+    WTF.RefreshReminders()
     WTF.RefreshGrid()
     if locked then
         WTF.Report("All WTF frames locked.")
@@ -559,6 +565,7 @@ function WTF.ResetPositions()
     WTF.ResetStonesPosition()
     WTF.ResetTrackerPosition()
     WTF.ResetShieldPosition()
+    WTF.ResetRemindersPosition()
     if InCombatLockdown() then
         WTF.Report("WTF frames move back to their default places after combat.")
     end
@@ -617,6 +624,7 @@ events:SetScript("OnEvent", function(self, event, loadedName)
     WTF.InitializeAlerts()
     WTF.InitializeShield()
     WTF.InitializeChimes()
+    WTF.InitializeReminders()
     WTF.InitializeOptions()
     WTF.RefreshGrid()
 end)
