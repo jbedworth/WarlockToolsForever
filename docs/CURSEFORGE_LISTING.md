@@ -20,7 +20,7 @@ tested.
 
 ## Summary
 
-Quality-of-life tools for Warlocks in World of Warcraft: Forever: Soul Shard management, Soulstone and Healthstone buttons, summon announcements, and a multi-mob DoT tracker.
+Quality-of-life tools for Warlocks in World of Warcraft: Forever: Soul Shard management, Soulstone and Healthstone buttons, a multi-mob DoT tracker, a Fear and Banish bar, cooldown chimes, and customizable announcements with flavor.
 
 ## Description
 
@@ -64,8 +64,25 @@ Per-file changelogs need no manual text: each CI upload uses the version's
 - A list of up to eight other mobs you DoTed. Expired spells stay as dim icons, so you see what to recast.
 - Optional colored DoT dots above hostile nameplates: grey means missing, at a glance.
 
+### Control bar
+- Tracker with a countdown bar for each mob you fear or banish.
+- Each bar tracks the time left on the effect.
+- Banish marks its mob with the moon so your group leaves it alone, and Fear, Banish, Enslave Demon, and Howl of Terror can tell your group as you cast.
+- A Fear timer under each feared mob's nameplate shows which one is about to break.
+- Click a Banish row to banish your focus again. A "! Fear" macro Fears the mob under your mouse; "! Banish" and "! Seduction" focus it and cast on it.
+
+### Cooldown chimes
+- A sound just before Death Coil, Howl of Terror, Shadow Ward, your Soulstone, and Fel Domination are ready again; works in and out of combat.
+- You can configure a sound (or text-to-speech) for each.
+
+### Shield display
+- A crescent that fills with your Shadow Ward, your Voidwalker's Sacrifice, or any absorb shield on you (Power Word: Shield, protection potions, trinkets), and drains as it absorbs.
+
+### Demon Armor reminder
+- An icon with a pulsing border while your armor is down. Click it to cast it.
+
 ### Moving frames
-- `/wtf unlock` (or a switch on the main settings page) outlines every WTF frame so you can drag it, with a grid that marks the center of your screen. `/wtf lock` locks them again; `/wtf reset` puts them back.
+- `/wtf unlock` (or a switch on the main settings page) outlines every WTF frame so you can drag it, with a grid that marks the center of your screen. Frames snap together like magnets; Shift-drag moves a snapped group. `/wtf lock` locks them again; `/wtf reset` puts them back.
 
 ### Commands
 - `/wtf` or `/wtf options` opens the settings (Options > AddOns).

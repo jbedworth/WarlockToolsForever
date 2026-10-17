@@ -155,9 +155,65 @@ above nameplates** if it overlaps your nameplate AddOn.
 **Nightfall sound** (off by default, on the Alerts settings page): a sound
 when Nightfall procs Shadow Trance, so your next Shadow Bolt is instant. Choose
 from imp laughs and chirps (the default is the Imp spell chirp) or Raid warning,
-Ready check, or Alarm clock; choosing one plays it once, so you can audition
-them. The game
+Ready check, or Alarm clock, in a menu grouped like the Cooldown Manager's;
+choosing one plays it once, so you can audition them. The game
 plays the sound itself, also in combat.
+
+## Control bar
+
+A bar for each mob you **Fear** or **Banish**, with the mob's name and the time
+left, in the same style as the DoT tracker's Bars theme. Several mobs at once
+are fine. It follows each mob as you change target, empties when the spell
+breaks early, and goes when the mob dies.
+
+- **Raid marker:** a mob you Banish gets the moon when the cast lands, so your
+  group knows it is out of the fight (change it on the Control settings page).
+  Fear marks nothing, so WTF uses only one marker slot in a group. If you mark
+  with your own `/tm` macro, set Banish's marker to None: the game toggles a
+  marker that is set twice, and in combat WTF cannot see yours.
+- **Group messages:** Fear, Banish, Enslave Demon, and Howl of Terror can tell
+  your party or raid as you start casting, with the mob's name and marker
+  (Announce page).
+- **Click a Banish row** to banish your focus again (with no focus, WTF targets
+  the mob by name and returns you to your target). The game lets the click
+  change only out of combat: a Banish that starts before the pull is
+  clickable all fight; one started in combat becomes clickable when combat
+  ends.
+- **Fear rows** show each feared mob and its time left; they take no clicks,
+  since the game gives AddOns no way to aim at one of several same-named
+  mobs. Instead, a **Fear timer under each feared mob's nameplate** shows which
+  one is about to break: click its nameplate to target it, then Fear.
+- **Macros:** WTF keeps "! Fear", "! Banish", and "! Seduction" in your
+  character macros, each once you know its spell ("! Seduction" once your
+  Succubus or Incubus has learned Seduction from its Grimoire). "! Fear" Fears the mob under your mouse, else your
+  target: hover a feared mob's nameplate as its timer runs out and press it.
+  "! Banish" and "! Seduction" focus the hostile mob under your mouse (or your
+  target, out of combat) and cast on your focus; "! Seduction" does nothing
+  unless your pet is a Succubus or an Incubus. Turn them off on the Control settings page.
+
+## Cooldown chimes
+
+A sound just before **Death Coil**, **Howl of Terror**, **Shadow Ward**, your
+**Soulstone**, and **Fel Domination** are ready again (Shadowburn,
+Conflagrate, Amplify Curse, Bane of Doom, and Inferno are off by default), also
+in combat. Each spell has its own sound, picked from a menu like the Cooldown
+Manager's: the game's interface sounds, the Cooldown Manager's 93 alert
+sounds, or a voice that says the spell's name. Pick how early it plays on the
+Cooldown Chimes page.
+
+## Shield display
+
+The shield crescent from Mage Tools Forever: it fills with your **Shadow Ward**,
+your Voidwalker's **Sacrifice**, or any absorb on you, like Power Word: Shield,
+and drains as it absorbs, also in combat. A Paladin's **Blessing of
+Protection** on you, which has no absorb, shows as a gold innermost arc that
+drains with its time left. If you also use Mage
+Tools Forever, you still see one crescent.
+
+## Demon Armor reminder
+
+An icon with a pulsing gold border while you have neither Demon Armor nor
+Demon Skin, out of combat. Click it to cast your armor.
 
 ## Settings
 
@@ -167,9 +223,11 @@ module. Each module has its own subpage, such as **Soul Shards**.
 ## Moving frames
 
 All WTF frames move together. Tick **Unlock frames to move them** on the
-main WTF settings page, or type `/wtf unlock`: the Stones bar and the shard
-counter get a gold outline and a hint, and the DoT tracker shows sample rows,
-so you can drag them. Untick it, or type `/wtf lock`, to lock them again.
+main WTF settings page, or type `/wtf unlock`: every WTF frame gets a gold
+outline, and the DoT tracker and control bar show sample rows, so you can drag
+them. Frames are magnetic: drop one near another and it snaps beside it, 20
+pixels apart and lined up. Hold **Shift** while dragging to move a whole
+snapped group. Scroll over the Demon Armor icon to resize it. Untick it, or type `/wtf lock`, to lock them again.
 `/wtf reset` puts them back in their default places. Everything starts locked.
 
 While unlocked, a faint grid covers the screen, with red lines through its
@@ -183,9 +241,9 @@ the main settings page if you'd rather not see it.
 | `/wtf`, `/wtf options` | Open the settings |
 | `/wtf shards` | Show your shard count, limit, and whether deletion is on |
 | `/wtf stones` | Show who has your Soulstone and the stones you carry |
-| `/wtf unlock` | Unlock the Stones bar, the DoT tracker (with sample rows), and the shard counter, so you can drag them |
+| `/wtf unlock` | Unlock every WTF frame, so you can drag them |
 | `/wtf lock` | Lock them again where they are |
-| `/wtf reset` | Move the Stones bar and the DoT tracker back to their default places |
+| `/wtf reset` | Move every WTF frame back to its default place |
 | `/wtf debug_shards` | Diagnostics: bags, soul bag sizes, and recent shard gains |
 | `/wtf debug_restrictions` | Diagnostics: which combat data this client hides from AddOns |
 | `/wtf debug_delete` | Diagnostics: delete one shard above your limit now (out of combat) |
@@ -193,6 +251,10 @@ the main settings page if you'd rather not see it.
 | `/wtf debug_announce` | Diagnostics: the latest summon and Soulstone cast events |
 | `/wtf debug_emote` | Diagnostics: two test emotes from a timer, one per chat function, and which the game blocks |
 | `/wtf debug_tracker` | Diagnostics: the spell IDs each tracker slot accepts, and tracked mobs |
+| `/wtf debug_control` | Diagnostics: the control bar's spell IDs, rows, clicks, and the last marker |
+| `/wtf debug_chimes` | Diagnostics: each chime spell, its cooldown, and the sound |
+| `/wtf debug_shield` | Diagnostics: the absorb APIs and the shields WTF tracks |
+| `/wtf debug_reminders` | Diagnostics: the Demon Armor reminder and its click |
 
 `/warlocktools` works the same as `/wtf`, in case another AddOn uses `/wtf`.
 

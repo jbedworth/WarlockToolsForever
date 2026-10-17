@@ -11,6 +11,9 @@ local ANNOUNCE_TITLE = "Announce"
 local TRACKER_TITLE = "DoT Tracker"
 local COLORS_TITLE = "DoT Colors"
 local ALERTS_TITLE = "Alerts"
+local SHIELD_TITLE = "Shield"
+local CHIMES_TITLE = "Cooldown Chimes"
+local CONTROL_TITLE = "Control"
 local UNAVAILABLE = "The AddOn settings page is unavailable on this client. Use /wtf shards for status."
 local GOLD = {1, 0.82, 0}
 
@@ -22,6 +25,7 @@ local REQUIRED_SETTINGS = {
 }
 
 local category
+local NestSoundMenu
 
 local function HasSettingsAPI()
     if type(Settings) ~= "table" or type(Settings.VarType) ~= "table" then
@@ -74,6 +78,228 @@ local function RefreshStones()
     if WTF.RefreshStones then
         WTF.RefreshStones()
     end
+end
+
+local function RefreshShield()
+    WTF.RefreshShield()
+end
+
+local function SliderOptions(minValue, maxValue, step)
+    local options = Settings.CreateSliderOptions(minValue, maxValue, step)
+    if type(MinimalSliderWithSteppersMixin) == "table" and type(options.SetLabelFormatter) == "function" then
+        options:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right)
+    end
+    return options
+end
+
+local function AddShieldPage(parent)
+    local page = Settings.RegisterVerticalLayoutSubcategory(parent, SHIELD_TITLE)
+    Flag(page, "WTF_SHIELD_NUMBER", "Show the absorb amount", "shield", "number", true,
+        "Show your remaining absorb as a number beside the ring.", RefreshShield)
+    Flag(page, "WTF_SHIELD_BREAK_SOUND", "Sound when a shield ends", "shield", "breakSound", false,
+        "Play a sound when your Shadow Ward, your Voidwalker's Sacrifice, or another shield on you ends or "
+            .. "breaks, also in combat.", RefreshShield)
+    local display = WTF.ShieldDisplay
+    local scale = Proxy(page, "WTF_SHIELD_SCALE", Settings.VarType.Number, "Display size (%)", display.DEFAULT_SCALE,
+        function() return WTF.db.shield.scale end,
+        function(value)
+            WTF.db.shield.scale = display.SanitizeScale(value)
+            RefreshShield()
+        end)
+    Settings.CreateSlider(page, scale, SliderOptions(display.SCALE_MIN, display.SCALE_MAX, display.SCALE_STEP),
+        "How big the shield display is, in percent.")
+end
+
+-- The sound menu (author-approved, as MTF's): a submenu per group and a
+-- top-level entry for a sound with no group, as the Cooldown Manager's sound
+-- picker (CooldownViewerUtil.BuildSoundMenus) builds it with the same menu
+-- API. Blizzard's settings dropdown builds its menu in its control's
+-- SetupDropdownMenu; the control frames are pooled and shared with other
+-- settings and AddOns (MTF wraps them too), so the replacement builds the
+-- nested menu only for a WTF sound dropdown and hands every other one on.
+-- source: {groups = function() -> {{name, sounds}}, parts = function(sound)
+-- -> group, name, label = function(key) -> full label}.
+local function SoundMenuInserter(source)
+    return function(setting, rootDescription)
+        local function IsSelected(key)
+            return setting:GetValue() == key
+        end
+        local function SetSelected(key)
+            setting:SetValue(key)
+        end
+        for _, group in ipairs(source.groups()) do
+            if #group.sounds == 1 and not source.parts(group.sounds[1]) then
+                rootDescription:CreateRadio(group.sounds[1].label, IsSelected, SetSelected, group.sounds[1].key)
+            else
+                local submenu = rootDescription:CreateButton(group.name)
+                for _, choice in ipairs(group.sounds) do
+                    local _, name = source.parts(choice)
+                    submenu:CreateRadio(name, IsSelected, SetSelected, choice.key)
+                end
+            end
+        end
+    end
+end
+
+local function NestedSetupDropdownMenu(original)
+    return function(control, button, setting, options, initTooltip, initializer)
+        local source = initializer and initializer.wtfSoundMenu
+        if not source then
+            return original(control, button, setting, options, initTooltip, initializer)
+        end
+        Settings.InitDropdown(button, setting, SoundMenuInserter(source), initTooltip)
+    end
+end
+
+function NestSoundMenu(initializer, source)
+    if type(initializer.InitFrame) ~= "function" or type(Settings.InitDropdown) ~= "function" then
+        return
+    end
+    initializer.wtfSoundMenu = source
+    initializer.data = initializer.data or {}
+    -- A menu of submenus has no single list to step through.
+    initializer.data.forceSteppersHidden = true
+    -- The dropdown shows the full label, "Short: Bell Strike".
+    initializer.getSelectionTextFunc = function()
+        return source.label(initializer:GetSetting():GetValue()) or ""
+    end
+    local initFrame = initializer.InitFrame
+    function initializer:InitFrame(frame)
+        if type(frame.SetupDropdownMenu) == "function" and not frame.wtfNestedSoundMenu then
+            frame.wtfNestedSoundMenu = true
+            frame.SetupDropdownMenu = NestedSetupDropdownMenu(frame.SetupDropdownMenu)
+        end
+        return initFrame(self, frame)
+    end
+end
+
+local CHIME_SOUND_SOURCE = {
+    groups = function() return WTF.ChimeSoundGroups() end,
+    parts = function(sound) return WTF.ChimeSoundParts(sound) end,
+    label = function(key) return WTF.ChimeSoundLabel(key) end,
+}
+
+-- Nightfall's sounds in the same nested menu, grouped by their labels.
+local function SoundParts(sound)
+    local group, name = sound.label:match("^(.-): (.+)$")
+    return group, name or sound.label
+end
+
+local NIGHTFALL_SOUND_SOURCE = {
+    groups = function()
+        local groups, byName = {}, {}
+        for _, sound in ipairs(WTF.NIGHTFALL_SOUNDS) do
+            local group = SoundParts(sound) or sound.label
+            if not byName[group] then
+                byName[group] = {name = group, sounds = {}}
+                groups[#groups + 1] = byName[group]
+            end
+            byName[group].sounds[#byName[group].sounds + 1] = sound
+        end
+        return groups
+    end,
+    parts = SoundParts,
+    label = function(key)
+        for _, sound in ipairs(WTF.NIGHTFALL_SOUNDS) do
+            if sound.key == key then
+                return sound.label
+            end
+        end
+    end,
+}
+
+local function AddChimesPage(parent)
+    local page = Settings.RegisterVerticalLayoutSubcategory(parent, CHIMES_TITLE)
+    -- Every sound by its full label: the dropdown's plain list, used when the
+    -- nested menu is not set up.
+    local function Choices()
+        local container = Settings.CreateControlTextContainer()
+        for _, sound in ipairs(WTF.AvailableChimeSounds()) do
+            container:Add(sound.key, sound.label)
+        end
+        return container:GetData()
+    end
+    local lead = Proxy(page, "WTF_CHIMES_LEAD", Settings.VarType.Number, "Chime early (seconds)",
+        WTF.DEFAULT_CHIME_LEAD,
+        function() return WTF.db.chimes.lead end,
+        function(value)
+            WTF.db.chimes.lead = WTF.SanitizeChimeLead(value)
+        end)
+    Settings.CreateSlider(page, lead, SliderOptions(WTF.CHIME_LEAD_MIN, WTF.CHIME_LEAD_MAX, WTF.CHIME_LEAD_STEP),
+        "How long before a cooldown ends the chime plays, so you can act the moment it is ready.")
+    for _, chime in ipairs(WTF.CHIME_SPELLS) do
+        local setting = Proxy(page, "WTF_CHIME_" .. chime.key:upper(), Settings.VarType.Boolean, chime.label,
+            chime.on,
+            function() return WTF.db.chimes.spells[chime.key] end,
+            function(value) WTF.db.chimes.spells[chime.key] = value == true end)
+        local switch = Settings.CreateCheckbox(page, setting, "Chime when " .. chime.label .. " is ready again.")
+        local sound = Proxy(page, "WTF_CHIME_SOUND_" .. chime.key:upper(), Settings.VarType.String, "Sound",
+            WTF.DEFAULT_CHIME_SOUND,
+            function() return WTF.db.chimes.sounds[chime.key] end,
+            function(value)
+                for _, choice in ipairs(WTF.CHIME_SOUNDS) do
+                    if choice.key == value then
+                        WTF.db.chimes.sounds[chime.key] = value
+                        WTF.PreviewChime(chime.key)
+                    end
+                end
+            end)
+        local dropdown = Settings.CreateDropdown(page, sound, Choices,
+            "The sound for " .. chime.label .. ". Choosing one plays it once.")
+        NestSoundMenu(dropdown, CHIME_SOUND_SOURCE)
+        dropdown:SetParentInitializer(switch, function() return WTF.db.chimes.spells[chime.key] end)
+    end
+end
+
+local function RefreshControl()
+    WTF.RefreshControl()
+end
+
+local function AddControlPage(parent)
+    local page = Settings.RegisterVerticalLayoutSubcategory(parent, CONTROL_TITLE)
+    local function MarkerChoices()
+        local container = Settings.CreateControlTextContainer()
+        for _, marker in ipairs(WTF.RAID_MARKERS) do
+            container:Add(marker.index, marker.label)
+        end
+        return container:GetData()
+    end
+    for _, spell in ipairs(WTF.CONTROL_SPELLS) do
+        if spell.marker then
+            local marker = Proxy(page, "WTF_CONTROL_MARKER_" .. spell.key:upper(), Settings.VarType.Number,
+                spell.label .. " marker", spell.marker,
+                function() return WTF.db.control.markers[spell.key] end,
+                function(value)
+                    for _, choice in ipairs(WTF.RAID_MARKERS) do
+                        if choice.index == value then
+                            WTF.db.control.markers[spell.key] = value
+                        end
+                    end
+                end)
+            Settings.CreateDropdown(page, marker, MarkerChoices, "The raid marker WTF puts on a mob when your "
+                .. spell.label .. " lands, and %M in its message. In a raid only the leader and assistants mark.")
+        end
+    end
+    Flag(page, "WTF_CONTROL_MACROS", "Keep control macros", "control", "macros", true,
+        "Keep \"! Fear\", \"! Banish\", and \"! Seduction\" in your character macros for your action bars, "
+            .. "each once you know its spell. \"! Fear\" Fears the mob under your mouse (a feared mob's nameplate "
+            .. "as its timer runs out), else your target. The others focus the hostile mob under your mouse (or "
+            .. "your target, out of combat) and cast on your focus. \"! Seduction\" appears once your Succubus "
+            .. "or Incubus has learned Seduction from its Grimoire, and casts only while one is your pet. Turning "
+            .. "this off deletes them.", function() WTF.ApplyControlMacros() end)
+    Flag(page, "WTF_CONTROL_PLATE_TIMERS", "Fear timers on nameplates", "control", "plateTimers", true,
+        "A thin bar under each feared mob's nameplate that drains with your Fear's time left, so you see which "
+            .. "one is about to break; click its nameplate to target it.", RefreshControl)
+    local scale = Proxy(page, "WTF_CONTROL_SCALE", Settings.VarType.Number, "Bar size (%)",
+        WTF.DEFAULT_CONTROL_SCALE,
+        function() return WTF.db.control.scale end,
+        function(value)
+            WTF.db.control.scale = WTF.SanitizeControlScale(value)
+            RefreshControl()
+        end)
+    Settings.CreateSlider(page, scale,
+        SliderOptions(WTF.CONTROL_SCALE_MIN, WTF.CONTROL_SCALE_MAX, WTF.CONTROL_SCALE_STEP),
+        "How big the control bar is, in percent. A change in combat applies when combat ends.")
 end
 
 local function AddShardPage(parent)
@@ -323,6 +549,7 @@ local function AddAlertsPage(parent)
     end
     local soundInitializer = Settings.CreateDropdown(page, sound, Choices,
         "The sound to play. Choosing one plays it once.")
+    NestSoundMenu(soundInitializer, NIGHTFALL_SOUND_SOURCE)
     soundInitializer:SetParentInitializer(nightfall, function()
         return WTF.db.alerts.nightfall and WTF.HasNightfallSound()
     end)
@@ -338,6 +565,10 @@ local ANNOUNCE_ROWS = {
     {switch = "healthstoneWhisper", label = "Healthstone trade: whisper the player"},
     {switch = "healthstoneEmote", label = "Healthstone created: emote (starts with your name; once a minute)"},
     {switch = "soulstoneEmote", label = "Soulstone created: emote (starts with your name; once a minute)"},
+    {switch = "fearGroup", label = "Fear: tell the group as you start casting"},
+    {switch = "banishGroup", label = "Banish: tell the group as you start casting (%M: its moon)"},
+    {switch = "enslaveGroup", label = "Enslave Demon: tell the group as you start casting"},
+    {switch = "howlGroup", label = "Howl of Terror: tell the group"},
 }
 local PAGE_LEFT = 16
 local ROW_GAP = 10
@@ -384,7 +615,8 @@ local function CreateAnnouncePage()
     local title = Text(content, "GameFontHighlightHuge", ANNOUNCE_TITLE)
     title:SetPoint("TOPLEFT", PAGE_LEFT, -16)
     local help = Text(content, "GameFontHighlightSmall",
-        "%T is the target's full name and %Z your zone. Press Enter to keep an edit, Escape to undo it. "
+        "%T is the target's full name (for control spells, the mob), %Z your zone, and %M the mob's raid "
+            .. "marker. Press Enter to keep an edit, Escape to undo it. "
             .. "Nothing is sent for yourself or for a cast that fails.")
     help:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -8)
     help:SetWidth(EDIT_WIDTH)
@@ -504,6 +736,17 @@ function WTF.InitializeOptions()
     Flag(category, "WTF_TRACKER_ENABLED", "DoT tracker", "tracker", "enabled", true,
         "A row per mob you DoT, with the time left on your DoTs, Bane, Curse, and Fear.",
         RefreshTracker)
+    Flag(category, "WTF_SHIELD_ENABLED", "Shield display", "shield", "enabled", true,
+        "A crescent beside your character that fills with your remaining shield: Shadow Ward, your "
+            .. "Voidwalker's Sacrifice, or a shield another player puts on you, like Power Word: Shield.",
+        RefreshShield)
+    Flag(category, "WTF_CONTROL_ENABLED", "Control bar", "control", "enabled", true,
+        "A bar per mob you Fear or Banish with its time left; click one to cast it again.", RefreshControl)
+    Flag(category, "WTF_REMINDERS_ENABLED", "Demon Armor reminder", "reminders", "enabled", true,
+        "An icon with a pulsing border while you lack Demon Armor (or Demon Skin), out of combat. Click it "
+            .. "to cast your armor.", function() WTF.RefreshReminders() end)
+    Flag(category, "WTF_CHIMES_ENABLED", "Cooldown chimes", "chimes", "enabled", true,
+        "A sound just before Death Coil, Howl of Terror, and your other chosen spells are ready again.")
     local unlocked = Proxy(category, "WTF_UNLOCKED", Settings.VarType.Boolean, "Unlock frames to move them", false,
         function() return not WTF.db.locked end,
         function(value) WTF.SetFramesLocked(value ~= true) end)
@@ -523,6 +766,9 @@ function WTF.InitializeOptions()
     AddTrackerPage(category)
     AddColorsPage(category)
     AddAlertsPage(category)
+    AddShieldPage(category)
+    AddChimesPage(category)
+    AddControlPage(category)
     local announcePage = CreateAnnouncePage()
     WTF.announcePage = announcePage
     Settings.RegisterCanvasLayoutSubcategory(category, announcePage, ANNOUNCE_TITLE)

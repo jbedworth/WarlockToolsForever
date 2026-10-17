@@ -218,7 +218,7 @@ From the Git Bash repository root:
 
 ```sh
 .tools/luarocks-3.13.0-win32/win32/lua5.1/bin/lua5.1.exe tests/run.lua
-.tools/luarocks-3.13.0-win32/win32/lua5.1/bin/luac5.1.exe -p Commands.lua Core.lua Shards.lua Stones.lua Announce.lua Tracker.lua Dots.lua Alerts.lua Probe.lua Options.lua tests/run.lua
+.tools/luarocks-3.13.0-win32/win32/lua5.1/bin/luac5.1.exe -p Commands.lua Core.lua Layout.lua Shards.lua Stones.lua Announce.lua Tracker.lua Dots.lua Control.lua Alerts.lua Shield.lua Chimes.lua Reminders.lua Probe.lua Options.lua tests/run.lua
 .tools/python-3.13.7/python.exe -m unittest discover -s tests -p 'test_*.py'
 ```
 
@@ -305,6 +305,35 @@ and printing.
 - [ ] Unlocked: the grid covers the screen under every frame, red lines
       cross at the center, clicks pass through it, it rebuilds after a UI
       scale change, and its switch hides it.
+- [ ] Magnetic frames: a frame dropped near another snaps 20 apart, lined
+      up by the nearest edge or center; Shift-drag moves a snapped group; not
+      in combat.
+- [ ] A failed stone click shows in red at the top of the screen as well as
+      in chat.
+- [ ] Control bar: Fear two mobs and Banish a third: a row each, draining,
+      following the mobs as you tab, empty when one breaks, gone when it
+      dies. Banish puts the moon on its mob; Fear marks nothing. Each feared
+      mob's nameplate shows a draining Fear timer, also after it leaves plate
+      range and comes back. "! Fear" Fears the mob whose nameplate you
+      hover, else your target. "! Banish", and "! Seduction" (only once your Succubus or Incubus has its
+      Seduction Grimoire; check both demons, and `/wtf debug_control` for the
+      pet family and seduction=true)
+      focus the mob under the mouse and cast on it; Seduction does nothing
+      with another pet. A Banish row's click banishes the focus. In a party, each
+      cast starts with its group message (Banish with {moon} as an icon). Fear a mob
+      before the pull, then click its row in combat after it breaks: it
+      recasts on that mob and returns to your target; with the mob gone,
+      nothing is cast. `/wtf debug_control` lists the IDs (check Forever's).
+- [ ] Demon Armor reminder: pulses while neither armor is on, a click casts
+      your armor, hides as combat starts and returns after; no taint.
+- [ ] Cooldown chimes: Death Coil chimes half a second before it is ready,
+      also in combat; the sound menus match the Cooldown Manager's; the
+      Nightfall sound menu has Imp, Hellish imp, and Interface groups.
+- [ ] Shield display: Shadow Ward and Sacrifice fill the crescent, each icon
+      in its own spot; with MTF installed too, the display shows on both a
+      Warlock and a Mage. A Blessing of Protection from a Paladin, also in
+      combat, draws the gold innermost arc and its icon; `/wtf debug_shield`
+      confirms the bubble IDs.
 - [ ] "Unlock frames to move them" and `/wtf unlock` outline the Stones bar and
       the shard counter and show sample tracker rows; all three drag; unticking
       or `/wtf lock` locks them, and the switch and commands stay in step;

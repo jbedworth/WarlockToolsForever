@@ -241,13 +241,30 @@ local function WriteMacro(name, body, oldNames)
         if CharacterMacroLimit() - numCharacter <= MACRO_SLOT_CUSHION then
             if not macros.warned then
                 macros.warned = true
-                WTF.Report("No free character macro slot for \"" .. name .. "\"; free one and WTF adds it.")
+                WTF.Warn("No free character macro slot for \"" .. name .. "\"; free one and WTF adds it.")
             end
             return
         end
         CreateMacro(name, MACRO_ICON, body, true)
     elseif GetMacroBody(index) ~= body then
         EditMacro(index, name, MACRO_ICON, body)
+    end
+end
+
+-- For the other modules' macros (Control): the same writer and slot check.
+-- Out of combat only.
+function WTF.CharacterMacrosAvailable()
+    return macros.available == true
+end
+
+function WTF.WriteCharacterMacro(name, body)
+    WriteMacro(name, body, {})
+end
+
+function WTF.DeleteCharacterMacro(name)
+    local index = GetMacroIndexByName(name)
+    if index > 0 then
+        DeleteMacro(index)
     end
 end
 
@@ -365,7 +382,7 @@ local function Say(message)
         return
     end
     stones.lastMessage, stones.lastMessageTime = message, now
-    WTF.Report(message)
+    WTF.Warn(message)
 end
 
 local function FindItemSlot(itemID)
@@ -433,7 +450,7 @@ function PlaceTradeStone(retry)
         ClearCursor()
         if retry then
             stones.pendingTrade = nil
-            WTF.Report("The game did not let WTF put the Healthstone into the trade window; drag it in yourself.")
+            WTF.Warn("The game did not let WTF put the Healthstone into the trade window; drag it in yourself.")
         else
             WTF.RunOnNextInput(function() PlaceTradeStone(true) end)
         end
@@ -522,11 +539,6 @@ local function ShowTooltip(button)
     GameTooltip:Show()
 end
 
-local function SavePosition(bar)
-    local point, _, relativePoint, x, y = bar:GetPoint()
-    WTF.db.stones.position = {point = point, relativePoint = relativePoint, x = x, y = y}
-end
-
 local function PlaceBar(bar)
     local position = WTF.db.stones.position
     bar:ClearAllPoints()
@@ -537,16 +549,13 @@ local function PlaceBar(bar)
     end
 end
 
+-- Dragging and snapping: Layout.lua.
 local function StartDrag()
-    if WTF.db.stones.locked or InCombatLockdown() then
-        return
-    end
-    buttons.bar:StartMoving()
+    WTF.BeginDrag(buttons.bar)
 end
 
 local function StopDrag()
-    buttons.bar:StopMovingOrSizing()
-    SavePosition(buttons.bar)
+    WTF.EndDrag(buttons.bar)
 end
 
 local function CreateStoneButton(bar, name, kind, index)
@@ -588,7 +597,6 @@ end
 function WTF.ResetStonesPosition()
     WTF.db.stones.position = nil
     if InCombatLockdown() then
-        WTF.Report("The Stones bar moves back after combat.")
         stones.resetPending = true
         return
     end
@@ -796,6 +804,7 @@ function WTF.InitializeStones()
     bar:SetScript("OnDragStart", StartDrag)
     bar:SetScript("OnDragStop", StopDrag)
     bar.mover = WTF.CreateMover(bar)
+    WTF.RegisterMovable(bar, function(position) WTF.db.stones.position = position end)
     buttons.bar = bar
     buttons.soulstone = CreateStoneButton(bar, "WarlockToolsForeverSoulstone", "soulstone", 1)
     buttons.healthstone = CreateStoneButton(bar, "WarlockToolsForeverHealthstone", "healthstone", 2)

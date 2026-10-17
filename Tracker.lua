@@ -457,16 +457,13 @@ local function ShowCastTooltip(button)
     GameTooltip:Show()
 end
 
+-- Dragging and snapping: Layout.lua. The rows drag the anchor.
 local function StartDrag()
-    if not WTF.db.tracker.locked and not InCombatLockdown() then
-        tracker.anchor:StartMoving()
-    end
+    WTF.BeginDrag(tracker.anchor)
 end
 
 local function StopDrag()
-    tracker.anchor:StopMovingOrSizing()
-    local point, _, relativePoint, x, y = tracker.anchor:GetPoint()
-    WTF.db.tracker.position = {point = point, relativePoint = relativePoint, x = x, y = y}
+    WTF.EndDrag(tracker.anchor)
 end
 
 -- Pinned rows: the target on top, the focus below it past the target's outline.
@@ -945,7 +942,6 @@ function WTF.ResetTrackerPosition()
         return
     end
     if InCombatLockdown() then
-        WTF.Report("The DoT tracker moves back after combat.")
         tracker.placeDirty = true
         return
     end
@@ -972,6 +968,7 @@ function WTF.InitializeTracker()
     anchor:SetClampedToScreen(true)
     anchor:EnableMouse(false)
     tracker.anchor = anchor
+    WTF.RegisterMovable(anchor, function(position) WTF.db.tracker.position = position end)
     local list = CreateFrame("Frame", "WarlockToolsForeverTrackerList", UIParent)
     list:EnableMouse(false)
     tracker.list = list
