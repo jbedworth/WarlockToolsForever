@@ -277,6 +277,14 @@ module only after the author agrees its behavior.
   `WTF.db.shield`, its report function, and the unlock hint; a main-page
   switch and a Shield page (absorb number, break sound, size) as in MTF. It
   drags itself and does not snap.
+- Version 3 (author-approved): copies take part only once their AddOn
+  initializes them, so login order never decides; each class's own shields
+  get a spot each, then the shared ones; bubbles (Divine Shield, Divine
+  Protection: Paladin; Blessing of Protection: anyone) are timed, drawing a
+  gold innermost crescent that drains with their time left (Classic IDs;
+  check on Forever). In combat the display stays shown, since buffs others
+  cast cannot be read: the outer crescent is invisible with no absorb, and
+  the engine shows each icon and timed crescent only while its buff is up.
 
 ### Demon Armor reminder (built)
 
@@ -365,7 +373,8 @@ general frameworks, or speculative modules without agreement.
 ## Project structure
 
 - Runtime files: WarlockToolsForever.toc, Commands.lua, Core.lua, Layout.lua, Shards.lua, Stones.lua, Announce.lua, Tracker.lua, Dots.lua, Control.lua, Alerts.lua, Shield.lua, Chimes.lua, Reminders.lua, Probe.lua, Options.lua, loaded in
-  that order, plus Textures/ShieldArc.tga and Textures/ShieldArcInner.tga. Core also owns the hardware-input hooks
+  that order, plus Textures/ShieldArc.tga, Textures/ShieldArcInner.tga, and
+  Textures/ShieldArcInnermost.tga. Core also owns the hardware-input hooks
   (every key press and world click) that item deletion and trade placement
   wait for.
   Commands parses `/wtf`; Core owns saved settings and their defaults, the
@@ -468,7 +477,7 @@ general frameworks, or speculative modules without agreement.
   changes; the builder puts it at the top of release-notes.md (GitHub release
   notes and CurseForge changelog) and fails without it.
 - Package only WarlockToolsForever.toc, Commands.lua, Core.lua, Layout.lua, Shards.lua, Stones.lua, Announce.lua, Tracker.lua, Dots.lua, Control.lua, Alerts.lua, Shield.lua, Chimes.lua, Reminders.lua, Probe.lua, Options.lua, LICENSE,
-  Textures/ShieldArc.tga, and Textures/ShieldArcInner.tga
+  Textures/ShieldArc.tga, Textures/ShieldArcInner.tga, and Textures/ShieldArcInnermost.tga
   under the top-level
   `WarlockToolsForever/` folder, named
   `WarlockToolsForever-<version>-forever.zip`, with the builder's

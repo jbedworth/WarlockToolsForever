@@ -2,12 +2,13 @@
 """Build the shield display's segmented crescents.
 
 Textures/ShieldArc.tga is the outer crescent (the absorb total);
-Textures/ShieldArcInner.tga is a thinner one nested inside it (shields with no
-absorb amount, such as Mana Shield, draining with time). Each is a white
+Textures/ShieldArcInner.tga is a thinner one nested inside it (Mana Shield,
+which has no absorb amount, draining with time); Textures/ShieldArcInnermost.tga
+is inside that (bubbles: immunities with only a duration). Each is a white
 crescent on the right of a transparent square, cut into segments by thin gaps,
 with anti-aliased edges, as an uncompressed 32-bit TGA (top-left origin). The
 display tints them and fills them from the bottom with vertical StatusBars,
-after NaN Shield. Both share one center, so they line up when drawn at the
+after NaN Shield. All share one center, so they line up when drawn at the
 same size. Python 3 standard library only; the output is byte-for-byte
 deterministic.
 """
@@ -30,6 +31,7 @@ TEXTURES = Path(__file__).resolve().parent.parent / "Textures"
 CRESCENTS = {
     "ShieldArc.tga": (112.0, 96.0, 58.0),
     "ShieldArcInner.tga": (91.0, 83.0, 46.0),
+    "ShieldArcInnermost.tga": (78.0, 71.0, 36.0),
 }
 
 

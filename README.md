@@ -189,8 +189,10 @@ Cooldown Chimes page.
 ## Shield display
 
 The shield crescent from Mage Tools Forever: it fills with your **Shadow Ward**,
-your Voidwalker's **Sacrifice**, or a shield someone puts on you, like Power
-Word: Shield, and drains as it absorbs, also in combat. If you also use Mage
+your Voidwalker's **Sacrifice**, or any absorb on you, like Power Word: Shield,
+and drains as it absorbs, also in combat. A Paladin's **Blessing of
+Protection** on you, which has no absorb, shows as a gold innermost arc that
+drains with its time left. If you also use Mage
 Tools Forever, you still see one crescent.
 
 ## Demon Armor reminder
