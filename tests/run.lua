@@ -592,6 +592,7 @@ local function fixture(options)
         function object:SetBackdropBorderColor(...) self.backdropBorder = {...} end
         function object:SetBackdrop(backdrop) self.backdrop = backdrop end
         function object:SetStatusBarColor(...) self.barColor = {...} end
+        function object:SetStatusBarTexture(texture) self.statusBarTexture = texture end
         function object:SetColorTexture(...) self.color = {...} end
         function object:SetWidth(width) self.width = width end
         function object:EnableMouse(value) self.mouseDisabled = value == false end
@@ -654,7 +655,9 @@ local function fixture(options)
         function object:SetPoint(...) self.points[#self.points + 1] = {...} end
         function object:ClearAllPoints() self.points = {} end
         function object:GetPoint()
+            -- As in client, a frame with no points returns nothing.
             local point = self.points[#self.points]
+            if not point then return end
             return point[1], point[2], point[3], point[4], point[5]
         end
         function object:StartMoving() self.moving = true end
@@ -706,6 +709,8 @@ local function fixture(options)
             if type(key) == "string" and key:match("^%u") then return function() end end
         end})
     end
+    -- UIParent can hold text, as the shield display's debug writes on it.
+    env.UIParent.CreateFontString = function(self) return widget("FontString", nil, self) end
     env.CreateFrame = function(kind, name, parent, template)
         local frame = widget(kind, name, parent, template)
         if name then env[name] = frame end
@@ -2103,16 +2108,17 @@ end)
 
 test("a copy registered first whose AddOn stays off does not keep WTF's display away", function()
     -- MTF loads first (folder order) but stays off on a Warlock.
-    local state = fixture({shieldCopies = {{addon = "MageToolsForever", version = 2, before = true}}})
+    local state = fixture({shieldCopies = {{addon = "MageToolsForever", version = 3, before = true}}})
     equal(state.wtf.ShieldDisplay.IsOwner(), true, "only running copies take part")
     equal(state.wtf.ShieldDisplay.frame ~= nil, true, "WTF draws the ring")
     state.clear()
     state.slash("debug_shield")
     contains(table.concat(state.messages, "|"),
-        "owner=WarlockToolsForever copies=MageToolsForever v2, WarlockToolsForever v2 (running)")
+        "owner=WarlockToolsForever copies=MageToolsForever v3, WarlockToolsForever v3 (running)")
+    equal(table.concat(state.messages, "|"):find("failed", 1, true), nil, "every debug step ran")
 end)
 test("a newer running copy takes over, and WTF says which AddOn shows the display", function()
-    local state = fixture({shieldCopies = {{addon = "ShieldForever", version = 3}}})
+    local state = fixture({shieldCopies = {{addon = "ShieldForever", version = 4}}})
     equal(state.wtf.ShieldDisplay.frame ~= nil, true, "drawing while it is the only one running")
     local other = state.copies.ShieldForever.ShieldDisplay
     other.Initialize({settings = function() return other.Sanitize({}) end, report = function() end})
@@ -2126,12 +2132,35 @@ test("a Warlock's icon row holds Shadow Ward, Sacrifice, and Power Word: Shield,
     local keys = {}
     for _, slot in ipairs(ring.icons.slots) do keys[#keys + 1] = slot.key end
     table.sort(keys)
-    equal(table.concat(keys, ","), "powerwordshield,sacrifice,shadowward", "no Mage shields")
+    equal(table.concat(keys, ","), "blessingofprotection,powerwordshield,sacrifice,shadowward",
+        "no Mage or Paladin-only shields")
     local ward, sacrifice, shield = ring.iconButtons.shadowward, ring.iconButtons.sacrifice,
         ring.iconButtons.powerwordshield
     local x1, x2, x3 = ward.points[1][4], sacrifice.points[1][4], shield.points[1][4]
     equal(x2 - x1, x3 - x2, "evenly spaced")
     equal(x1 < x2, true, "never on top of each other; your own shields first")
+end)
+
+test("a bubble drains in the innermost crescent; in combat the display stays up for one", function()
+    local state = fixture({spellbook = {}})
+    local ring = state.wtf.ShieldDisplay.frame
+    local bubble = ring.iconButtons.blessingofprotection
+    local bar = bubble.display.bar
+    contains(bar.statusBarTexture, "ShieldArcInnermost")
+    equal(bar.barColor[1], 1, "gold")
+    equal(bubble.display.barOptions.direction, 1, "drains with its time left")
+    equal(ring.timedBars.blessingofprotection, bar)
+    equal(ring.shown, false, "nothing up out of combat")
+    -- In combat, a Blessing of Protection from a Paladin cannot be read, so
+    -- the display stays shown and the engine draws the bubble when it is up.
+    state.combat = true
+    state.emit("PLAYER_REGEN_DISABLED")
+    equal(ring.shown, true)
+    state.combat = false
+    state.emit("PLAYER_REGEN_ENABLED")
+    equal(ring.shown, false, "hidden again once buffs can be read")
+    state.slash("unlock")
+    contains(ring.sample.children[2].texture, "ShieldArcInnermost", "the sample shows it too")
 end)
 
 test("a frame dropped near another snaps beside it, 20 apart and lined up", function()

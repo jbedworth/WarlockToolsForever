@@ -24,8 +24,11 @@ local addonName, ns = ...
 -- the shield's length; out of combat your buffs are read too, so a shield that
 -- broke early hides then.
 --
--- Shields with no absorb amount (Mana Shield) drain with time in the inner
--- crescent instead (see `timed` below).
+-- Shields with no absorb amount drain with time instead (see `timed` below):
+-- Mana Shield in the inner crescent, and bubbles (Divine Shield, Divine
+-- Protection, Blessing of Protection: immunities with only a duration) in the
+-- innermost one (author-approved: concentric arcs where they can work, by
+-- time, since the client gives AddOns only the combined absorb).
 --
 -- Several shields can be up at once (Ice Barrier, Mana Shield, and a ward).
 -- The client gives AddOns only the combined absorb, so the crescent shows the
@@ -46,12 +49,14 @@ local addonName, ns = ...
 -- other copy says which AddOn shows it. Version 1 copies elect among every
 -- registered copy, so a version 1 copy stands down for any newer one.
 
-local VERSION = 2
+local VERSION = 3
 local REGISTRY_NAME = "ShieldForeverRegistry"
 
 local ARC_TEXTURE = "Interface\\AddOns\\" .. addonName .. "\\Textures\\ShieldArc"
 -- The thinner crescent nested inside it, for shields that drain with time.
 local INNER_ARC_TEXTURE = ARC_TEXTURE .. "Inner"
+-- The innermost crescent, for bubbles.
+local INNERMOST_ARC_TEXTURE = ARC_TEXTURE .. "Innermost"
 local ARC_SIZE = 160
 -- The crescent sits in the right part of the square texture, so the frame
 -- centered a little right of your character puts it beside you.
@@ -90,6 +95,7 @@ local CONTAINER_TEMPLATE = "CustomAuraContainerTemplate"
 -- timed marks a shield with no absorb amount (Mana Shield: no points on its
 -- buff, not in the absorb total on Forever): it gets the inner crescent,
 -- draining with its time left (author-approved), instead of the absorb total.
+-- innermost puts a timed shield in the innermost crescent instead (bubbles).
 -- Known shields by name, so every rank counts: Classic IDs (confirmed on
 -- Forever for Mana Shield and Fire Ward), colors, lengths, and each one's spot
 -- in the icon row. class marks a shield only that class casts on itself;
@@ -97,8 +103,8 @@ local CONTAINER_TEMPLATE = "CustomAuraContainerTemplate"
 -- shields first, then the shared ones, one spot each. ranks lists every
 -- Classic rank for the break sound, which needs exact IDs. Any other absorb
 -- (a protection potion, a trinket, or one Forever adds) fills the crescent
--- in the other-shield color without an icon; Paladin bubbles are immunities
--- with no absorb amount, so the crescent cannot show them.
+-- in the other-shield color without an icon. Bubble IDs are Classic's; check
+-- them on Forever with debug_shield.
 local SHIELDS = {
     {key = "icebarrier", class = "MAGE", spell = 11426, color = {0.45, 0.78, 1}, seconds = 60,
         ranks = {11426, 13031, 13032, 13033}},
@@ -114,6 +120,12 @@ local SHIELDS = {
         ranks = {6229, 11739, 11740, 28610}},
     {key = "sacrifice", class = "WARLOCK", spell = 7812, color = {0.75, 0.4, 0.95}, seconds = 30,
         ranks = {7812, 19438, 19440, 19441, 19442, 19443}},
+    {key = "divineshield", class = "PALADIN", timed = true, innermost = true, spell = 642,
+        color = {1, 0.85, 0.3}, seconds = 12, ranks = {642, 1020}},
+    {key = "divineprotection", class = "PALADIN", timed = true, innermost = true, spell = 498,
+        color = {1, 0.85, 0.3}, seconds = 8, ranks = {498, 5573}},
+    {key = "blessingofprotection", timed = true, innermost = true, spell = 1022,
+        color = {1, 0.85, 0.3}, seconds = 10, ranks = {1022, 5599, 10278}},
 }
 
 local ShieldDisplay = {}
@@ -272,7 +284,11 @@ function ShieldDisplay.Refresh()
     if frame.sample then
         frame.sample:SetShown(not settings.locked)
     end
-    if settings.enabled and (up or not settings.locked) then
+    -- In combat, buffs others cast on you cannot be read (Blessing of
+    -- Protection), so the display stays shown: the outer crescent's opacity
+    -- is the absorb, invisible with none, and the engine shows each icon and
+    -- timed crescent only while its buff is up.
+    if settings.enabled and (up or InCombatLockdown() or not settings.locked) then
         UpdateFill()
         frame:Show()
     else
@@ -504,15 +520,16 @@ local function IconInitializer(entry)
         frame.iconButtons[entry.key] = button
         NoMouse(button)
         if entry.timed then
+            local texture = entry.innermost and INNERMOST_ARC_TEXTURE or INNER_ARC_TEXTURE
             button:SetAllPoints(frame)
             local track = button:CreateTexture(nil, "BACKGROUND")
             track:SetAllPoints()
-            track:SetTexture(INNER_ARC_TEXTURE)
+            track:SetTexture(texture)
             track:SetVertexColor(0, 0, 0)
             track:SetAlpha(BACKGROUND_ALPHA)
             local bar = CreateFrame("StatusBar", nil, button)
             bar:SetAllPoints()
-            bar:SetStatusBarTexture(INNER_ARC_TEXTURE)
+            bar:SetStatusBarTexture(texture)
             bar:SetOrientation("VERTICAL")
             bar:SetStatusBarColor(entry.color[1], entry.color[2], entry.color[3])
             local direction = Enum.StatusBarTimerDirection and Enum.StatusBarTimerDirection.RemainingTime
@@ -574,6 +591,11 @@ local function CreateSample()
     inner:SetTexture(INNER_ARC_TEXTURE)
     local purple = SHIELDS[2].color
     inner:SetVertexColor(purple[1], purple[2], purple[3])
+    local innermost = frame.sample:CreateTexture(nil, "ARTWORK")
+    innermost:SetAllPoints()
+    innermost:SetTexture(INNERMOST_ARC_TEXTURE)
+    local gold = SHIELDS[#SHIELDS].color
+    innermost:SetVertexColor(gold[1], gold[2], gold[3])
     for _, entry in ipairs(SHIELDS) do
         local spot = shield.spots[entry.key]
         if spot then
@@ -647,8 +669,11 @@ events:SetScript("OnEvent", function(_, event, ...)
         UpdateFill()
     elseif event == "UNIT_AURA" or event == "PLAYER_ENTERING_WORLD" then
         CheckBuffs()
+    elseif event == "PLAYER_REGEN_DISABLED" then
+        ShieldDisplay.Refresh()
     elseif event == "PLAYER_REGEN_ENABLED" then
         CheckBuffs()
+        ShieldDisplay.Refresh()
         if shield.deferred then
             ShieldDisplay.ApplyBreakSound()
         end
@@ -679,7 +704,8 @@ local function Start()
         "UNIT_AURA"}) do
         events:RegisterUnitEvent(event, "player")
     end
-    for _, event in ipairs({"PLAYER_REGEN_ENABLED", "PLAYER_ENTERING_WORLD", "ADDON_RESTRICTION_STATE_CHANGED"}) do
+    for _, event in ipairs({"PLAYER_REGEN_ENABLED", "PLAYER_REGEN_DISABLED", "PLAYER_ENTERING_WORLD",
+        "ADDON_RESTRICTION_STATE_CHANGED"}) do
         events:RegisterEvent(event)
     end
     CheckBuffs()

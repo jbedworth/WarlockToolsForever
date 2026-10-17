@@ -258,11 +258,13 @@ class ReleaseTests(unittest.TestCase):
                 builder._validate_tga("icon.tga", data)
 
     def test_package_ships_the_shield_arc(self):
-        self.assertEqual(builder.MEDIA_FILES, ("Textures/ShieldArc.tga", "Textures/ShieldArcInner.tga"))
+        self.assertEqual(builder.MEDIA_FILES, ("Textures/ShieldArc.tga", "Textures/ShieldArcInner.tga",
+                                               "Textures/ShieldArcInnermost.tga"))
         path, _ = self.build()
         with zipfile.ZipFile(path) as archive:
             self.assertIn("WarlockToolsForever/Textures/ShieldArc.tga", archive.namelist())
             self.assertIn("WarlockToolsForever/Textures/ShieldArcInner.tga", archive.namelist())
+            self.assertIn("WarlockToolsForever/Textures/ShieldArcInnermost.tga", archive.namelist())
             self.assertEqual(len(archive.namelist()), len(builder.PACKAGE_FILES))
 
     def test_committed_shield_arc_matches_the_build(self):

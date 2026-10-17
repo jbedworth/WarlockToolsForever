@@ -54,6 +54,7 @@ WarlockToolsForever/
     Textures/
         ShieldArc.tga
         ShieldArcInner.tga
+        ShieldArcInnermost.tga
 ```
 
 The validator permits one optional empty root directory entry. Additional files
