@@ -314,7 +314,8 @@ and printing.
       following the mobs as you tab, empty when one breaks, gone when it
       dies. Banish puts the moon on its mob; Fear marks nothing. Each feared
       mob's nameplate shows a draining Fear timer, also after it leaves plate
-      range and comes back. "! Banish" and (with a Succubus) "! Seduction"
+      range and comes back. "! Fear" Fears the mob whose nameplate you
+      hover, else your target. "! Banish" and (with a Succubus) "! Seduction"
       focus the mob under the mouse and cast on it; Seduction does nothing
       with another pet. A Banish row's click banishes the focus. In a party, each
       cast starts with its group message (Banish with {moon} as an icon). Fear a mob

@@ -330,7 +330,9 @@ module only after the author agrees its behavior.
   range may get another plate and token, and the engine shows its real time
   left). Clicking the plate targets the mob.
 - Macros (author-approved, after the author's own, `control.macros`):
-  "! Banish" once you know Banish and "! Seduction" once you know Summon
+  "! Fear" once you know Fear, the author's juggling macro: `/cast
+  [@mouseover,harm,nodead][harm,nodead] Fear` (no focus: a focus holds one
+  mob; hover a feared mob's nameplate as its timer ends); "! Banish" once you know Banish and "! Seduction" once you know Summon
   Succubus: `#showtooltip`, `/focus [@mouseover,harm,nodead]
   [nocombat,harm,nodead]`, `/cast [@focus,harm,nodead] <spell>` (Seduction
   with `pet:Succubus`, so it does nothing without a Succubus). They do not

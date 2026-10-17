@@ -601,9 +601,12 @@ end
 -- Seduction is your Succubus's: its macro appears once you know Summon
 -- Succubus and does nothing unless your pet is a Succubus ([pet:Succubus]).
 -- The moon comes from WTF when the cast lands, so the macros do not /tm
--- (a second mark would toggle it off).
+-- (a second mark would toggle it off). "! Fear" is the author's own juggling
+-- macro: no focus (a focus holds one mob), it Fears the mob under the mouse,
+-- such as a feared mob's nameplate as its timer runs out, else your target.
 
 local CONTROL_MACROS = {
+    {name = "! Fear", spell = 5782, known = {5782, 6213, 6215}, mouseover = true},
     {name = "! Banish", spell = 710, known = {710, 18647}},
     {name = "! Seduction", spell = 6358, known = {712}, condition = ",pet:Succubus"},
 }
@@ -625,6 +628,9 @@ function WTF.ControlMacroBody(macro)
     local spell = C_Spell.GetSpellName(macro.spell)
     if not spell then
         return nil
+    end
+    if macro.mouseover then
+        return "#showtooltip " .. spell .. "\n/cast [@mouseover,harm,nodead][harm,nodead] " .. spell
     end
     return table.concat({"#showtooltip " .. spell, FOCUS_LINE,
         "/cast [@focus,harm,nodead" .. (macro.condition or "") .. "] " .. spell}, "\n")
