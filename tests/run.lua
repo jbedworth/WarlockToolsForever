@@ -1984,6 +1984,33 @@ test("a row never binds to mouseover, which changes with the pointer", function(
     state.emit("UNIT_SPELLCAST_SUCCEEDED", "player", "cast-n", FEAR)
     equal(controlRow(state, 1).container.unit, "nameplate6", "its nameplate instead")
 end)
+test("a feared mob's nameplate shows a Fear countdown, also after its plate comes back", function()
+    local state = controlFixture()
+    state.emit("NAME_PLATE_UNIT_ADDED", "nameplate3")
+    local plate = state.plates.nameplate3
+    local timer = state.wtf.fearPlateTimers.nameplate3
+    equal(timer.parent, plate, "a timer under the nameplate")
+    equal(timer.points[1][1], "TOP")
+    equal(timer.points[1][2], plate)
+    equal(timer.container.unit, "nameplate3")
+    local slot = timer.container.slots[1]
+    equal(slot.key, "fear")
+    equal(slot.filter, "HARMFUL|PLAYER", "only your Fear")
+    equal(slot.ids[FEAR], true)
+    equal(slot.ids[BANISH], nil, "Fear only")
+    equal(slot.button.display.barOptions.direction, 1, "drains with the time left")
+    -- Out of plate range and back, on another plate: the timer follows.
+    state.emit("NAME_PLATE_UNIT_REMOVED", "nameplate3")
+    equal(timer.container.unit, "none")
+    state.units.nameplate8 = state.units.nameplate3
+    state.emit("NAME_PLATE_UNIT_ADDED", "nameplate8")
+    equal(timer.container.unit, "nameplate8", "the same timer, reused, on the new plate")
+    state.settings.WTF_CONTROL_PLATE_TIMERS:SetValue(false)
+    equal(timer.container.unit, "none", "its switch")
+    state.clear()
+    state.slash("debug_control")
+    contains(table.concat(state.messages, "|"), "plateTimers=false attached=0")
+end)
 test("unlocked, the control bar shows samples to drag; debug_control reports the rows", function()
     local state = controlFixture()
     state.slash("unlock")
