@@ -133,8 +133,6 @@ local function AddShardPage(parent)
     local lowInitializer = Settings.CreateSlider(page, low, lowOptions,
         "The counter turns red at this many Soul Shards or fewer.")
     lowInitializer:SetParentInitializer(counterInitializer, function() return WTF.db.shards.counter end)
-    Flag(page, "WTF_SHARDS_COUNTER_LOCKED", "Lock the shard counter", "shards", "counterLocked", false,
-        "Stop the counter from being dragged. /wtf reset moves it back to its default place.")
 end
 
 local function AddStonesPage(parent)
@@ -142,8 +140,6 @@ local function AddStonesPage(parent)
     Flag(page, "WTF_STONES_SHOWN", "Show the Stones bar", "stones", "shown", true,
         "The bar with the Soulstone and Healthstone buttons. Changes in combat apply when combat ends.",
         RefreshStones)
-    Flag(page, "WTF_STONES_LOCKED", "Lock the Stones bar", "stones", "locked", false,
-        "Stop the bar from being dragged. /wtf reset moves it back to its default place.")
     Flag(page, "WTF_STONES_MACROS", "Keep stone macros", "stones", "macros", true,
         "Keep \"! Healthstone\" and \"! Soulstone\" in your character macros for your action bars: "
             .. "left-click uses your best stone, right-click creates one. Turning this off deletes them.",
@@ -236,11 +232,6 @@ local function AddTrackerPage(parent)
         return container:GetData()
     end, "Compact: a row per mob with an icon per spell. Bars: a block per mob with a bar per spell you know, "
         .. "draining as its time runs out. A change in combat applies when combat ends.")
-    Flag(page, "WTF_TRACKER_PLACEHOLDERS", "Show placeholders", "tracker", "placeholders", false,
-        "Show sample rows while nothing is tracked, so you can drag the tracker into place. Turn it off when done.",
-        RefreshTracker)
-    Flag(page, "WTF_TRACKER_LOCKED", "Lock the tracker", "tracker", "locked", false,
-        "Stop the tracker from being dragged. /wtf reset moves it back to its default place.")
     local dotsInitializer = Flag(page, "WTF_TRACKER_PLATE_DOTS", "Show DoT dots on nameplates", "tracker",
         "plateDots", false,
         "In combat, a bubble above each hostile nameplate with a dot per DoT you know: colored while it is up, "
@@ -513,6 +504,20 @@ function WTF.InitializeOptions()
     Flag(category, "WTF_TRACKER_ENABLED", "DoT tracker", "tracker", "enabled", true,
         "A row per mob you DoT, with the time left on your DoTs, Bane, Curse, and Fear.",
         RefreshTracker)
+    local unlocked = Proxy(category, "WTF_UNLOCKED", Settings.VarType.Boolean, "Unlock frames to move them", false,
+        function() return not WTF.db.locked end,
+        function(value) WTF.SetFramesLocked(value ~= true) end)
+    Settings.CreateCheckbox(category, unlocked,
+        "Outline the Stones bar and the shard counter, and show sample DoT tracker rows, so you can drag them; "
+            .. "untick to lock them again. /wtf unlock and /wtf lock do the same, and /wtf reset moves them back.")
+    local grid = Proxy(category, "WTF_GRID", Settings.VarType.Boolean, "Show a grid while unlocked", true,
+        function() return WTF.db.grid end,
+        function(value)
+            WTF.db.grid = value == true
+            WTF.RefreshGrid()
+        end)
+    Settings.CreateCheckbox(category, grid, "While frames are unlocked, draw a faint grid over the screen with "
+        .. "the center lines in red, so you can line frames up.")
     AddShardPage(category)
     AddStonesPage(category)
     AddTrackerPage(category)

@@ -579,6 +579,12 @@ local function CreateStoneButton(bar, name, kind, index)
     return button
 end
 
+function WTF.RefreshStonesMover()
+    if buttons.bar then
+        buttons.bar.mover:SetShown(not WTF.db.locked)
+    end
+end
+
 function WTF.ResetStonesPosition()
     WTF.db.stones.position = nil
     if InCombatLockdown() then
@@ -789,6 +795,7 @@ function WTF.InitializeStones()
     bar:RegisterForDrag("LeftButton")
     bar:SetScript("OnDragStart", StartDrag)
     bar:SetScript("OnDragStop", StopDrag)
+    bar.mover = WTF.CreateMover(bar)
     buttons.bar = bar
     buttons.soulstone = CreateStoneButton(bar, "WarlockToolsForeverSoulstone", "soulstone", 1)
     buttons.healthstone = CreateStoneButton(bar, "WarlockToolsForeverHealthstone", "healthstone", 2)

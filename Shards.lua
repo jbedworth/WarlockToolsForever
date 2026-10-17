@@ -291,6 +291,7 @@ function WTF.RefreshShardCounter()
     if not counter then
         return
     end
+    counter.mover:SetShown(not WTF.db.locked)
     if not WTF.db.shards.counter then
         counter:Hide()
         return
@@ -365,6 +366,7 @@ local function CreateCounter()
     end)
     counter:SetScript("OnEnter", ShowCounterTooltip)
     counter:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    counter.mover = WTF.CreateMover(counter)
     PlaceCounter()
 end
 

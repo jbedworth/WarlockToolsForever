@@ -58,7 +58,7 @@ local REQUIRED_NAMESPACE = {
     "ParseCommand", "HandleCommand",
     "CheckShardCapabilities", "InitializeShards", "ReportShardStatus", "ReportShardDebug",
     "DebugDeleteShard", "RefreshShardCounter", "ResetShardCounterPosition",
-    "CheckStoneCapabilities", "InitializeStones", "ResetStonesPosition", "ReportStoneDebug",
+    "CheckStoneCapabilities", "InitializeStones", "ResetStonesPosition", "ReportStoneDebug", "RefreshStonesMover",
     "ReportStoneStatus", "RemindStones", "ApplyStoneMacros", "AddInputHandler", "RunOnNextInput", "ReportClickDebug",
     "InitializeAnnounce", "FormatAnnouncement", "ReportAnnounceDebug", "DebugEmote", "FriendlyTargetNames",
     "WhisperHealthstoneGift",
@@ -256,7 +256,6 @@ function WTF.SanitizeDB(db)
         limit = WTF.SanitizeShardLimit(shards.limit),
         report = shards.report ~= false,
         counter = shards.counter ~= false,
-        counterLocked = shards.counterLocked == true,
         counterLow = WTF.SanitizeShardLow(shards.counterLow),
         counterPosition = SanitizePosition(shards.counterPosition),
     }
@@ -265,7 +264,6 @@ function WTF.SanitizeDB(db)
     db.stones = {
         enabled = stones.enabled ~= false,
         shown = stones.shown ~= false,
-        locked = stones.locked == true,
         position = SanitizePosition(stones.position),
         macros = stones.macros ~= false,
         remindSoulstone = stones.remindSoulstone ~= false,
@@ -276,8 +274,6 @@ function WTF.SanitizeDB(db)
     local tracker = type(db.tracker) == "table" and db.tracker or {}
     db.tracker = {
         enabled = tracker.enabled ~= false,
-        placeholders = tracker.placeholders == true,
-        locked = tracker.locked == true,
         position = SanitizePosition(tracker.position),
         -- Bars by default (author-approved).
         theme = tracker.theme == "compact" and "compact" or "bars",
@@ -328,6 +324,15 @@ function WTF.SanitizeDB(db)
         cleanAnnounce[key] = WTF.SanitizeAnnouncement(text, default)
     end
     db.announce = cleanAnnounce
+    -- One lock for every frame (author-approved, as MTF), locked by default;
+    -- each frame reads its own copy, and the tracker shows its sample rows
+    -- while unlocked, since it can only be dragged while it shows.
+    db.locked = db.locked ~= false
+    db.grid = db.grid ~= false
+    db.stones.locked = db.locked
+    db.tracker.locked = db.locked
+    db.tracker.placeholders = not db.locked
+    db.shards.counterLocked = db.locked
     return db
 end
 
@@ -386,6 +391,114 @@ local function InstallInputHooks()
         end
     end
     WorldFrame:HookScript("OnMouseDown", OnInput)
+end
+
+-- While unlocked, a frame shows a gold outline and a hint (author-approved).
+-- A plain child, so it can show and hide also in combat.
+function WTF.CreateMover(frame)
+    local mover = CreateFrame("Frame", nil, frame, "BackdropTemplate")
+    mover:SetPoint("TOPLEFT", -4, 4)
+    mover:SetPoint("BOTTOMRIGHT", 4, -4)
+    mover:SetBackdrop({edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border", edgeSize = 14})
+    mover:SetBackdropBorderColor(1, 0.82, 0)
+    mover.hint = mover:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    mover.hint:SetPoint("BOTTOM", mover, "TOP", 0, 2)
+    mover.hint:SetText("Drag to move · /wtf lock when done")
+    mover:SetShown(not WTF.db.locked)
+    return mover
+end
+
+-- While unlocked, an alignment grid over the screen (author-approved, as
+-- MTF's): faint lines every GRID_SPACING from the center out, and the center
+-- lines in red, so frames line up with the middle of the screen. Under every
+-- frame, it takes no mouse. Rebuilt when the screen size or UI scale changes.
+local GRID_SPACING = 32
+local GRID_LINE = {1, 1, 1, 0.12}
+local GRID_CENTER = {1, 0.2, 0.2, 0.7}
+local grid
+
+local function GridLine(vertical, offset, color, thickness)
+    local line = grid:CreateTexture(nil, "BACKGROUND")
+    line:SetColorTexture(color[1], color[2], color[3], color[4])
+    if vertical then
+        line:SetPoint("TOP", grid, "TOP", offset, 0)
+        line:SetPoint("BOTTOM", grid, "BOTTOM", offset, 0)
+        line:SetWidth(thickness)
+    else
+        line:SetPoint("LEFT", grid, "LEFT", 0, offset)
+        line:SetPoint("RIGHT", grid, "RIGHT", 0, offset)
+        line:SetHeight(thickness)
+    end
+    grid.lines[#grid.lines + 1] = line
+end
+
+local function BuildGrid()
+    for _, line in ipairs(grid.lines) do
+        line:Hide()
+    end
+    grid.lines = {}
+    local halfWidth, halfHeight = UIParent:GetWidth() / 2, UIParent:GetHeight() / 2
+    for step = 1, math.floor(halfWidth / GRID_SPACING) do
+        GridLine(true, step * GRID_SPACING, GRID_LINE, 1)
+        GridLine(true, -step * GRID_SPACING, GRID_LINE, 1)
+    end
+    for step = 1, math.floor(halfHeight / GRID_SPACING) do
+        GridLine(false, step * GRID_SPACING, GRID_LINE, 1)
+        GridLine(false, -step * GRID_SPACING, GRID_LINE, 1)
+    end
+    GridLine(true, 0, GRID_CENTER, 2)
+    GridLine(false, 0, GRID_CENTER, 2)
+    grid.built = true
+end
+
+function WTF.RefreshGrid()
+    local wanted = not WTF.db.locked and WTF.db.grid
+    if not grid then
+        if not wanted then
+            return
+        end
+        grid = CreateFrame("Frame", nil, UIParent)
+        grid:SetAllPoints(UIParent)
+        grid:SetFrameStrata("BACKGROUND")
+        grid:EnableMouse(false)
+        grid.lines = {}
+        grid:SetScript("OnEvent", function() grid.built = false; WTF.RefreshGrid() end)
+        grid:RegisterEvent("DISPLAY_SIZE_CHANGED")
+        grid:RegisterEvent("UI_SCALE_CHANGED")
+    end
+    if wanted and not grid.built then
+        BuildGrid()
+    end
+    grid:SetShown(wanted)
+    WTF.grid = grid
+end
+
+-- /wtf unlock and /wtf lock, and the main page's "Unlock frames to move them":
+-- every movable WTF frame together (author-approved, as MTF does).
+function WTF.SetFramesLocked(locked)
+    WTF.db.locked = locked
+    WTF.db.stones.locked = locked
+    WTF.db.tracker.locked = locked
+    WTF.db.tracker.placeholders = not locked
+    WTF.db.shards.counterLocked = locked
+    WTF.RefreshTracker()
+    WTF.RefreshStonesMover()
+    WTF.RefreshShardCounter()
+    WTF.RefreshGrid()
+    if locked then
+        WTF.Report("Stones bar, DoT tracker, and shard counter locked.")
+    else
+        WTF.Report("Stones bar, DoT tracker, and shard counter unlocked: drag them where you want, "
+            .. "then type /wtf lock.")
+    end
+end
+
+function WTF.Unlock()
+    WTF.SetFramesLocked(false)
+end
+
+function WTF.Lock()
+    WTF.SetFramesLocked(true)
 end
 
 -- /wtf reset: the Stones bar and the DoT tracker back to their default places.
@@ -447,4 +560,5 @@ events:SetScript("OnEvent", function(self, event, loadedName)
     WTF.InitializePlateDots()
     WTF.InitializeAlerts()
     WTF.InitializeOptions()
+    WTF.RefreshGrid()
 end)
