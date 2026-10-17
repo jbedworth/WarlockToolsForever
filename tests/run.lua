@@ -179,7 +179,13 @@ local function fixture(options)
     env.UnitIsDead = function(unit) return state.units[unit] ~= nil and state.units[unit].dead == true end
     -- Raid markers, by the unit's GUID.
     state.marks = {}
+    -- As on Forever, the marker index is secret in combat.
     env.GetRaidTargetIndex = function(unit)
+        if state.combat then
+            local value = secret()
+            state.secrets[value] = true
+            return value
+        end
         local data = state.units[unit]
         return data and state.marks[data.guid or data.name]
     end
@@ -187,6 +193,7 @@ local function fixture(options)
         local data = state.units[unit]
         state.marks[data.guid or data.name] = index
         state.markCount = (state.markCount or 0) + 1
+        state.markedUnit = unit
     end
     env.UnitIsDeadOrGhost = function(unit) return state.units[unit] ~= nil and state.units[unit].dead == true end
     -- State drivers: "[@unit,harm,nodead] show; hide", evaluated by the game.
@@ -1841,6 +1848,15 @@ test("a landed Banish gets its marker; Fear has none unless you choose one", fun
     equal(state.marks["Creature-1"], 4, "the triangle")
     castAt(state, FEAR, "nameplate3")
     equal(state.markCount, 2, "an existing marker is left alone")
+end)
+test("a Banish that lands in combat still gets its marker, on your target", function()
+    local state = controlFixture()
+    state.units.target = state.units.nameplate4
+    state.emit("UNIT_SPELLCAST_SENT", "player", "Imp", "cast-b", BANISH)
+    state.combat = true
+    state.emit("UNIT_SPELLCAST_SUCCEEDED", "player", "cast-b", BANISH)
+    equal(state.marks["Creature-2"], 3, "marked although the marker cannot be read in combat")
+    equal(state.markedUnit, "target")
 end)
 test("control spells tell the group as the cast starts, with the marker in chat", function()
     local state = controlFixture({group = "party", known = {[FEAR] = true, [BANISH] = true, [ENSLAVE] = true}})

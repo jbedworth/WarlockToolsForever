@@ -496,17 +496,29 @@ local function OnCastSent(target, castGUID, spellID)
     end
 end
 
-local function Mark(spell, unit)
+-- The unit to mark: your target or focus when it is this mob (as TankHelper
+-- marks your target), else the unit that shows it. GetRaidTargetIndex can
+-- return a secret (pinned RaidMarkersDocumentation: SecretReturns), as it
+-- does in combat, so an unreadable marker never stops the mark: SetRaidTarget
+-- sets a marker outright (only Blizzard's SetRaidTargetIcon toggles one off),
+-- so setting it again is harmless; a readable equal one is left alone.
+local function Mark(spell, guid, unit)
     local index = WTF.db.control.markers[spell.key]
     if not index or index == 0 or type(SetRaidTarget) ~= "function" then
         return
     end
+    for _, candidate in ipairs({"target", "focus"}) do
+        if ReadGUID(candidate) == guid then
+            unit = candidate
+            break
+        end
+    end
     local current = GetRaidTargetIndex(unit)
-    if WTF.IsSecret(current) or current == index then
+    if not WTF.IsSecret(current) and current == index then
         return
     end
     SetRaidTarget(unit, index)
-    control.lastMark = unit
+    control.lastMark = unit .. (WTF.IsSecret(current) and " (marker unreadable)" or "")
 end
 
 local function OnCastSucceeded(castGUID)
@@ -528,7 +540,7 @@ local function OnCastSucceeded(castGUID)
         return
     end
     local spell = control.kinds[cast.spellID]
-    Mark(spell, unit)
+    Mark(spell, guid, unit)
     local row = RowFor(guid, cast.target)
     if row then
         Track(row, guid, cast.target, spell, C_Spell.GetSpellName(cast.spellID))
