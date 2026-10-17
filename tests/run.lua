@@ -189,9 +189,12 @@ local function fixture(options)
         local data = state.units[unit]
         return data and state.marks[data.guid or data.name]
     end
+    -- As in client, setting the marker a unit already has clears it.
     env.SetRaidTarget = function(unit, index)
         local data = state.units[unit]
-        state.marks[data.guid or data.name] = index
+        local key = data.guid or data.name
+        if state.marks[key] == index then index = nil end
+        state.marks[key] = index
         state.markCount = (state.markCount or 0) + 1
         state.markedUnit = unit
     end
@@ -1857,6 +1860,10 @@ test("a Banish that lands in combat still gets its marker, on your target", func
     state.emit("UNIT_SPELLCAST_SUCCEEDED", "player", "cast-b", BANISH)
     equal(state.marks["Creature-2"], 3, "marked although the marker cannot be read in combat")
     equal(state.markedUnit, "target")
+    -- A recast in combat on the same mob must not toggle the marker off.
+    state.emit("UNIT_SPELLCAST_SENT", "player", "Imp", "cast-b2", BANISH)
+    state.emit("UNIT_SPELLCAST_SUCCEEDED", "player", "cast-b2", BANISH)
+    equal(state.marks["Creature-2"], 3, "still the diamond after a recast")
 end)
 test("control spells tell the group as the cast starts, with the marker in chat", function()
     local state = controlFixture({group = "party", known = {[FEAR] = true, [BANISH] = true, [ENSLAVE] = true}})
