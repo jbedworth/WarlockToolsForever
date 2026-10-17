@@ -77,6 +77,8 @@ local REQUIRED_NAMESPACE = {
     "ReportTrackerDebug", "TrackerCandidateFilters", "TrackerKnowsSlot", "SetTrackerTheme",
     "InitializePlateDots", "RefreshPlateDots", "HasTrackableDots", "ApplyTrackerColors", "ApplyDotColors",
     "InitializeAlerts", "ApplyNightfallSound", "PreviewNightfallSound", "HasNightfallSound",
+    "InitializeChimes", "PreviewChime", "ReportChimesDebug", "SanitizeChimes", "AvailableChimeSounds",
+    "ChimeSoundGroups", "ChimeSoundParts", "ChimeSoundLabel",
     "ReportRestrictions", "InitializeShield", "RefreshShield", "ResetShieldPosition", "ReportShieldDebug",
     "InitializeOptions", "OpenSettings",
 }
@@ -342,6 +344,9 @@ function WTF.SanitizeDB(db)
     -- One lock for every frame (author-approved, as MTF), locked by default;
     -- each frame reads its own copy, and the tracker shows its sample rows
     -- while unlocked, since it can only be dragged while it shows.
+    if WTF.SanitizeChimes then
+        db.chimes = WTF.SanitizeChimes(db.chimes)
+    end
     -- The shield display is a self-contained component; it owns its defaults.
     if WTF.ShieldDisplay then
         db.shield = WTF.ShieldDisplay.Sanitize(db.shield)
@@ -609,6 +614,7 @@ events:SetScript("OnEvent", function(self, event, loadedName)
     WTF.InitializePlateDots()
     WTF.InitializeAlerts()
     WTF.InitializeShield()
+    WTF.InitializeChimes()
     WTF.InitializeOptions()
     WTF.RefreshGrid()
 end)
