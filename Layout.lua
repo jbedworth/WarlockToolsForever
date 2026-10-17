@@ -14,7 +14,7 @@ local GAP = 20
 local SNAP_RANGE = 24
 local SNAP_TOLERANCE = 1.5
 
-local layout = {saves = {}, order = {}, dragging = {}}
+local layout = {saves = {}, order = {}, dragging = {}, pending = {}}
 
 function WTF.RegisterMovable(frame, save)
     if not layout.saves[frame] then
@@ -132,18 +132,8 @@ function WTF.BeginDrag(frame)
     frame:StartMoving()
 end
 
-function WTF.EndDrag(frame)
-    local group = layout.dragging[frame]
-    if not group then
-        return
-    end
-    layout.dragging[frame] = nil
-    frame:StopMovingOrSizing()
-    -- Combat began during the drag: secure frames cannot move now, so the
-    -- frames stay where they are and keep their saved places.
-    if InCombatLockdown() then
-        return
-    end
+-- Snaps and saves a dropped frame and its group.
+local function FinishDrop(frame, group)
     local inGroup = {}
     for _, member in ipairs(group) do
         inGroup[member] = true
@@ -161,4 +151,37 @@ function WTF.EndDrag(frame)
     for index, member in ipairs(group) do
         MoveTo(member, centers[index][1], centers[index][2])
     end
+end
+
+-- Combat began during a drag: secure frames cannot stop moving or move now,
+-- so the drop (and a Shift-dragged group's followers, still anchored to the
+-- dragged frame) waits, and finishes when combat ends.
+local pendingEvents = CreateFrame("Frame")
+pendingEvents:SetScript("OnEvent", function(self)
+    self:UnregisterEvent("PLAYER_REGEN_ENABLED")
+    local pending = layout.pending
+    layout.pending = {}
+    for _, drop in ipairs(pending) do
+        drop.frame:StopMovingOrSizing()
+        FinishDrop(drop.frame, drop.group)
+    end
+end)
+
+function WTF.EndDrag(frame)
+    local group = layout.dragging[frame]
+    if not group then
+        return
+    end
+    layout.dragging[frame] = nil
+    if InCombatLockdown() then
+        local protected = type(frame.IsProtected) == "function" and frame:IsProtected()
+        if not protected then
+            frame:StopMovingOrSizing()
+        end
+        layout.pending[#layout.pending + 1] = {frame = frame, group = group}
+        pendingEvents:RegisterEvent("PLAYER_REGEN_ENABLED")
+        return
+    end
+    frame:StopMovingOrSizing()
+    FinishDrop(frame, group)
 end

@@ -568,7 +568,12 @@ local function OnCastSucceeded(castGUID)
         local unit = FindCastUnit(cast.target)
         guid = unit and ReadGUID(unit)
     end
+    -- A cast on the mob under the mouse (as "! Fear" does) counts: mouseover
+    -- checks the cast and takes the marker, though rows never bind to it.
     local unit = FindUnit(guid)
+    if not unit and guid and ReadGUID("mouseover") == guid then
+        unit = "mouseover"
+    end
     if not unit or not UnitCanAttack("player", unit) then
         return
     end
