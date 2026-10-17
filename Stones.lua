@@ -241,7 +241,7 @@ local function WriteMacro(name, body, oldNames)
         if CharacterMacroLimit() - numCharacter <= MACRO_SLOT_CUSHION then
             if not macros.warned then
                 macros.warned = true
-                WTF.Report("No free character macro slot for \"" .. name .. "\"; free one and WTF adds it.")
+                WTF.Warn("No free character macro slot for \"" .. name .. "\"; free one and WTF adds it.")
             end
             return
         end
@@ -365,7 +365,7 @@ local function Say(message)
         return
     end
     stones.lastMessage, stones.lastMessageTime = message, now
-    WTF.Report(message)
+    WTF.Warn(message)
 end
 
 local function FindItemSlot(itemID)
@@ -433,7 +433,7 @@ function PlaceTradeStone(retry)
         ClearCursor()
         if retry then
             stones.pendingTrade = nil
-            WTF.Report("The game did not let WTF put the Healthstone into the trade window; drag it in yourself.")
+            WTF.Warn("The game did not let WTF put the Healthstone into the trade window; drag it in yourself.")
         else
             WTF.RunOnNextInput(function() PlaceTradeStone(true) end)
         end
@@ -588,7 +588,6 @@ end
 function WTF.ResetStonesPosition()
     WTF.db.stones.position = nil
     if InCombatLockdown() then
-        WTF.Report("The Stones bar moves back after combat.")
         stones.resetPending = true
         return
     end

@@ -12,6 +12,17 @@ function WTF.Report(message)
     DEFAULT_CHAT_FRAME:AddMessage("WTF: " .. tostring(message))
 end
 
+-- An action that failed: said in chat and in red at the top of the screen,
+-- so a click never fails silently (author-approved, as MTF does).
+local WARNING_COLOR = {1, 0.1, 0.1}
+
+function WTF.Warn(message)
+    WTF.Report(message)
+    if type(UIErrorsFrame) == "table" and type(UIErrorsFrame.AddMessage) == "function" then
+        UIErrorsFrame:AddMessage("WTF: " .. tostring(message), WARNING_COLOR[1], WARNING_COLOR[2], WARNING_COLOR[3])
+    end
+end
+
 -- Combat data can be a secret value on the target client: code may store and
 -- pass it on, but never compare, concatenate, or print it.
 function WTF.IsSecret(value)
@@ -60,7 +71,7 @@ local REQUIRED_NAMESPACE = {
     "DebugDeleteShard", "RefreshShardCounter", "ResetShardCounterPosition",
     "CheckStoneCapabilities", "InitializeStones", "ResetStonesPosition", "ReportStoneDebug", "RefreshStonesMover",
     "ReportStoneStatus", "RemindStones", "ApplyStoneMacros", "AddInputHandler", "RunOnNextInput", "ReportClickDebug",
-    "InitializeAnnounce", "FormatAnnouncement", "ReportAnnounceDebug", "DebugEmote", "FriendlyTargetNames",
+    "Warn", "InitializeAnnounce", "FormatAnnouncement", "ReportAnnounceDebug", "DebugEmote", "FriendlyTargetNames",
     "WhisperHealthstoneGift",
     "CheckTrackerCapabilities", "InitializeTracker", "ResetTrackerPosition", "RefreshTracker",
     "ReportTrackerDebug", "TrackerCandidateFilters", "TrackerKnowsSlot", "SetTrackerTheme",
@@ -506,6 +517,9 @@ function WTF.ResetPositions()
     WTF.ResetShardCounterPosition()
     WTF.ResetStonesPosition()
     WTF.ResetTrackerPosition()
+    if InCombatLockdown() then
+        WTF.Report("WTF frames move back to their default places after combat.")
+    end
 end
 
 SLASH_WARLOCKTOOLSFOREVER1 = PRIMARY_SLASH
