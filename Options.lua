@@ -284,8 +284,9 @@ local function AddControlPage(parent)
         "Keep \"! Fear\", \"! Banish\", and \"! Seduction\" in your character macros for your action bars, "
             .. "each once you know its spell. \"! Fear\" Fears the mob under your mouse (a feared mob's nameplate "
             .. "as its timer runs out), else your target. The others focus the hostile mob under your mouse (or "
-            .. "your target, out of combat) and cast on your focus; Seduction casts only while your pet is a "
-            .. "Succubus. Turning this off deletes them.", function() WTF.ApplyControlMacros() end)
+            .. "your target, out of combat) and cast on your focus. \"! Seduction\" appears once your Succubus "
+            .. "or Incubus has learned Seduction from its Grimoire, and casts only while one is your pet. Turning "
+            .. "this off deletes them.", function() WTF.ApplyControlMacros() end)
     Flag(page, "WTF_CONTROL_PLATE_TIMERS", "Fear timers on nameplates", "control", "plateTimers", true,
         "A thin bar under each feared mob's nameplate that drains with your Fear's time left, so you see which "
             .. "one is about to break; click its nameplate to target it.", RefreshControl)

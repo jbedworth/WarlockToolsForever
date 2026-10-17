@@ -598,8 +598,10 @@ end
 -- per single-target control spell you know. It sets your focus to the hostile
 -- mob under the mouse (or, out of combat, your target) and casts on your
 -- focus, so the macro, the bar's click, and the moon all agree on one mob.
--- Seduction is your Succubus's: its macro appears once you know Summon
--- Succubus and does nothing unless your pet is a Succubus ([pet:Succubus]).
+-- Seduction is your Succubus's or Incubus's, learned from a Grimoire: its
+-- macro appears once your summoned demon knows it (the pet spellbook, by ID
+-- or by name, so either demon counts), stays after you dismiss it, and does
+-- nothing unless your pet is a Succubus or an Incubus.
 -- The moon comes from WTF when the cast lands, so the macros do not /tm
 -- (a second mark would toggle it off). "! Fear" is the author's own juggling
 -- macro: no focus (a focus holds one mob), it Fears the mob under the mouse,
@@ -608,7 +610,7 @@ end
 local CONTROL_MACROS = {
     {name = "! Fear", spell = 5782, known = {5782, 6213, 6215}, mouseover = true},
     {name = "! Banish", spell = 710, known = {710, 18647}},
-    {name = "! Seduction", spell = 6358, known = {712}, condition = ",pet:Succubus"},
+    {name = "! Seduction", spell = 6358, pet = true, condition = ",pet:Succubus/Incubus"},
 }
 local FOCUS_LINE = "/focus [@mouseover,harm,nodead][nocombat,harm,nodead]"
 
@@ -622,6 +624,37 @@ local function KnowsAnyOf(ids)
         end
     end
     return false
+end
+
+-- A pet spell your summoned demon knows: by ID, else by name in the pet
+-- spellbook (Forever's Incubus may carry its own ID). Nothing without a pet.
+local function PetKnows(spellID)
+    if type(C_SpellBook) ~= "table" or type(C_SpellBook.IsSpellKnown) ~= "function" then
+        return false
+    end
+    if C_SpellBook.IsSpellKnown(spellID, true) == true then
+        return true
+    end
+    local bank = Enum and Enum.SpellBookSpellBank and Enum.SpellBookSpellBank.Pet
+    local name = C_Spell.GetSpellName(spellID)
+    if not bank or not name or type(C_SpellBook.HasPetSpells) ~= "function" then
+        return false
+    end
+    local count = C_SpellBook.HasPetSpells()
+    for index = 1, (type(count) == "number" and count or 0) do
+        local item = C_SpellBook.GetSpellBookItemInfo(index, bank)
+        if type(item) == "table" and item.name == name then
+            return true
+        end
+    end
+    return false
+end
+
+local function MacroKnown(macro)
+    if macro.pet then
+        return PetKnows(macro.spell)
+    end
+    return KnowsAnyOf(macro.known)
 end
 
 function WTF.ControlMacroBody(macro)
@@ -648,7 +681,7 @@ function WTF.ApplyControlMacros()
     end
     for _, macro in ipairs(CONTROL_MACROS) do
         local body = WTF.ControlMacroBody(macro)
-        if WTF.db.control.macros and body and KnowsAnyOf(macro.known) then
+        if WTF.db.control.macros and body and MacroKnown(macro) then
             WTF.WriteCharacterMacro(macro.name, body)
         elseif not WTF.db.control.macros then
             WTF.DeleteCharacterMacro(macro.name)
@@ -774,6 +807,11 @@ events:SetScript("OnEvent", function(_, event, unit, first, second, third)
         Rebind()
         return
     end
+    if event == "UNIT_PET" then
+        -- A demon summoned: its spells, Seduction among them, can be read now.
+        WTF.ApplyControlMacros()
+        return
+    end
     if event == "UNIT_SPELLCAST_SENT" then
         OnCastSent(first, second, third)
     elseif event == "UNIT_SPELLCAST_SUCCEEDED" then
@@ -872,7 +910,7 @@ function WTF.InitializeControl()
         events:RegisterEvent(event)
     end
     for _, event in ipairs({"UNIT_SPELLCAST_SENT", "UNIT_SPELLCAST_SUCCEEDED", "UNIT_SPELLCAST_FAILED",
-        "UNIT_SPELLCAST_INTERRUPTED"}) do
+        "UNIT_SPELLCAST_INTERRUPTED", "UNIT_PET"}) do
         events:RegisterUnitEvent(event, "player")
     end
     Layout()
@@ -909,4 +947,7 @@ function WTF.ReportControlDebug()
     end
     WTF.Report(string.format("debug_control marked=%s plateTimers=%s attached=%d", tostring(control.lastMark),
         tostring(WTF.db.control.plateTimers), attached))
+    -- For the Seduction macro: your demon's family and whether it knows Seduction.
+    local family = type(UnitCreatureFamily) == "function" and UnitCreatureFamily("pet")
+    WTF.Report(string.format("debug_control pet=%s seduction=%s", tostring(family), tostring(PetKnows(6358))))
 end
