@@ -248,7 +248,7 @@ and printing.
       loaded (the key hook passes every key on).
 - [ ] The shard counter shows your count, red at or below the Low shard warning and
       green at your limit, legible on the icon; it
-      updates as shards come and go, also in combat. Drag, lock, hide, and
+      updates as shards come and go, also in combat. Drag (unlocked), hide, and
       `/wtf reset` it; its place survives `/reload`.
 - [ ] Move shards from the bank above the limit: none are deleted. Then Drain
       Soul once: only the new shard is deleted.
@@ -269,7 +269,7 @@ and printing.
       combat. Turning "Keep stone macros" off removes them.
 - [ ] Middle-click on the Healthstone button uses your best Healthstone, also
       with a friendly player targeted.
-- [ ] Drag, lock, and `/wtf reset` the bar; its place survives `/reload`.
+- [ ] Drag (unlocked) and `/wtf reset` the bar; its place survives `/reload`.
 - [ ] Ritual of Summoning on a party member: one party line and one whisper
       with the zone. A Soulstone on a party member: the party line and the
       author's whisper. On yourself: nothing. Default texts credit
@@ -302,8 +302,13 @@ and printing.
       spell you know, with icon, spell name, and time left, draining from
       right to left; missing spells show as dim named lines; clicking a line
       in the pinned rows recasts it. A switch in combat applies after combat.
-- [ ] "Show placeholders" shows sample rows to drag; lock and `/wtf reset`
-      work; the place survives `/reload`.
+- [ ] Unlocked: the grid covers the screen under every frame, red lines
+      cross at the center, clicks pass through it, it rebuilds after a UI
+      scale change, and its switch hides it.
+- [ ] "Unlock frames to move them" and `/wtf unlock` outline the Stones bar and
+      the shard counter and show sample tracker rows; all three drag; unticking
+      or `/wtf lock` locks them, and the switch and commands stay in step;
+      `/wtf reset` puts them back; their places survive `/reload`.
 - [ ] Target a lower-level party member and left-click the Healthstone button:
       with a stone they can use, a trade opens with it in the window; without
       one, it is created, and the next left-click trades it. WTF never accepts.

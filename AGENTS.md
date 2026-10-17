@@ -14,9 +14,9 @@ module only after the author agrees its behavior.
   icon and the carried count, outlined: green at or above the limit, red at
   or below the Low shard warning setting (0-10, default 2, author's choice),
   white between.
-  Updates on `BAG_UPDATE_DELAYED` and limit changes; on by default, with
-  show and lock switches; its place is saved per character and reset by
-  `/wtf reset`.
+  Updates on `BAG_UPDATE_DELAYED` and limit changes; on by default, with a
+  show switch; it moves with the one lock below; its place is saved per
+  character and reset by `/wtf reset`.
 - Deletes Soul Shards (item 6265) that a shard source creates above the carried
   limit, with no prompt or popup. The client allows `DeleteCursorItem` only
   during a hardware event (verified: from event handlers it raised
@@ -175,8 +175,8 @@ module only after the author agrees its behavior.
   tracked spell succeeds on a hostile mob (cast events, target name, and
   `UnitGUID` are readable in combat) and leaves when the mob dies (`UnitIsDead`
   on its unit), after 10 s with no unit showing it, or when combat ends. A
-  ninth mob replaces the oldest list row. "Show placeholders"
-  (author-approved, for positioning) shows sample rows out of combat.
+  ninth mob replaces the oldest list row. Sample rows (author-approved, for
+  positioning) show out of combat while frames are unlocked.
 - On Forever the combat log is restricted at all times and every aura API
   refuses AddOn code in combat. So each row holds a Blizzard AuraContainer
   (`CreateFrame("AuraContainer", nil, row, "CustomAuraContainerTemplate")`
@@ -261,6 +261,24 @@ module only after the author agrees its behavior.
 
 Keep each module narrow. Do not add automation that plays for the user,
 general frameworks, or speculative modules without agreement.
+
+### Lock and unlock (built)
+
+- One lock for every WTF frame (author-approved, as MTF): `db.locked`,
+  default locked, copied to `stones.locked`, `tracker.locked`, and
+  `shards.counterLocked`; `tracker.placeholders` follows it (sample rows
+  while unlocked, since the tracker drags only while it shows). The main
+  page's "Unlock frames to move them" and `/wtf unlock` and `/wtf lock` set
+  it; there are no per-frame lock or placeholder switches. The Stones bar and
+  the shard counter show a gold outline and a "Drag to move · /wtf lock when
+  done" hint while unlocked (`WTF.CreateMover`). Every new movable frame joins
+  this lock.
+- While unlocked, an alignment grid (author-approved, as MTF's; main-page
+  switch "Show a grid while unlocked", on by default, `db.grid`): a
+  mouse-transparent BACKGROUND-strata frame over UIParent with faint white
+  lines every 32 units from the center out and the two center lines in red,
+  2 thick. Built on first unlock and rebuilt on `DISPLAY_SIZE_CHANGED` and
+  `UI_SCALE_CHANGED`.
 
 ## Project structure
 

@@ -41,14 +41,13 @@ every key on to the game unchanged.
 - Each deletion prints one chat line; you can turn that off.
 - **Shard counter:** a Soul Shard icon on screen with your shard count: red
   when low (2 or fewer by default; **Low shard warning** sets it), green at
-  your limit. Hover it for the count and the limit; drag it
-  where you want it. Lock it or hide it on the Soul Shards settings page, and
-  `/wtf reset` moves it back.
+  your limit. Hover it for the count and the limit. Hide it on the Soul
+  Shards settings page; see [Moving frames](#moving-frames) to place it.
 
 ## Stones
 
-A small bar with a Soulstone and a Healthstone button. Drag it to move it (out
-of combat); lock it in the settings; `/wtf reset` puts it back.
+A small bar with a Soulstone and a Healthstone button; see
+[Moving frames](#moving-frames) to place it.
 
 - **Left-click** uses the best stone you carry. A Soulstone goes on your
   friendly target, grouped or not, or on you without one; Soulstones cannot
@@ -137,9 +136,8 @@ spell shows as a dim icon, so you can see what to recast.
   dot: Curse purple, Bane red, Corruption white, Immolate orange, Siphon Life
   green, Fear and control yellow. Change them on the **DoT Colors** settings
   page.
-- To place the tracker, turn on **Show placeholders** on the DoT Tracker
-  settings page, drag it by a row, then turn the setting off. You can lock it
-  there too.
+- To place the tracker, unlock your frames (see
+  [Moving frames](#moving-frames)): it shows sample rows to drag it by.
 - The timers come from Blizzard's own aura display, which reads each mob's
   nameplate. Turn on enemy nameplates so listed mobs keep their timers.
 
@@ -166,6 +164,18 @@ plays the sound itself, also in combat.
 **Options → AddOns → Warlock Tools Forever** (or `/wtf`) has one switch per
 module. Each module has its own subpage, such as **Soul Shards**.
 
+## Moving frames
+
+All WTF frames move together. Tick **Unlock frames to move them** on the
+main WTF settings page, or type `/wtf unlock`: the Stones bar and the shard
+counter get a gold outline and a hint, and the DoT tracker shows sample rows,
+so you can drag them. Untick it, or type `/wtf lock`, to lock them again.
+`/wtf reset` puts them back in their default places. Everything starts locked.
+
+While unlocked, a faint grid covers the screen, with red lines through its
+center, so you can line frames up. Turn off **Show a grid while unlocked** on
+the main settings page if you'd rather not see it.
+
 ## Commands
 
 | Command | Effect |
@@ -173,6 +183,8 @@ module. Each module has its own subpage, such as **Soul Shards**.
 | `/wtf`, `/wtf options` | Open the settings |
 | `/wtf shards` | Show your shard count, limit, and whether deletion is on |
 | `/wtf stones` | Show who has your Soulstone and the stones you carry |
+| `/wtf unlock` | Unlock the Stones bar, the DoT tracker (with sample rows), and the shard counter, so you can drag them |
+| `/wtf lock` | Lock them again where they are |
 | `/wtf reset` | Move the Stones bar and the DoT tracker back to their default places |
 | `/wtf debug_shards` | Diagnostics: bags, soul bag sizes, and recent shard gains |
 | `/wtf debug_restrictions` | Diagnostics: which combat data this client hides from AddOns |

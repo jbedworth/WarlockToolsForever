@@ -1,6 +1,7 @@
 local _, WTF = ...
 
-local USAGE = "Use /wtf, /wtf options, /wtf shards, /wtf stones, /wtf reset, /wtf debug_shards, /wtf debug_delete, "
+local USAGE = "Use /wtf, /wtf options, /wtf shards, /wtf stones, /wtf unlock, /wtf lock, /wtf reset, "
+    .. "/wtf debug_shards, /wtf debug_delete, "
     .. "/wtf debug_stones, /wtf debug_click, /wtf debug_tracker, /wtf debug_announce, /wtf debug_emote, or /wtf debug_restrictions."
 local UNAVAILABLE = "Warlock Tools Forever is unavailable. Check the WTF login message."
 
@@ -14,6 +15,8 @@ local COMMANDS = {
     debug_shards = {handler = "ReportShardDebug", always = true},
     debug_delete = {handler = "DebugDeleteShard"},
     reset = {handler = "ResetPositions"},
+    unlock = {handler = "Unlock"},
+    lock = {handler = "Lock"},
     stones = {handler = "ReportStoneStatus"},
     debug_stones = {handler = "ReportStoneDebug"},
     debug_click = {handler = "ReportClickDebug"},

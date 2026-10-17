@@ -503,7 +503,8 @@ local function fixture(options)
     end
 
     state.worldHooks = {}
-    env.UIParent = {}
+    -- A 1000 x 800 screen.
+    env.UIParent = {GetWidth = function() return 1000 end, GetHeight = function() return 800 end}
     env.WorldFrame = {HookScript = function(_, script, callback) state.worldHooks[script] = callback end}
     local function widget(kind, name, parent, template)
         local object = {kind = kind, name = name, parent = parent, template = template, events = {},
@@ -513,6 +514,8 @@ local function fixture(options)
         function object:SetBackdrop(backdrop) self.backdrop = backdrop end
         function object:SetStatusBarColor(...) self.barColor = {...} end
         function object:SetColorTexture(...) self.color = {...} end
+        function object:SetWidth(width) self.width = width end
+        function object:EnableMouse(value) self.mouseDisabled = value == false end
         function object:SetHeight(height) self.height = height end
         function object:SetSize(width, height) self.width, self.height = width, height end
         function object:SetFrameLevel(level) self.level = level end
@@ -1556,6 +1559,7 @@ test("the Stones bar follows the module and show settings, after combat if neede
 end)
 test("the Stones bar drags unless locked or in combat, and remembers its place", function()
     local state = stonesFixture()
+    state.slash("unlock")
     local bar, soul = state.env.WarlockToolsForeverStones, state.env[SOUL]
     soul.scripts.OnDragStart(soul)
     equal(bar.moving, true)
@@ -1610,6 +1614,7 @@ end)
 test("the shard counter drags unless locked, saves its place, and resets", function()
     local state = fixture()
     local counter = state.wtf.shardCounter
+    state.slash("unlock")
     counter.scripts.OnDragStart(counter)
     equal(counter.moving, true)
     counter:SetPoint("TOPLEFT", state.env.UIParent, "TOPLEFT", 10, -20)
@@ -1624,6 +1629,62 @@ test("the shard counter drags unless locked, saves its place, and resets", funct
     equal(counter.points[1][1], "CENTER")
     local saved = fixture({db = {shards = {counterPosition = {point = "TOP", relativePoint = "TOP", x = 1, y = 2}}}})
     equal(saved.wtf.shardCounter.points[1][1], "TOP", "the place survives a reload")
+end)
+test("one lock for every WTF frame, locked by default, with no per-frame switches", function()
+    local state = fixture({db = {stones = {locked = false}, tracker = {locked = false, placeholders = true}}})
+    local db = state.wtf.db
+    equal(db.locked, true)
+    equal(db.stones.locked, true, "older per-frame locks give way to the one lock")
+    equal(db.tracker.locked, true)
+    equal(db.tracker.placeholders, false)
+    equal(db.shards.counterLocked, true)
+    for _, variable in ipairs({"WTF_STONES_LOCKED", "WTF_TRACKER_LOCKED", "WTF_SHARDS_COUNTER_LOCKED",
+        "WTF_TRACKER_PLACEHOLDERS"}) do
+        equal(state.settings[variable], nil, variable .. " is gone")
+    end
+    state.settings.WTF_UNLOCKED:SetValue(true)
+    equal(db.locked, false)
+    equal(db.tracker.placeholders, true, "sample rows while unlocked")
+end)
+test("/wtf unlock and /wtf lock move every WTF frame together", function()
+    local state = fixture()
+    state.slash("unlock")
+    local db = state.wtf.db
+    equal(db.stones.locked, false)
+    equal(db.tracker.locked, false)
+    equal(db.tracker.placeholders, true, "sample rows to drag the tracker by")
+    equal(db.shards.counterLocked, false)
+    contains(state.last(), "drag them where you want, then type /wtf lock.")
+    equal(state.env.WarlockToolsForeverStones.mover.shown, true, "outlined")
+    equal(state.wtf.shardCounter.mover.shown, true)
+    equal(state.settings.WTF_UNLOCKED:GetValue(), true, "the main page's switch follows")
+    state.slash("lock")
+    equal(state.env.WarlockToolsForeverStones.mover.shown, false)
+    equal(state.wtf.shardCounter.mover.shown, false)
+    equal(db.stones.locked, true)
+    equal(db.tracker.locked, true)
+    equal(db.tracker.placeholders, false)
+    equal(db.shards.counterLocked, true)
+    equal(state.last(), "WTF: Stones bar, DoT tracker, and shard counter locked.")
+end)
+test("unlocked, a grid shows the screen's center; it follows its switch and the lock", function()
+    local state = fixture()
+    equal(state.wtf.grid, nil, "nothing built while locked")
+    state.slash("unlock")
+    local grid = state.wtf.grid
+    equal(grid.shown, true)
+    equal(grid.mouseDisabled, true, "never takes clicks")
+    -- A 1000 x 800 screen, lines every 32 from the center: 15 + 15 + 12 + 12, then the two center lines.
+    equal(#grid.lines, 56)
+    local center = grid.lines[#grid.lines]
+    equal(center.color[2], 0.2, "the center lines are red")
+    equal(center.height, 2)
+    state.settings.WTF_GRID:SetValue(false)
+    equal(grid.shown, false)
+    state.settings.WTF_GRID:SetValue(true)
+    equal(grid.shown, true)
+    state.slash("lock")
+    equal(grid.shown, false)
 end)
 test("/wtf reset moves the Stones bar back, after combat if needed", function()
     local state = stonesFixture({db = {stones = {position = {point = "TOP", relativePoint = "TOP", x = 1, y = 2}}}})
@@ -2416,7 +2477,7 @@ end)
 test("placeholders show sample rows for positioning, out of combat", function()
     local state = trackerFixture({units = {}})
     equal(state.targetRow.shown, false)
-    state.settings.WTF_TRACKER_PLACEHOLDERS:SetValue(true)
+    state.settings.WTF_UNLOCKED:SetValue(true)
     equal(state.targetRow.shown, true)
     equal(state.focusRow.shown, true)
     equal(state.targetRow.name.text, "Target (sample)")
@@ -2426,7 +2487,7 @@ test("placeholders show sample rows for positioning, out of combat", function()
     equal(rows[1].name.text, "Another mob (sample)")
     equal(listOffset(state), -2 * (ROW_STEP + TARGET_SPACING))
     state.combat = true
-    state.settings.WTF_TRACKER_PLACEHOLDERS:SetValue(false)
+    state.settings.WTF_UNLOCKED:SetValue(false)
     equal(state.targetRow.shown, true, "secure rows wait for combat to end")
     state.combat = false
     state.emit("PLAYER_REGEN_ENABLED")
@@ -2436,6 +2497,7 @@ test("placeholders show sample rows for positioning, out of combat", function()
 end)
 test("the tracker drags by its rows unless locked, and /wtf reset moves it back", function()
     local state = trackerFixture()
+    state.slash("unlock")
     state.targetRow.scripts.OnDragStart(state.targetRow)
     equal(state.anchor.moving, true)
     state.anchor:SetPoint("TOP", nil, "TOP", 5, -5)
@@ -2772,12 +2834,12 @@ test("the dots switch and height setting apply at once", function()
     equal(bubbleOn(state, "nameplate1"), nil)
     local page = state.categories["DoT Tracker"]
     equal(page.initializers[1].setting.variable, "WTF_TRACKER_THEME")
-    equal(page.initializers[4].setting.variable, "WTF_TRACKER_PLATE_DOTS")
-    equal(page.initializers[5].parentInitializer, page.initializers[4])
+    equal(page.initializers[2].setting.variable, "WTF_TRACKER_PLATE_DOTS")
+    equal(page.initializers[3].parentInitializer, page.initializers[2])
 end)
 test("the dot height slider has a gold mark at the default, hidden on reuse", function()
     local state = dotsFixture()
-    local initializer = state.categories["DoT Tracker"].initializers[5]
+    local initializer = state.categories["DoT Tracker"].initializers[3]
     local frame = state.env.CreateFrame("Frame")
     local slider = state.env.CreateFrame("Slider")
     frame.SliderWithSteppers = {Slider = slider}
@@ -2801,7 +2863,7 @@ test("without a known DoT the dots stay off and cannot be turned on", function()
     local state = dotsFixture({spellbook = {{spellID = 686, name = "Shadow Bolt"}}})
     equal(state.wtf.HasTrackableDots(), false)
     equal(bubbleOn(state, "nameplate1"), nil)
-    equal(state.categories["DoT Tracker"].initializers[4].modifyPredicates[1](), false)
+    equal(state.categories["DoT Tracker"].initializers[2].modifyPredicates[1](), false)
 end)
 test("nameplate dots follow the per-slot nameplate choices", function()
     local state = dotsFixture({db = {tracker = {plateDots = true, onPlates = {immolate = false}}},
