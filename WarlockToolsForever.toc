@@ -2,7 +2,7 @@
 ## Title: Warlock Tools Forever
 ## Notes: Quality-of-life tools for Warlocks in WoW Forever
 ## Author: Dyre
-## Version: 0.1.0-beta
+## Version: 0.1.1-beta
 ## IconTexture: Interface\Icons\INV_Misc_Gem_Amethyst_02
 ## Category: Warlock
 ## SavedVariablesPerCharacter: WarlockToolsForeverDB

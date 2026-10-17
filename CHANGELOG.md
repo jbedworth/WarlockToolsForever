@@ -4,6 +4,11 @@ Player-facing changes for each Warlock Tools Forever release, newest first. The
 release builder copies the section for the TOC version into the GitHub release
 notes and the CurseForge changelog, and fails if that section is missing.
 
+## 0.1.1-beta
+
+- One lock for every frame: `/wtf unlock` outlines the Stones bar and the shard counter and shows sample DoT tracker rows, so you can drag them all; `/wtf lock` locks them again. The main settings page has the same switch, "Unlock frames to move them", and the separate lock and sample-row switches are gone.
+- While frames are unlocked, a faint grid covers the screen with its center lines in red, so you can line frames up. Turn it off with "Show a grid while unlocked" on the main settings page.
+
 ## 0.1.0-beta
 
 - First public beta for WoW: Forever.

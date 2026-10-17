@@ -64,9 +64,13 @@ Per-file changelogs need no manual text: each CI upload uses the version's
 - A list of up to eight other mobs you DoTed. Expired spells stay as dim icons, so you see what to recast.
 - Optional colored DoT dots above hostile nameplates: grey means missing, at a glance.
 
+### Moving frames
+- `/wtf unlock` (or a switch on the main settings page) outlines every WTF frame so you can drag it, with a grid that marks the center of your screen. `/wtf lock` locks them again; `/wtf reset` puts them back.
+
 ### Commands
 - `/wtf` or `/wtf options` opens the settings (Options > AddOns).
 - `/wtf shards` shows your shard count and limit.
+- `/wtf unlock`, `/wtf lock`, and `/wtf reset` move your frames.
 - `/warlocktools` works the same, in case another AddOn uses `/wtf`.
 
 ### Compatibility
