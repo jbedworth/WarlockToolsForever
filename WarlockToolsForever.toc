@@ -9,6 +9,7 @@
 
 Commands.lua
 Core.lua
+Layout.lua
 Shards.lua
 Stones.lua
 Announce.lua

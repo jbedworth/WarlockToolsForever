@@ -24,7 +24,7 @@ local function contains(actual, fragment, context)
     end
 end
 
-local RUNTIME_FILES = {"Commands.lua", "Core.lua", "Shards.lua", "Stones.lua", "Announce.lua", "Tracker.lua",
+local RUNTIME_FILES = {"Commands.lua", "Core.lua", "Layout.lua", "Shards.lua", "Stones.lua", "Announce.lua", "Tracker.lua",
     "Dots.lua", "Alerts.lua", "Probe.lua", "Options.lua"}
 local SHARD = 6265
 local SPELLS = {[1120] = "Drain Soul", [11675] = "Drain Soul", [686] = "Shadow Bolt", [172] = "Corruption",
@@ -509,7 +509,28 @@ local function fixture(options)
 
     state.worldHooks = {}
     -- A 1000 x 800 screen.
-    env.UIParent = {GetWidth = function() return 1000 end, GetHeight = function() return 800 end}
+    env.UIParent = {GetWidth = function() return 1000 end, GetHeight = function() return 800 end,
+        GetEffectiveScale = function() return 1 end}
+    env.IsShiftKeyDown = function() return state.shift == true end
+    local SPOTS = {CENTER = {0.5, 0.5}, BOTTOMLEFT = {0, 0}, BOTTOM = {0.5, 0}, BOTTOMRIGHT = {1, 0},
+        LEFT = {0, 0.5}, RIGHT = {1, 0.5}, TOPLEFT = {0, 1}, TOP = {0.5, 1}, TOPRIGHT = {1, 1}}
+    -- Screen position of a frame's center, from its last point.
+    function state.absCenter(frame)
+        if frame == env.UIParent or frame == nil then return 500, 400 end
+        local point = frame.points[#frame.points]
+        if not point then return 500, 400 end
+        local relative = point[2] or env.UIParent
+        if type(relative) ~= "table" then relative = env.UIParent end
+        local relativeScale = relative.GetEffectiveScale and relative:GetEffectiveScale() or 1
+        local rx, ry = state.absCenter(relative)
+        local rw = relative == env.UIParent and 1000 or (relative.width or 0) * relativeScale
+        local rh = relative == env.UIParent and 800 or (relative.height or 0) * relativeScale
+        local spot, own = SPOTS[point[3]] or SPOTS.CENTER, SPOTS[point[1]] or SPOTS.CENTER
+        local scale = frame:GetEffectiveScale()
+        local width, height = (frame.width or 0) * scale, (frame.height or 0) * scale
+        return rx + (spot[1] - 0.5) * rw - (own[1] - 0.5) * width + (point[4] or 0) * scale,
+            ry + (spot[2] - 0.5) * rh - (own[2] - 0.5) * height + (point[5] or 0) * scale
+    end
     env.WorldFrame = {HookScript = function(_, script, callback) state.worldHooks[script] = callback end}
     local function widget(kind, name, parent, template)
         local object = {kind = kind, name = name, parent = parent, template = template, events = {},
@@ -523,6 +544,19 @@ local function fixture(options)
         function object:EnableMouse(value) self.mouseDisabled = value == false end
         function object:SetHeight(height) self.height = height end
         function object:SetSize(width, height) self.width, self.height = width, height end
+        function object:GetWidth() return self.width or 0 end
+        function object:GetHeight() return self.height or 0 end
+        function object:GetEffectiveScale()
+            local parentScale = 1
+            if self.parent and self.parent.GetEffectiveScale then parentScale = self.parent:GetEffectiveScale() end
+            return (self.scale or 1) * parentScale
+        end
+        -- As in client, in the frame's own units.
+        function object:GetCenter()
+            local x, y = state.absCenter(self)
+            local scale = self:GetEffectiveScale()
+            return x / scale, y / scale
+        end
         function object:SetFrameLevel(level) self.level = level end
         function object:SetParent(newParent) self.parent = newParent end
         function object:IsForbidden() return self.forbidden == true end
@@ -793,7 +827,7 @@ test("a missing client API disables WTF with one message naming it", function()
     equal(state.categories["Warlock Tools Forever"], nil, "no settings page")
 end)
 test("a mixed install of old and new files is reported at login", function()
-    local state = fixture({files = {"Commands.lua", "Core.lua", "Shards.lua", "Stones.lua", "Announce.lua",
+    local state = fixture({files = {"Commands.lua", "Core.lua", "Layout.lua", "Shards.lua", "Stones.lua", "Announce.lua",
         "Tracker.lua", "Dots.lua", "Alerts.lua", "Options.lua"}})
     equal(state.wtf.available, false)
     contains(state.last(), "missing ReportRestrictions")
@@ -1578,13 +1612,15 @@ test("the Stones bar drags unless locked or in combat, and remembers its place",
     local bar, soul = state.env.WarlockToolsForeverStones, state.env[SOUL]
     soul.scripts.OnDragStart(soul)
     equal(bar.moving, true)
-    bar:SetPoint("TOPLEFT", nil, "TOPLEFT", 10, -20)
+    bar:ClearAllPoints()
+    bar:SetPoint("CENTER", nil, "BOTTOMLEFT", 110, 220)
     soul.scripts.OnDragStop(soul)
-    equal(state.wtf.db.stones.position.x, 10)
-    state.wtf.db.stones.locked = true
+    equal(state.wtf.db.stones.position.relativePoint, "BOTTOMLEFT")
+    equal(state.wtf.db.stones.position.x, 110)
+    state.slash("lock")
     soul.scripts.OnDragStart(soul)
     equal(bar.moving, false)
-    state.wtf.db.stones.locked = false
+    state.slash("unlock")
     state.combat = true
     bar.scripts.OnDragStart(bar)
     equal(bar.moving, false)
@@ -1632,11 +1668,12 @@ test("the shard counter drags unless locked, saves its place, and resets", funct
     state.slash("unlock")
     counter.scripts.OnDragStart(counter)
     equal(counter.moving, true)
-    counter:SetPoint("TOPLEFT", state.env.UIParent, "TOPLEFT", 10, -20)
+    counter:ClearAllPoints()
+    counter:SetPoint("CENTER", state.env.UIParent, "BOTTOMLEFT", 90, 700)
     counter.scripts.OnDragStop(counter)
-    equal(state.wtf.db.shards.counterPosition.point, "TOPLEFT")
-    equal(state.wtf.db.shards.counterPosition.y, -20)
-    state.wtf.db.shards.counterLocked = true
+    equal(state.wtf.db.shards.counterPosition.point, "CENTER")
+    equal(state.wtf.db.shards.counterPosition.y, 700)
+    state.slash("lock")
     counter.scripts.OnDragStart(counter)
     equal(counter.moving, false, "locked")
     state.slash("reset")
@@ -1645,6 +1682,75 @@ test("the shard counter drags unless locked, saves its place, and resets", funct
     local saved = fixture({db = {shards = {counterPosition = {point = "TOP", relativePoint = "TOP", x = 1, y = 2}}}})
     equal(saved.wtf.shardCounter.points[1][1], "TOP", "the place survives a reload")
 end)
+-- Magnetic frames -------------------------------------------------------------------
+
+local function centerOf(state, frame)
+    local x, y = state.absCenter(frame)
+    return math.floor(x + 0.5), math.floor(y + 0.5)
+end
+
+local function dropAt(state, frame, x, y, handle)
+    handle = handle or frame
+    handle.scripts.OnDragStart(handle)
+    frame:ClearAllPoints()
+    frame:SetPoint("CENTER", nil, "BOTTOMLEFT", x / frame:GetEffectiveScale(), y / frame:GetEffectiveScale())
+    handle.scripts.OnDragStop(handle)
+end
+
+test("a frame dropped near another snaps beside it, 20 apart and lined up", function()
+    local state = stonesFixture()
+    state.slash("unlock")
+    local bar, counter = state.env.WarlockToolsForeverStones, state.wtf.shardCounter
+    dropAt(state, bar, 400, 300)
+    local barX, barY = centerOf(state, bar)
+    local barHalfW, barHalfH = bar.width / 2, bar.height / 2
+    local half = counter.width / 2
+    -- Dropped a little right of the bar, near its top edge: tops line up.
+    dropAt(state, counter, barX + barHalfW + 20 + half + 6, barY + barHalfH - (counter.height / 2) + 5)
+    local x, y = centerOf(state, counter)
+    equal(x, barX + barHalfW + 20 + half, "20 past the bar's right edge")
+    equal(y + counter.height / 2, barY + barHalfH, "tops aligned")
+    -- Under the bar, near its left edge: lefts line up.
+    dropAt(state, counter, barX - barHalfW + half + 4, barY - barHalfH - 20 - counter.height / 2 - 7)
+    x, y = centerOf(state, counter)
+    equal(x - half, barX - barHalfW, "lefts aligned")
+    equal(y + counter.height / 2, barY - barHalfH - 20, "20 below")
+    -- Far away: it stays where it lands.
+    dropAt(state, counter, 900, 100)
+    equal(select(1, centerOf(state, counter)), 900)
+end)
+test("Shift-dragging a frame moves every frame snapped to it", function()
+    local state = stonesFixture()
+    state.slash("unlock")
+    local bar, counter = state.env.WarlockToolsForeverStones, state.wtf.shardCounter
+    dropAt(state, bar, 400, 300)
+    local barX, barY = centerOf(state, bar)
+    dropAt(state, counter, barX + bar.width / 2 + 20 + counter.width / 2 + 3, barY)
+    local counterX, counterY = centerOf(state, counter)
+    state.shift = true
+    dropAt(state, bar, 200, 500)
+    local movedX, movedY = centerOf(state, counter)
+    equal(movedX, counterX - 200, "the counter came along")
+    equal(movedY, counterY + 200)
+    equal(state.wtf.db.shards.counterPosition.relativePoint, "BOTTOMLEFT", "each saved on its own")
+    state.shift = false
+    dropAt(state, bar, 600, 600)
+    equal(select(1, centerOf(state, counter)), movedX, "without Shift the bar leaves alone")
+end)
+test("frames do not drag in combat or while locked", function()
+    local state = stonesFixture()
+    local bar = state.env.WarlockToolsForeverStones
+    bar.scripts.OnDragStart(bar)
+    equal(bar.moving, nil, "locked by default")
+    state.slash("unlock")
+    state.combat = true
+    bar.scripts.OnDragStart(bar)
+    equal(bar.moving, nil, "not in combat")
+    local before = state.wtf.db.stones.position
+    bar.scripts.OnDragStop(bar)
+    equal(state.wtf.db.stones.position, before, "a drop without a drag saves nothing")
+end)
+
 test("one lock for every WTF frame, locked by default, with no per-frame switches", function()
     local state = fixture({db = {stones = {locked = false}, tracker = {locked = false, placeholders = true}}})
     local db = state.wtf.db
@@ -2515,10 +2621,11 @@ test("the tracker drags by its rows unless locked, and /wtf reset moves it back"
     state.slash("unlock")
     state.targetRow.scripts.OnDragStart(state.targetRow)
     equal(state.anchor.moving, true)
-    state.anchor:SetPoint("TOP", nil, "TOP", 5, -5)
+    state.anchor:ClearAllPoints()
+    state.anchor:SetPoint("CENTER", nil, "BOTTOMLEFT", 300, 600)
     state.targetRow.scripts.OnDragStop(state.targetRow)
-    equal(state.wtf.db.tracker.position.point, "TOP")
-    state.wtf.db.tracker.locked = true
+    equal(state.wtf.db.tracker.position.x, 300)
+    state.slash("lock")
     state.targetRow.scripts.OnDragStart(state.targetRow)
     equal(state.anchor.moving, false)
     state.slash("reset")
