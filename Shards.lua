@@ -195,7 +195,7 @@ local function StopDeleting(reason)
     end
     state.blocked = true
     state.pending = {}
-    WTF.Report("Soul Shard deletion stopped: " .. reason
+    WTF.Warn("Soul Shard deletion stopped: " .. reason
         .. ". It stays off until you /reload.")
 end
 

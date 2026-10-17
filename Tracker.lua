@@ -945,7 +945,6 @@ function WTF.ResetTrackerPosition()
         return
     end
     if InCombatLockdown() then
-        WTF.Report("The DoT tracker moves back after combat.")
         tracker.placeDirty = true
         return
     end

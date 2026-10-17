@@ -73,6 +73,11 @@ local function fixture(options)
     env.DEFAULT_CHAT_FRAME = {AddMessage = function(_, message)
         state.messages[#state.messages + 1] = message
     end}
+    -- The red text at the top of the screen.
+    state.errors = {}
+    env.UIErrorsFrame = {AddMessage = function(_, message, r, g, b)
+        state.errors[#state.errors + 1] = {text = message, r = r, g = g, b = b}
+    end}
     state.toc = {}
     for text in io.lines("WarlockToolsForever.toc") do
         local key, value = text:match("^##%s*([^:]+):%s*(.-)%s*$")
@@ -1397,6 +1402,16 @@ test("debug_click shows each button's actions and the key-down setting", functio
     contains(state.messages[3], "button1 type=item item=item:5511")
     contains(state.messages[5], "button3 type=item item=item:5511")
 end)
+test("a failed stone click is said in chat and in red at the top of the screen", function()
+    local state = fixture({known = {[6201] = true}})
+    state.clickButton("WarlockToolsForeverHealthstone", "MiddleButton")
+    contains(state.last(), "No Healthstone in your bags")
+    equal(#state.errors, 1)
+    contains(state.errors[1].text, "WTF: No Healthstone in your bags")
+    equal(state.errors[1].r, 1)
+    equal(state.errors[1].g, 0.1, "red")
+end)
+
 local function macroBody(state, name)
     for _, macro in ipairs(state.macros) do
         if macro.name == name then return macro.body end
@@ -1693,7 +1708,7 @@ test("/wtf reset moves the Stones bar back, after combat if needed", function()
     state.combat = true
     state.slash("reset")
     equal(state.wtf.db.stones.position, nil)
-    contains(state.last(), "moves back after combat")
+    equal(state.last(), "WTF: WTF frames move back to their default places after combat.")
     state.combat = false
     state.emit("PLAYER_REGEN_ENABLED")
     equal(bar.points[1][1], "CENTER")
@@ -2511,7 +2526,7 @@ test("the tracker drags by its rows unless locked, and /wtf reset moves it back"
     equal(state.anchor.points[1][1], "CENTER")
     state.combat = true
     state.slash("reset")
-    contains(state.last(), "moves back after combat")
+    equal(state.last(), "WTF: WTF frames move back to their default places after combat.")
 end)
 test("the tracker module switch hides it", function()
     local state = trackerFixture()
