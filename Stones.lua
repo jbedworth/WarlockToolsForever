@@ -251,6 +251,23 @@ local function WriteMacro(name, body, oldNames)
     end
 end
 
+-- For the other modules' macros (Control): the same writer and slot check.
+-- Out of combat only.
+function WTF.CharacterMacrosAvailable()
+    return macros.available == true
+end
+
+function WTF.WriteCharacterMacro(name, body)
+    WriteMacro(name, body, {})
+end
+
+function WTF.DeleteCharacterMacro(name)
+    local index = GetMacroIndexByName(name)
+    if index > 0 then
+        DeleteMacro(index)
+    end
+end
+
 -- Macros change only out of combat; ApplyActions runs then.
 local function UpdateMacros(soulRank, healthRank)
     if not WTF.db.stones.macros or not macros.available then

@@ -113,7 +113,7 @@ function WTF.SanitizeControl(saved, sanitizePosition)
     local markers = type(saved.markers) == "table" and saved.markers or {}
     local clean = {enabled = saved.enabled ~= false, position = sanitizePosition(saved.position),
         scale = WTF.SanitizeControlScale(saved.scale), markers = {}, markersVersion = MARKERS_VERSION,
-        plateTimers = saved.plateTimers ~= false}
+        plateTimers = saved.plateTimers ~= false, macros = saved.macros ~= false}
     for _, spell in ipairs(WTF.CONTROL_SPELLS) do
         if spell.marker then
             local marker = ValidMarker(markers[spell.key]) and markers[spell.key] or spell.marker
@@ -593,6 +593,63 @@ local function Rebind()
     end
 end
 
+-- Macros ---------------------------------------------------------------------
+-- (author-approved, after the author's own): for your action bars, a macro
+-- per single-target control spell you know. It sets your focus to the hostile
+-- mob under the mouse (or, out of combat, your target) and casts on your
+-- focus, so the macro, the bar's click, and the moon all agree on one mob.
+-- Seduction is your Succubus's: its macro appears once you know Summon
+-- Succubus and does nothing unless your pet is a Succubus ([pet:Succubus]).
+-- The moon comes from WTF when the cast lands, so the macros do not /tm
+-- (a second mark would toggle it off).
+
+local CONTROL_MACROS = {
+    {name = "! Banish", spell = 710, known = {710, 18647}},
+    {name = "! Seduction", spell = 6358, known = {712}, condition = ",pet:Succubus"},
+}
+local FOCUS_LINE = "/focus [@mouseover,harm,nodead][nocombat,harm,nodead]"
+
+local function KnowsAnyOf(ids)
+    if type(C_SpellBook) ~= "table" or type(C_SpellBook.IsSpellKnown) ~= "function" then
+        return false
+    end
+    for _, id in ipairs(ids) do
+        if C_SpellBook.IsSpellKnown(id) == true then
+            return true
+        end
+    end
+    return false
+end
+
+function WTF.ControlMacroBody(macro)
+    local spell = C_Spell.GetSpellName(macro.spell)
+    if not spell then
+        return nil
+    end
+    return table.concat({"#showtooltip " .. spell, FOCUS_LINE,
+        "/cast [@focus,harm,nodead" .. (macro.condition or "") .. "] " .. spell}, "\n")
+end
+
+-- Out of combat only; turning the macros off deletes them.
+function WTF.ApplyControlMacros()
+    if InCombatLockdown() then
+        control.macrosDirty = true
+        return
+    end
+    control.macrosDirty = false
+    if not WTF.CharacterMacrosAvailable() then
+        return
+    end
+    for _, macro in ipairs(CONTROL_MACROS) do
+        local body = WTF.ControlMacroBody(macro)
+        if WTF.db.control.macros and body and KnowsAnyOf(macro.known) then
+            WTF.WriteCharacterMacro(macro.name, body)
+        elseif not WTF.db.control.macros then
+            WTF.DeleteCharacterMacro(macro.name)
+        end
+    end
+end
+
 -- Fear timers on nameplates ------------------------------------------------
 -- (author-approved): a thin bar under each nameplate that drains with your
 -- Fear's time left on that mob, so you see which feared mob is about to
@@ -743,10 +800,14 @@ events:SetScript("OnEvent", function(_, event, unit, first, second, third)
             timer.container:SetAuraSlotCandidateFilters("fear", {includeSpellIDs = FearIDs()})
         end
         ApplyClicks()
+        WTF.ApplyControlMacros()
     elseif event == "PLAYER_REGEN_ENABLED" then
         if control.placeDirty then
             control.placeDirty = false
             Place()
+        end
+        if control.macrosDirty then
+            WTF.ApplyControlMacros()
         end
         -- A click set as a cast started, for a cast that never landed, goes.
         for _, row in ipairs(control.rows) do
@@ -811,6 +872,7 @@ function WTF.InitializeControl()
     Layout()
     ApplyClicks()
     RefreshPlateTimers()
+    WTF.ApplyControlMacros()
 end
 
 -- /wtf debug_control: the IDs, each row's mob and click, and the last mark.

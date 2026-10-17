@@ -35,7 +35,7 @@ local SPELLS = {[1120] = "Drain Soul", [11675] = "Drain Soul", [686] = "Shadow B
     [348] = "Immolate", [18265] = "Siphon Life", [5782] = "Fear", [702] = "Curse of Weakness",
     [6201] = "Create Healthstone", [6202] = "Create Healthstone", [5699] = "Create Healthstone",
     [6789] = "Death Coil", [5484] = "Howl of Terror", [6229] = "Shadow Ward", [18708] = "Fel Domination",
-    [710] = "Banish", [1098] = "Enslave Demon",
+    [710] = "Banish", [1098] = "Enslave Demon", [6358] = "Seduction", [712] = "Summon Succubus",
     [687] = "Demon Skin", [706] = "Demon Armor", [11735] = "Demon Armor",
     [17962] = "Conflagrate", [18288] = "Amplify Curse", [1122] = "Inferno", [603] = "Bane of Doom"}
 local ITEMS = {[5232] = {"Minor Soulstone", 18}, [16892] = {"Lesser Soulstone", 30},
@@ -2010,6 +2010,26 @@ test("a feared mob's nameplate shows a Fear countdown, also after its plate come
     state.clear()
     state.slash("debug_control")
     contains(table.concat(state.messages, "|"), "plateTimers=false attached=0")
+end)
+test("control macros appear only for the spells you know; Seduction needs your Succubus", function()
+    local state = controlFixture({known = {[FEAR] = true}})
+    equal(macroBody(state, "! Banish"), nil, "no Banish before you learn it")
+    equal(macroBody(state, "! Seduction"), nil, "no Seduction before Summon Succubus")
+    state.known[BANISH] = true
+    state.emit("SPELLS_CHANGED")
+    equal(macroBody(state, "! Banish"), "#showtooltip Banish\n/focus [@mouseover,harm,nodead][nocombat,harm,nodead]"
+        .. "\n/cast [@focus,harm,nodead] Banish")
+    state.known[712] = true
+    state.emit("SPELLS_CHANGED")
+    contains(macroBody(state, "! Seduction"), "/cast [@focus,harm,nodead,pet:Succubus] Seduction",
+        "does nothing unless your pet is a Succubus")
+    state.combat = true
+    state.settings.WTF_CONTROL_MACROS:SetValue(false)
+    equal(macroBody(state, "! Banish") ~= nil, true, "macros change only out of combat")
+    state.combat = false
+    state.emit("PLAYER_REGEN_ENABLED")
+    equal(macroBody(state, "! Banish"), nil, "turning them off deletes them")
+    equal(macroBody(state, "! Seduction"), nil)
 end)
 test("unlocked, the control bar shows samples to drag; debug_control reports the rows", function()
     local state = controlFixture()
