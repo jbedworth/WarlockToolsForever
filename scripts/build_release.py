@@ -21,11 +21,12 @@ from pathlib import Path
 
 ADDON = "WarlockToolsForever"
 RUNTIME_FILES = ("Commands.lua", "Core.lua", "Layout.lua", "Shards.lua", "Stones.lua", "Announce.lua", "Tracker.lua",
-                 "Dots.lua", "Alerts.lua", "Probe.lua", "Options.lua")
+                 "Dots.lua", "Alerts.lua", "Shield.lua", "Probe.lua", "Options.lua")
 TEXT_FILES = (ADDON + ".toc",) + RUNTIME_FILES + ("LICENSE",)
-# Runtime textures shipped in the package. WTF uses only built-in client
-# textures, so there are none; the TGA validator stays for future assets.
-MEDIA_FILES = ()
+# Runtime textures shipped in the package: the shield display's crescents,
+# built by scripts/build_arc.py. The builder requires uncompressed 32-bit,
+# square, power-of-two TGAs.
+MEDIA_FILES = ("Textures/ShieldArc.tga", "Textures/ShieldArcInner.tga")
 PACKAGE_FILES = TEXT_FILES + MEDIA_FILES
 TGA_HEADER_SIZE = 18
 TGA_TRUECOLOR = 2

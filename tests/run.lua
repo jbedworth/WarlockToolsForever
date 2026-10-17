@@ -25,7 +25,7 @@ local function contains(actual, fragment, context)
 end
 
 local RUNTIME_FILES = {"Commands.lua", "Core.lua", "Layout.lua", "Shards.lua", "Stones.lua", "Announce.lua", "Tracker.lua",
-    "Dots.lua", "Alerts.lua", "Probe.lua", "Options.lua"}
+    "Dots.lua", "Alerts.lua", "Shield.lua", "Probe.lua", "Options.lua"}
 local SHARD = 6265
 local SPELLS = {[1120] = "Drain Soul", [11675] = "Drain Soul", [686] = "Shadow Bolt", [172] = "Corruption",
     [6222] = "Corruption", [980] = "Curse of Agony", [698] = "Ritual of Summoning",
@@ -73,6 +73,12 @@ local function fixture(options)
     env.DEFAULT_CHAT_FRAME = {AddMessage = function(_, message)
         state.messages[#state.messages + 1] = message
     end}
+    -- Absorbs: always secret, as the client's UnitGetTotalAbsorbs is.
+    state.absorb = secret()
+    state.secrets[state.absorb] = true
+    env.UnitGetTotalAbsorbs = function(unit) equal(unit, "player") return state.absorb end
+    env.UnitHealthMax = function(unit) equal(unit, "player") return 1500 end
+    env.AbbreviateNumbers = function(value) return {abbreviated = value} end
     -- The red text at the top of the screen.
     state.errors = {}
     env.UIErrorsFrame = {AddMessage = function(_, message, r, g, b)
@@ -828,7 +834,7 @@ test("a missing client API disables WTF with one message naming it", function()
 end)
 test("a mixed install of old and new files is reported at login", function()
     local state = fixture({files = {"Commands.lua", "Core.lua", "Layout.lua", "Shards.lua", "Stones.lua", "Announce.lua",
-        "Tracker.lua", "Dots.lua", "Alerts.lua", "Options.lua"}})
+        "Tracker.lua", "Dots.lua", "Alerts.lua", "Shield.lua", "Options.lua"}})
     equal(state.wtf.available, false)
     contains(state.last(), "missing ReportRestrictions")
 end)
@@ -1697,6 +1703,22 @@ local function dropAt(state, frame, x, y, handle)
     handle.scripts.OnDragStop(handle)
 end
 
+test("WTF ships the shield display: it follows its switch and the lock", function()
+    local state = fixture()
+    local ring = state.wtf.ShieldDisplay.frame
+    equal(state.settings.WTF_SHIELD_ENABLED:GetValue(), true, "on by default")
+    state.slash("unlock")
+    equal(ring.shown, true, "a sample to drag")
+    equal(state.wtf.db.shield.locked, false)
+    state.slash("lock")
+    equal(state.wtf.db.shield.locked, true)
+    state.settings.WTF_SHIELD_ENABLED:SetValue(false)
+    equal(state.wtf.db.shield.enabled, false)
+    state.clear()
+    state.slash("debug_shield")
+    contains(state.messages[1], "debug_shield UnitGetTotalAbsorbs=function")
+end)
+
 test("a frame dropped near another snaps beside it, 20 apart and lined up", function()
     local state = stonesFixture()
     state.slash("unlock")
@@ -1775,7 +1797,7 @@ test("/wtf unlock and /wtf lock move every WTF frame together", function()
     equal(db.tracker.locked, false)
     equal(db.tracker.placeholders, true, "sample rows to drag the tracker by")
     equal(db.shards.counterLocked, false)
-    contains(state.last(), "drag them where you want, then type /wtf lock.")
+    contains(state.last(), "All WTF frames unlocked: drag them where you want")
     equal(state.env.WarlockToolsForeverStones.mover.shown, true, "outlined")
     equal(state.wtf.shardCounter.mover.shown, true)
     equal(state.settings.WTF_UNLOCKED:GetValue(), true, "the main page's switch follows")
@@ -1786,7 +1808,7 @@ test("/wtf unlock and /wtf lock move every WTF frame together", function()
     equal(db.tracker.locked, true)
     equal(db.tracker.placeholders, false)
     equal(db.shards.counterLocked, true)
-    equal(state.last(), "WTF: Stones bar, DoT tracker, and shard counter locked.")
+    equal(state.last(), "WTF: All WTF frames locked.")
 end)
 test("unlocked, a grid shows the screen's center; it follows its switch and the lock", function()
     local state = fixture()
