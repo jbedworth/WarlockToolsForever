@@ -497,11 +497,12 @@ local function OnCastSent(target, castGUID, spellID)
 end
 
 -- The unit to mark: your target or focus when it is this mob (as TankHelper
--- marks your target), else the unit that shows it. GetRaidTargetIndex can
--- return a secret (pinned RaidMarkersDocumentation: SecretReturns), as it
--- does in combat, so an unreadable marker never stops the mark: SetRaidTarget
--- sets a marker outright (only Blizzard's SetRaidTargetIcon toggles one off),
--- so setting it again is harmless; a readable equal one is left alone.
+-- marks your target), else the unit that shows it. SetRaidTarget toggles: a
+-- unit that already has the marker loses it (the pinned /tm code's "!" prefix
+-- exists to skip that). GetRaidTargetIndex returns a secret to AddOn code in
+-- combat (pinned RaidMarkersDocumentation: SecretReturns), so WTF cannot
+-- always ask. It skips the mark when the index is readable and already
+-- equal, or, when it is not, when it marked this mob with it before.
 local function Mark(spell, guid, unit)
     local index = WTF.db.control.markers[spell.key]
     if not index or index == 0 or type(SetRaidTarget) ~= "function" then
@@ -514,11 +515,15 @@ local function Mark(spell, guid, unit)
         end
     end
     local current = GetRaidTargetIndex(unit)
-    if not WTF.IsSecret(current) and current == index then
+    local unreadable = WTF.IsSecret(current)
+    control.marked = control.marked or {}
+    if (not unreadable and current == index) or (unreadable and control.marked[guid] == index) then
+        control.marked[guid] = index
         return
     end
     SetRaidTarget(unit, index)
-    control.lastMark = unit .. (WTF.IsSecret(current) and " (marker unreadable)" or "")
+    control.marked[guid] = index
+    control.lastMark = unit .. (unreadable and " (marker unreadable)" or "")
 end
 
 local function OnCastSucceeded(castGUID)
