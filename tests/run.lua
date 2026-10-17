@@ -25,7 +25,7 @@ local function contains(actual, fragment, context)
 end
 
 local RUNTIME_FILES = {"Commands.lua", "Core.lua", "Layout.lua", "Shards.lua", "Stones.lua", "Announce.lua", "Tracker.lua",
-    "Dots.lua", "Alerts.lua", "Shield.lua", "Probe.lua", "Options.lua"}
+    "Dots.lua", "Alerts.lua", "Shield.lua", "Chimes.lua", "Probe.lua", "Options.lua"}
 local SHARD = 6265
 local SPELLS = {[1120] = "Drain Soul", [11675] = "Drain Soul", [686] = "Shadow Bolt", [172] = "Corruption",
     [6222] = "Corruption", [980] = "Curse of Agony", [698] = "Ritual of Summoning",
@@ -33,7 +33,9 @@ local SPELLS = {[1120] = "Drain Soul", [11675] = "Drain Soul", [686] = "Shadow B
     [693] = "Create Soulstone", [20752] = "Create Soulstone",
     [17877] = "Shadowburn", [18871] = "Shadowburn",
     [348] = "Immolate", [18265] = "Siphon Life", [5782] = "Fear", [702] = "Curse of Weakness",
-    [6201] = "Create Healthstone", [6202] = "Create Healthstone", [5699] = "Create Healthstone"}
+    [6201] = "Create Healthstone", [6202] = "Create Healthstone", [5699] = "Create Healthstone",
+    [6789] = "Death Coil", [5484] = "Howl of Terror", [6229] = "Shadow Ward", [18708] = "Fel Domination",
+    [17962] = "Conflagrate", [18288] = "Amplify Curse", [1122] = "Inferno", [603] = "Bane of Doom"}
 local ITEMS = {[5232] = {"Minor Soulstone", 18}, [16892] = {"Lesser Soulstone", 30},
     [5512] = {"Minor Healthstone", 1}, [5511] = {"Lesser Healthstone", 12}, [5509] = {"Healthstone", 24}}
 local DRAIN_SOUL_RANK_4 = 11675
@@ -238,6 +240,22 @@ local function fixture(options)
         table.remove(state.macros, index - 120)
     end
     env.PlaySoundFile = function(file, channel) state.played = {file = file, channel = channel} end
+    -- Sound kits: a few SOUNDKIT names, and every kit played.
+    state.sounds = {}
+    env.SOUNDKIT = {UI_ORDERHALL_TALENT_READY_TOAST = 73281, RAID_WARNING = 8959, READY_CHECK = 8960}
+    env.PlaySound = function(kit, channel) state.sounds[#state.sounds + 1] = {kit = kit, channel = channel} end
+    -- Cooldowns: readable out of combat, secret in it, as on Forever.
+    state.cooldowns = {}
+    env.C_Spell.GetSpellCooldown = function(id)
+        local cooldown = state.cooldowns[id]
+        if not cooldown then return {startTime = 0, duration = 0, isEnabled = true} end
+        if state.combat then
+            local start, duration = secret(), secret()
+            state.secrets[start], state.secrets[duration] = true, true
+            return {startTime = start, duration = duration, isEnabled = true}
+        end
+        return {startTime = cooldown.start, duration = cooldown.duration, isEnabled = true}
+    end
     -- Wall-clock seconds, as WoW's time().
     env.time = function() return 1000000 + math.floor(state.now) end
     env.IsInRaid = function() return state.group == "raid" end
@@ -399,6 +417,14 @@ local function fixture(options)
         end,
         -- In client these may answer in combat: nothing for a secret aura.
         GetAuraDataBySpellName = function(unit, name, filter)
+            -- Your buffs (state.buffs, or a unit's own): unreadable in combat.
+            if filter == "HELPFUL" then
+                if state.combat then error("Auras cannot be accessed when secret while tainted") end
+                if unit ~= "player" then
+                    return ((state.units[unit] or {}).buffs or {})[name]
+                end
+                return (state.buffs or {})[name]
+            end
             for _, aura in ipairs(auras(unit, filter)) do
                 if aura.name == name then return aura end
             end
@@ -834,7 +860,7 @@ test("a missing client API disables WTF with one message naming it", function()
 end)
 test("a mixed install of old and new files is reported at login", function()
     local state = fixture({files = {"Commands.lua", "Core.lua", "Layout.lua", "Shards.lua", "Stones.lua", "Announce.lua",
-        "Tracker.lua", "Dots.lua", "Alerts.lua", "Shield.lua", "Options.lua"}})
+        "Tracker.lua", "Dots.lua", "Alerts.lua", "Shield.lua", "Chimes.lua", "Options.lua"}})
     equal(state.wtf.available, false)
     contains(state.last(), "missing ReportRestrictions")
 end)
@@ -1717,6 +1743,64 @@ test("WTF ships the shield display: it follows its switch and the lock", functio
     state.clear()
     state.slash("debug_shield")
     contains(state.messages[1], "debug_shield UnitGetTotalAbsorbs=function")
+end)
+
+-- Cooldown chimes ----------------------------------------------------------------
+
+local DEATH_COIL = 6789
+
+local function wait(state, seconds)
+    state.now = state.now + seconds
+    state.runTimers()
+end
+
+test("a chime plays just before Death Coil is ready again, also in combat", function()
+    local state = fixture()
+    state.combat = true
+    state.emit("UNIT_SPELLCAST_SUCCEEDED", "player", "cast-1", DEATH_COIL)
+    wait(state, 0.1)
+    wait(state, 119)
+    equal(#state.sounds, 0, "not yet")
+    wait(state, 0.5)
+    equal(#state.sounds, 1, "half a second early")
+    equal(state.sounds[1].kit, 73281, "Talent ready by default")
+    equal(state.sounds[1].channel, "Master")
+end)
+test("out of combat the real cooldown is read and learned; switches turn chimes off", function()
+    local state = fixture()
+    state.cooldowns[DEATH_COIL] = {start = state.now, duration = 90}
+    state.emit("UNIT_SPELLCAST_SUCCEEDED", "player", "cast-1", DEATH_COIL)
+    wait(state, 0.1)
+    equal(state.wtf.db.chimes.learned.deathcoil, 90, "Forever's own cooldown")
+    wait(state, 89.5)
+    equal(#state.sounds, 1)
+    state.settings.WTF_CHIME_DEATHCOIL:SetValue(false)
+    state.emit("UNIT_SPELLCAST_SUCCEEDED", "player", "cast-2", DEATH_COIL)
+    wait(state, 100)
+    equal(#state.sounds, 1, "its switch")
+    state.settings.WTF_CHIME_DEATHCOIL:SetValue(true)
+    state.settings.WTF_CHIMES_ENABLED:SetValue(false)
+    state.emit("UNIT_SPELLCAST_SUCCEEDED", "player", "cast-3", DEATH_COIL)
+    wait(state, 100)
+    equal(#state.sounds, 1, "the module switch")
+end)
+test("each chime has its own sound from the Cooldown Manager's catalog, and choosing one plays it", function()
+    local state = fixture()
+    local sound = state.settings.WTF_CHIME_SOUND_HOWL
+    equal(sound:GetValue(), "talent")
+    sound:SetValue("impactspopclick")
+    equal(state.wtf.db.chimes.sounds.howl, "impactspopclick")
+    equal(state.sounds[#state.sounds].kit, 316434, "previewed: the Cooldown Manager's Pop click")
+    equal(state.wtf.db.chimes.sounds.deathcoil, "talent", "Death Coil keeps its own")
+    sound:SetValue("nonsense")
+    equal(state.wtf.db.chimes.sounds.howl, "impactspopclick", "unknown keys are ignored")
+    local saved = fixture({db = {chimes = {sounds = {howl = "bogus"}, lead = 7, spells = {inferno = true}}}})
+    equal(saved.wtf.db.chimes.sounds.howl, "talent")
+    equal(saved.wtf.db.chimes.lead, 3, "clamped")
+    equal(saved.wtf.db.chimes.spells.inferno, true)
+    state.clear()
+    state.slash("debug_chimes")
+    contains(state.messages[1], "debug_chimes deathcoil name=Death Coil")
 end)
 
 test("a frame dropped near another snaps beside it, 20 apart and lined up", function()

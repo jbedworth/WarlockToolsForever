@@ -12,6 +12,7 @@ local TRACKER_TITLE = "DoT Tracker"
 local COLORS_TITLE = "DoT Colors"
 local ALERTS_TITLE = "Alerts"
 local SHIELD_TITLE = "Shield"
+local CHIMES_TITLE = "Cooldown Chimes"
 local UNAVAILABLE = "The AddOn settings page is unavailable on this client. Use /wtf shards for status."
 local GOLD = {1, 0.82, 0}
 
@@ -23,6 +24,7 @@ local REQUIRED_SETTINGS = {
 }
 
 local category
+local NestSoundMenu
 
 local function HasSettingsAPI()
     if type(Settings) ~= "table" or type(Settings.VarType) ~= "table" then
@@ -105,6 +107,118 @@ local function AddShieldPage(parent)
         end)
     Settings.CreateSlider(page, scale, SliderOptions(display.SCALE_MIN, display.SCALE_MAX, display.SCALE_STEP),
         "How big the shield display is, in percent.")
+end
+
+-- The sound menu (author-approved, as MTF's): a submenu per group and a
+-- top-level entry for a sound with no group, as the Cooldown Manager's sound
+-- picker (CooldownViewerUtil.BuildSoundMenus) builds it with the same menu
+-- API. Blizzard's settings dropdown builds its menu in its control's
+-- SetupDropdownMenu; the control frames are pooled and shared with other
+-- settings and AddOns (MTF wraps them too), so the replacement builds the
+-- nested menu only for a WTF sound dropdown and hands every other one on.
+-- source: {groups = function() -> {{name, sounds}}, parts = function(sound)
+-- -> group, name, label = function(key) -> full label}.
+local function SoundMenuInserter(source)
+    return function(setting, rootDescription)
+        local function IsSelected(key)
+            return setting:GetValue() == key
+        end
+        local function SetSelected(key)
+            setting:SetValue(key)
+        end
+        for _, group in ipairs(source.groups()) do
+            if #group.sounds == 1 and not source.parts(group.sounds[1]) then
+                rootDescription:CreateRadio(group.sounds[1].label, IsSelected, SetSelected, group.sounds[1].key)
+            else
+                local submenu = rootDescription:CreateButton(group.name)
+                for _, choice in ipairs(group.sounds) do
+                    local _, name = source.parts(choice)
+                    submenu:CreateRadio(name, IsSelected, SetSelected, choice.key)
+                end
+            end
+        end
+    end
+end
+
+local function NestedSetupDropdownMenu(original)
+    return function(control, button, setting, options, initTooltip, initializer)
+        local source = initializer and initializer.wtfSoundMenu
+        if not source then
+            return original(control, button, setting, options, initTooltip, initializer)
+        end
+        Settings.InitDropdown(button, setting, SoundMenuInserter(source), initTooltip)
+    end
+end
+
+function NestSoundMenu(initializer, source)
+    if type(initializer.InitFrame) ~= "function" or type(Settings.InitDropdown) ~= "function" then
+        return
+    end
+    initializer.wtfSoundMenu = source
+    initializer.data = initializer.data or {}
+    -- A menu of submenus has no single list to step through.
+    initializer.data.forceSteppersHidden = true
+    -- The dropdown shows the full label, "Short: Bell Strike".
+    initializer.getSelectionTextFunc = function()
+        return source.label(initializer:GetSetting():GetValue()) or ""
+    end
+    local initFrame = initializer.InitFrame
+    function initializer:InitFrame(frame)
+        if type(frame.SetupDropdownMenu) == "function" and not frame.wtfNestedSoundMenu then
+            frame.wtfNestedSoundMenu = true
+            frame.SetupDropdownMenu = NestedSetupDropdownMenu(frame.SetupDropdownMenu)
+        end
+        return initFrame(self, frame)
+    end
+end
+
+local CHIME_SOUND_SOURCE = {
+    groups = function() return WTF.ChimeSoundGroups() end,
+    parts = function(sound) return WTF.ChimeSoundParts(sound) end,
+    label = function(key) return WTF.ChimeSoundLabel(key) end,
+}
+
+local function AddChimesPage(parent)
+    local page = Settings.RegisterVerticalLayoutSubcategory(parent, CHIMES_TITLE)
+    -- Every sound by its full label: the dropdown's plain list, used when the
+    -- nested menu is not set up.
+    local function Choices()
+        local container = Settings.CreateControlTextContainer()
+        for _, sound in ipairs(WTF.AvailableChimeSounds()) do
+            container:Add(sound.key, sound.label)
+        end
+        return container:GetData()
+    end
+    local lead = Proxy(page, "WTF_CHIMES_LEAD", Settings.VarType.Number, "Chime early (seconds)",
+        WTF.DEFAULT_CHIME_LEAD,
+        function() return WTF.db.chimes.lead end,
+        function(value)
+            WTF.db.chimes.lead = WTF.SanitizeChimeLead(value)
+        end)
+    Settings.CreateSlider(page, lead, SliderOptions(WTF.CHIME_LEAD_MIN, WTF.CHIME_LEAD_MAX, WTF.CHIME_LEAD_STEP),
+        "How long before a cooldown ends the chime plays, so you can act the moment it is ready.")
+    for _, chime in ipairs(WTF.CHIME_SPELLS) do
+        local setting = Proxy(page, "WTF_CHIME_" .. chime.key:upper(), Settings.VarType.Boolean, chime.label,
+            chime.on,
+            function() return WTF.db.chimes.spells[chime.key] end,
+            function(value) WTF.db.chimes.spells[chime.key] = value == true end)
+        local switch = Settings.CreateCheckbox(page, setting, "Chime when " .. chime.label .. " is ready again.")
+        local sound = Proxy(page, "WTF_CHIME_SOUND_" .. chime.key:upper(), Settings.VarType.String, "Sound",
+            WTF.DEFAULT_CHIME_SOUND,
+            function() return WTF.db.chimes.sounds[chime.key] end,
+            function(value)
+                for _, choice in ipairs(WTF.CHIME_SOUNDS) do
+                    if choice.key == value then
+                        WTF.db.chimes.sounds[chime.key] = value
+                        WTF.PreviewChime(chime.key)
+                    end
+                end
+            end)
+        local dropdown = Settings.CreateDropdown(page, sound, Choices,
+            "The sound for " .. chime.label .. ". Choosing one plays it once.")
+        NestSoundMenu(dropdown, CHIME_SOUND_SOURCE)
+        dropdown:SetParentInitializer(switch, function() return WTF.db.chimes.spells[chime.key] end)
+    end
 end
 
 local function AddShardPage(parent)
@@ -539,6 +653,8 @@ function WTF.InitializeOptions()
         "A crescent beside your character that fills with your remaining shield: Shadow Ward, your "
             .. "Voidwalker's Sacrifice, or a shield another player puts on you, like Power Word: Shield.",
         RefreshShield)
+    Flag(category, "WTF_CHIMES_ENABLED", "Cooldown chimes", "chimes", "enabled", true,
+        "A sound just before Death Coil, Howl of Terror, and your other chosen spells are ready again.")
     local unlocked = Proxy(category, "WTF_UNLOCKED", Settings.VarType.Boolean, "Unlock frames to move them", false,
         function() return not WTF.db.locked end,
         function(value) WTF.SetFramesLocked(value ~= true) end)
@@ -559,6 +675,7 @@ function WTF.InitializeOptions()
     AddColorsPage(category)
     AddAlertsPage(category)
     AddShieldPage(category)
+    AddChimesPage(category)
     local announcePage = CreateAnnouncePage()
     WTF.announcePage = announcePage
     Settings.RegisterCanvasLayoutSubcategory(category, announcePage, ANNOUNCE_TITLE)

@@ -17,5 +17,6 @@ Tracker.lua
 Dots.lua
 Alerts.lua
 Shield.lua
+Chimes.lua
 Probe.lua
 Options.lua
