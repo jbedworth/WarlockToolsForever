@@ -127,7 +127,11 @@ local function fixture(options)
     }
     env.C_SpellBook = {}
     if not options.noSpellBook then
-        env.C_SpellBook.IsSpellKnown = function(id) return state.known[id] == true end
+        -- isPet asks your summoned demon's spellbook.
+        env.C_SpellBook.IsSpellKnown = function(id, isPet)
+            if isPet then return (state.petKnown or {})[id] == true end
+            return state.known[id] == true
+        end
     end
     state.timers = {}
     env.C_Timer = {After = function(seconds, callback)
@@ -162,14 +166,21 @@ local function fixture(options)
         return {itemIndexOffset = 0, numSpellBookItems = #state.spellbook}
     end
     -- As in client, each item has a type: 1 learned, 2 learned later (FutureSpell).
-    env.C_SpellBook.GetSpellBookItemInfo = function(index)
+    -- The pet spellbook: state.petSpellbook entries {spellID, name}.
+    env.C_SpellBook.HasPetSpells = function() return #(state.petSpellbook or {}), "DEMON" end
+    env.UnitCreatureFamily = function(unit) return state.petFamily end
+    env.C_SpellBook.GetSpellBookItemInfo = function(index, bank)
+        if bank == 1 then
+            local petItem = (state.petSpellbook or {})[index]
+            return petItem and {spellID = petItem.spellID, name = petItem.name, itemType = 1}
+        end
         local item = state.spellbook[index]
         if item then
             return {spellID = item.spellID, name = item.name, itemType = item.itemType or 1}
         end
     end
     env.Enum = env.Enum or {}
-    env.Enum.SpellBookSpellBank = {Player = 0}
+    env.Enum.SpellBookSpellBank = {Player = 0, Pet = 1}
     env.Enum.SpellBookItemType = {None = 0, Spell = 1, FutureSpell = 2, PetAction = 3, Flyout = 4}
     env.Enum.StatusBarTimerDirection = {ElapsedTime = 0, RemainingTime = 1}
     env.C_ClassColor = {GetClassColor = function(class)
@@ -2023,8 +2034,12 @@ test("control macros appear only for the spells you know; Seduction needs your S
         .. "\n/cast [@focus,harm,nodead] Banish")
     state.known[712] = true
     state.emit("SPELLS_CHANGED")
-    contains(macroBody(state, "! Seduction"), "/cast [@focus,harm,nodead,pet:Succubus] Seduction",
-        "does nothing unless your pet is a Succubus")
+    equal(macroBody(state, "! Seduction"), nil, "Summon Succubus alone is not enough: no Grimoire yet")
+    -- The Succubus learns Seduction from its Grimoire.
+    state.petKnown = {[6358] = true}
+    state.emit("UNIT_PET", "player")
+    contains(macroBody(state, "! Seduction"), "/cast [@focus,harm,nodead,pet:Succubus/Incubus] Seduction",
+        "does nothing unless your pet is a Succubus or an Incubus")
     state.combat = true
     state.settings.WTF_CONTROL_MACROS:SetValue(false)
     equal(macroBody(state, "! Banish") ~= nil, true, "macros change only out of combat")
@@ -2033,6 +2048,25 @@ test("control macros appear only for the spells you know; Seduction needs your S
     equal(macroBody(state, "! Banish"), nil, "turning them off deletes them")
     equal(macroBody(state, "! Seduction"), nil)
     equal(macroBody(state, "! Fear"), nil)
+end)
+test("an Incubus that knows Seduction by its own ID gets the macro too; one that does not, none", function()
+    local state = controlFixture({known = {[FEAR] = true, [713] = true}})
+    -- An Incubus out, before its Grimoire.
+    state.petFamily = "Incubus"
+    state.petSpellbook = {{spellID = 99001, name = "Lash of Pain"}}
+    state.emit("UNIT_PET", "player")
+    equal(macroBody(state, "! Seduction"), nil, "no Seduction yet")
+    -- Its Grimoire teaches Seduction under another ID: found by name.
+    state.petSpellbook[2] = {spellID = 99002, name = "Seduction"}
+    state.emit("SPELLS_CHANGED")
+    contains(macroBody(state, "! Seduction"), "pet:Succubus/Incubus")
+    -- Dismissed: the macro stays, and does nothing without the demon.
+    state.petSpellbook, state.petFamily = nil, nil
+    state.emit("UNIT_PET", "player")
+    equal(macroBody(state, "! Seduction") ~= nil, true)
+    state.clear()
+    state.slash("debug_control")
+    contains(table.concat(state.messages, "|"), "debug_control pet=nil seduction=false")
 end)
 test("unlocked, the control bar shows samples to drag; debug_control reports the rows", function()
     local state = controlFixture()

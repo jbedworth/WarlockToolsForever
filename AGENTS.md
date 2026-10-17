@@ -332,10 +332,12 @@ module only after the author agrees its behavior.
 - Macros (author-approved, after the author's own, `control.macros`):
   "! Fear" once you know Fear, the author's juggling macro: `/cast
   [@mouseover,harm,nodead][harm,nodead] Fear` (no focus: a focus holds one
-  mob; hover a feared mob's nameplate as its timer ends); "! Banish" once you know Banish and "! Seduction" once you know Summon
-  Succubus: `#showtooltip`, `/focus [@mouseover,harm,nodead]
+  mob; hover a feared mob's nameplate as its timer ends); "! Banish" once you know Banish and "! Seduction" once your summoned demon
+  knows Seduction (a Grimoire teaches it; the pet spellbook, by ID or by name,
+  so a Succubus or an Incubus counts; checked on `UNIT_PET` and
+  `SPELLS_CHANGED`; the macro stays when the demon is dismissed): `#showtooltip`, `/focus [@mouseover,harm,nodead]
   [nocombat,harm,nodead]`, `/cast [@focus,harm,nodead] <spell>` (Seduction
-  with `pet:Succubus`, so it does nothing without a Succubus). They do not
+  with `pet:Succubus/Incubus`, so it does nothing without one). They do not
   `/tm`: WTF marks on landing, and a second mark would toggle it off (the
   pinned /tm source: SetRaidTarget toggles; "!" skips an equal marker).
   Written with Stones' macro writer, out of combat; off deletes them.

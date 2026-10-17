@@ -182,12 +182,12 @@ breaks early, and goes when the mob dies.
   mobs. Instead, a **Fear timer under each feared mob's nameplate** shows which
   one is about to break: click its nameplate to target it, then Fear.
 - **Macros:** WTF keeps "! Fear", "! Banish", and "! Seduction" in your
-  character macros, each once you know its spell (Seduction once you know
-  Summon Succubus). "! Fear" Fears the mob under your mouse, else your
+  character macros, each once you know its spell ("! Seduction" once your
+  Succubus or Incubus has learned Seduction from its Grimoire). "! Fear" Fears the mob under your mouse, else your
   target: hover a feared mob's nameplate as its timer runs out and press it.
   "! Banish" and "! Seduction" focus the hostile mob under your mouse (or your
   target, out of combat) and cast on your focus; "! Seduction" does nothing
-  unless your pet is a Succubus. Turn them off on the Control settings page.
+  unless your pet is a Succubus or an Incubus. Turn them off on the Control settings page.
 
 ## Cooldown chimes
 
