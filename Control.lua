@@ -8,8 +8,9 @@ local _, WTF = ...
 -- AddOn code cannot read enemy auras in combat, so each row is a Blizzard
 -- AuraContainer slot, as in the DoT tracker: the engine draws the bar; WTF
 -- knows only which mobs you cast on, from your own cast events. A row binds
--- to its mob's nameplate, target, focus, or mouseover, and goes when the mob
--- dies or the longest such spell could have ended. A dim line stays behind
+-- to its mob through your focus, target, or its nameplate (a mob's nameplate
+-- token can change as it leaves plate range and comes back; its GUID does
+-- not), and goes when the mob dies or the longest such spell could have ended. A dim line stays behind
 -- each bar, so a spell that broke early shows as gone.
 --
 -- On cast, WTF can tell the group (Announce) and, when a single-target
@@ -19,18 +20,24 @@ local _, WTF = ...
 -- nothing). The combat log is closed,
 -- so a resist cannot be seen; a successful cast counts as landed.
 --
--- Clicking a row recasts its spell on its mob: a secure macro targets the mob
--- by name, casts, and goes back to your target. Secure buttons change only
--- out of combat, so each row's click sits in a fixed slot under its row and
--- is set as the cast starts (a pull's Fear or Banish starts before combat);
--- a row begun in combat gets its click when combat ends.
+-- Clicking a Banish row recasts Banish on your focus (author-approved: single
+-- target control follows the focus, as the "! Banish" macro sets it), or,
+-- with no focus, targets the mob by name, casts, and goes back to your
+-- target. Secure buttons change only out of combat, so each row's click sits
+-- in a fixed slot under its row and is set as the cast starts (a pull's
+-- Banish starts before combat); a row begun in combat gets its click when
+-- combat ends. Fear rows have no click (author-approved): a secure macro can
+-- aim only at a unit token or a name, never at one mob's GUID, and juggled
+-- mobs share names, so a click could Fear the wrong one. A countdown on each
+-- feared mob's nameplate shows which one is about to break; clicking the
+-- nameplate targets it.
 
 -- Classic IDs; every spellbook spell of the same name counts too. Enslave
 -- Demon and Howl of Terror only announce: an enslaved demon is your pet, and
 -- Howl of Terror has no single target.
 WTF.CONTROL_SPELLS = {
     {key = "fear", label = "Fear", ids = {5782, 6213, 6215}, longest = 20, bar = true},
-    {key = "banish", label = "Banish", ids = {710, 18647}, longest = 30, bar = true, marker = 5},
+    {key = "banish", label = "Banish", ids = {710, 18647}, longest = 30, bar = true, marker = 5, click = true},
     {key = "enslave", label = "Enslave Demon", ids = {1098, 11725, 11726}},
     {key = "howl", label = "Howl of Terror", ids = {5484, 17928}, untargeted = true},
 }
@@ -203,14 +210,15 @@ local function FindUnit(guid)
     if not guid then
         return nil
     end
-    for index = 1, MAX_NAMEPLATE_UNITS do
-        local unit = "nameplate" .. index
-        if UnitExists(unit) and ReadGUID(unit) == guid then
+    -- Focus first: it stays on the mob when its nameplate drops.
+    for _, unit in ipairs({"focus", "target"}) do
+        if ReadGUID(unit) == guid then
             return unit
         end
     end
-    for _, unit in ipairs({"target", "focus"}) do
-        if ReadGUID(unit) == guid then
+    for index = 1, MAX_NAMEPLATE_UNITS do
+        local unit = "nameplate" .. index
+        if UnitExists(unit) and ReadGUID(unit) == guid then
             return unit
         end
     end
@@ -277,10 +285,8 @@ local function ApplyClicks()
         row:SetScale(settings.scale / 100)
         local holder, name, spell = row.holder, row.clickName, row.clickSpell
         if name and spell then
-            -- A missing mob leaves no target, so nothing else is cast on.
             holder:SetAttribute("type1", "macro")
-            holder:SetAttribute("macrotext1", "/cleartarget\n/targetexact " .. name
-                .. "\n/cast [@target,harm,nodead] " .. spell .. "\n/targetlasttarget")
+            holder:SetAttribute("macrotext1", WTF.RecastMacro(spell, name))
         else
             holder:SetAttribute("type1", nil)
             holder:SetAttribute("macrotext1", nil)
@@ -296,6 +302,13 @@ local function Forget(row)
     Bind(row, nil)
     Layout()
     ApplyClicks()
+end
+
+-- A recast on your focus, or with no focus on the mob by name: a missing mob
+-- leaves no target, so nothing else is cast on.
+function WTF.RecastMacro(spell, name)
+    return "/cast [@focus,harm,nodead] " .. spell .. "\n/stopmacro [@focus,exists]\n/cleartarget\n/targetexact "
+        .. name .. "\n/cast [@target,harm,nodead] " .. spell .. "\n/targetlasttarget"
 end
 
 local function RowFor(guid, name)
@@ -316,7 +329,9 @@ end
 
 local function Track(row, guid, mobName, spell, spellName)
     row.guid, row.mobName = guid, mobName
-    row.clickName, row.clickSpell = mobName, spellName
+    if spell.click then
+        row.clickName, row.clickSpell = mobName, spellName
+    end
     local token = {}
     row.token = token
     Bind(row, FindUnit(guid))
@@ -332,10 +347,11 @@ end
 local function ShowTooltip(holder)
     GameTooltip:SetOwner(holder, "ANCHOR_TOP")
     if holder.mobName then
-        GameTooltip:SetText("Click: " .. holder.spellName .. " " .. holder.mobName .. " again.", 1, 1, 1)
-        GameTooltip:AddLine("Targets it by name, then goes back to your target.", 0.7, 0.7, 0.7, true)
+        GameTooltip:SetText("Click: " .. holder.spellName .. " your focus again.", 1, 1, 1)
+        GameTooltip:AddLine("With no focus, targets " .. holder.mobName .. " by name, then goes back to your "
+            .. "target.", 0.7, 0.7, 0.7, true)
     else
-        GameTooltip:SetText("Fear or Banish a mob, then click its row to cast it again.", 0.7, 0.7, 0.7)
+        GameTooltip:SetText("Banish a mob, then click its row to cast it again.", 0.7, 0.7, 0.7)
     end
     GameTooltip:Show()
 end
@@ -497,7 +513,7 @@ local function OnCastSent(target, castGUID, spellID)
     control.lastCast = {spellID = spellID, target = target}
     -- A pull's Fear or Banish starts out of combat and lands in it: set the
     -- click now, while the game still allows it.
-    if not InCombatLockdown() then
+    if spell.click and not InCombatLockdown() then
         local row = RowFor(guid, target)
         if row and not row.guid then
             row.clickName, row.clickSpell = target, C_Spell.GetSpellName(spellID)
@@ -594,8 +610,10 @@ events:SetScript("OnEvent", function(_, event, unit, first, second, third)
             end
         end
     elseif event == "UNIT_HEALTH" then
+        -- By GUID: the death can come through any unit that shows the mob.
+        local guid = not WTF.IsSecret(unit) and ReadGUID(unit)
         for _, row in ipairs(control.rows) do
-            if row.guid and row.boundUnit == unit and IsDead(unit) then
+            if row.guid and row.guid == guid and IsDead(unit) then
                 Forget(row)
             end
         end

@@ -1821,12 +1821,16 @@ test("each mob you Fear or Banish gets its own bar, bound to its unit", function
     local state = controlFixture()
     castAt(state, FEAR, "nameplate3")
     castAt(state, BANISH, "nameplate4")
+    state.emit("PLAYER_TARGET_CHANGED")
     local first, second = controlRow(state, 1), controlRow(state, 2)
     equal(first.shown, true)
     equal(first.name.text, "Boar")
-    equal(first.container.unit, "nameplate3")
+    equal(first.container.unit, "nameplate3", "its nameplate once you target another mob")
     equal(second.name.text, "Imp")
-    equal(second.container.unit, "nameplate4")
+    equal(second.container.unit, "target", "your target first")
+    state.units.focus = state.units.nameplate4
+    state.emit("PLAYER_FOCUS_CHANGED")
+    equal(second.container.unit, "focus", "your focus before anything, as it never drops")
     equal(first.container.slots[1].ids[FEAR], true, "the slot takes Fear")
     equal(first.container.slots[1].ids[BANISH], true, "and Banish")
     equal(first.container.slots[1].filter, "HARMFUL|PLAYER")
@@ -1890,42 +1894,47 @@ test("control spells tell the group as the cast starts, with the marker in chat"
     castAt(alone, FEAR, "nameplate3")
     equal(#alone.sent, 0, "nothing when alone")
 end)
-test("clicking a row recasts its spell on its mob; a click begun in combat follows after", function()
+local RECAST_BANISH_IMP = "/cast [@focus,harm,nodead] Banish\n/stopmacro [@focus,exists]\n/cleartarget"
+    .. "\n/targetexact Imp\n/cast [@target,harm,nodead] Banish\n/targetlasttarget"
+
+test("clicking a Banish row recasts on your focus, or with none on the mob by name", function()
     local state = controlFixture()
-    castAt(state, FEAR, "nameplate3")
+    castAt(state, BANISH, "nameplate4")
     local click = state.env.WarlockToolsForeverControlClick1
     equal(click.protected, true, "a secure button")
     equal(click.shown, true)
-    equal(click.attributes.macrotext1, "/cleartarget\n/targetexact Boar\n/cast [@target,harm,nodead] Fear"
-        .. "\n/targetlasttarget")
-    -- A pull: the cast starts out of combat and lands in it.
-    state.units.target = state.units.nameplate4
-    state.emit("UNIT_SPELLCAST_SENT", "player", "Imp", "cast-banish", BANISH)
+    equal(click.attributes.macrotext1, RECAST_BANISH_IMP)
     state.combat = true
-    state.emit("UNIT_SPELLCAST_SUCCEEDED", "player", "cast-banish", BANISH)
-    contains(state.env.WarlockToolsForeverControlClick2.attributes.macrotext1, "Banish", "ready for the fight")
     -- Started in combat: the click waits for combat to end.
-    state.units.nameplate5 = {name = "Wolf", guid = "Creature-3"}
-    castAt(state, FEAR, "nameplate5")
-    equal(controlRow(state, 3).name.text, "Wolf", "the bar shows in combat")
-    equal(state.env.WarlockToolsForeverControlClick3.attributes.macrotext1, nil)
+    state.units.nameplate5 = {name = "Voidwalker", guid = "Creature-3"}
+    castAt(state, BANISH, "nameplate5")
+    equal(controlRow(state, 2).name.text, "Voidwalker", "the bar shows in combat")
+    equal(state.env.WarlockToolsForeverControlClick2.attributes.macrotext1, nil)
     state.combat = false
     state.emit("PLAYER_REGEN_ENABLED")
-    contains(state.env.WarlockToolsForeverControlClick3.attributes.macrotext1, "/targetexact Wolf")
-    equal(state.env.WarlockToolsForeverControlClick4.shown, false, "no click area without a mob")
+    contains(state.env.WarlockToolsForeverControlClick2.attributes.macrotext1, "/targetexact Voidwalker")
+    equal(state.env.WarlockToolsForeverControlClick3.shown, false, "no click area without a mob")
 end)
-test("a row whose click is set keeps its slot until combat ends, so no click casts on the wrong mob", function()
+test("Fear rows show the timer but have no click, so no click Fears the wrong mob", function()
     local state = controlFixture()
     castAt(state, FEAR, "nameplate3")
+    equal(controlRow(state, 1).name.text, "Boar")
+    local click = state.env.WarlockToolsForeverControlClick1
+    equal(click.shown, false)
+    equal(click.attributes.macrotext1, nil)
+end)
+test("a Banish row whose click is set keeps its slot until combat ends", function()
+    local state = controlFixture()
+    castAt(state, BANISH, "nameplate4")
     local click1 = state.env.WarlockToolsForeverControlClick1
-    contains(click1.attributes.macrotext1, "/targetexact Boar")
+    contains(click1.attributes.macrotext1, "/targetexact Imp")
     state.combat = true
-    state.units.nameplate3.dead = true
-    state.emit("UNIT_HEALTH", "nameplate3")
-    equal(controlRow(state, 1).shown, false, "the Boar is gone")
-    castAt(state, FEAR, "nameplate4")
-    equal(controlRow(state, 1).shown, false, "its row is not reused while its click still names the Boar")
-    equal(controlRow(state, 2).name.text, "Imp")
+    state.units.nameplate4.dead = true
+    state.emit("UNIT_HEALTH", "nameplate4")
+    equal(controlRow(state, 1).shown, false, "the Imp is gone")
+    castAt(state, FEAR, "nameplate3")
+    equal(controlRow(state, 1).shown, false, "its row is not reused while its click still names the Imp")
+    equal(controlRow(state, 2).name.text, "Boar")
     state.combat = false
     state.emit("PLAYER_REGEN_ENABLED")
     equal(click1.attributes.macrotext1, nil, "cleared after combat")
@@ -1934,23 +1943,23 @@ test("a row whose click is set keeps its slot until combat ends, so no click cas
     castAt(state, FEAR, "nameplate5")
     equal(controlRow(state, 1).name.text, "Wolf", "then free again")
 end)
-test("a cast that fails out of combat gives back its row and click", function()
+test("a Banish that fails out of combat gives back its row and click", function()
     local state = controlFixture()
-    state.units.target = state.units.nameplate3
-    state.emit("UNIT_SPELLCAST_SENT", "player", "Boar", "cast-a", FEAR)
+    state.units.target = state.units.nameplate4
+    state.emit("UNIT_SPELLCAST_SENT", "player", "Imp", "cast-a", BANISH)
     local click1 = state.env.WarlockToolsForeverControlClick1
     equal(click1.shown, true, "set as the cast starts")
-    state.emit("UNIT_SPELLCAST_INTERRUPTED", "player", "cast-a", FEAR)
+    state.emit("UNIT_SPELLCAST_INTERRUPTED", "player", "cast-a", BANISH)
     equal(click1.shown, false)
     equal(click1.attributes.macrotext1, nil)
     for index = 1, 5 do
         state.units["nameplate" .. (10 + index)] = {name = "Mob" .. index, guid = "Creature-1" .. index}
         state.units.target = state.units["nameplate" .. (10 + index)]
-        state.emit("UNIT_SPELLCAST_SENT", "player", "Mob" .. index, "cast-f" .. index, FEAR)
-        state.emit("UNIT_SPELLCAST_FAILED", "player", "cast-f" .. index, FEAR)
+        state.emit("UNIT_SPELLCAST_SENT", "player", "Mob" .. index, "cast-f" .. index, BANISH)
+        state.emit("UNIT_SPELLCAST_FAILED", "player", "cast-f" .. index, BANISH)
     end
-    castAt(state, FEAR, "nameplate4")
-    equal(controlRow(state, 1).name.text, "Imp", "failed casts never use up the rows")
+    castAt(state, FEAR, "nameplate3")
+    equal(controlRow(state, 1).name.text, "Boar", "failed casts never use up the rows")
 end)
 test("a size change in combat waits for combat, so rows stay on their click slots", function()
     local state = controlFixture()
