@@ -112,7 +112,8 @@ function WTF.SanitizeControl(saved, sanitizePosition)
     saved = type(saved) == "table" and saved or {}
     local markers = type(saved.markers) == "table" and saved.markers or {}
     local clean = {enabled = saved.enabled ~= false, position = sanitizePosition(saved.position),
-        scale = WTF.SanitizeControlScale(saved.scale), markers = {}, markersVersion = MARKERS_VERSION}
+        scale = WTF.SanitizeControlScale(saved.scale), markers = {}, markersVersion = MARKERS_VERSION,
+        plateTimers = saved.plateTimers ~= false}
     for _, spell in ipairs(WTF.CONTROL_SPELLS) do
         if spell.marker then
             local marker = ValidMarker(markers[spell.key]) and markers[spell.key] or spell.marker
@@ -592,8 +593,124 @@ local function Rebind()
     end
 end
 
+-- Fear timers on nameplates ------------------------------------------------
+-- (author-approved): a thin bar under each nameplate that drains with your
+-- Fear's time left on that mob, so you see which feared mob is about to
+-- break and can click its nameplate to target it. Like the DoT dots, an
+-- engine AuraContainer bound to the plate's unit draws it, only while your
+-- Fear is up, and WTF never reads the aura. Plates are pooled: a mob that
+-- leaves plate range and comes back may get another plate and token, so a
+-- timer attaches on NAME_PLATE_UNIT_ADDED and shows the real time left.
+
+local PLATE_TIMER_WIDTH = 60
+local PLATE_TIMER_HEIGHT = 5
+local PLATE_TIMER_GAP = 2
+local plates = {byUnit = {}, free = {}, all = {}}
+WTF.fearPlateTimers = plates.byUnit
+
+local function FearIDs()
+    local ids = {}
+    for id, spell in pairs(control.kinds) do
+        if spell.key == "fear" then
+            ids[id] = true
+        end
+    end
+    return ids
+end
+
+local function PlateTimerInitializer(timer)
+    return function(button)
+        button:ClearAllPoints()
+        button:SetAllPoints(timer)
+        button:SetMouseClickEnabled(false)
+        button:SetMouseMotionEnabled(false)
+        local background = button:CreateTexture(nil, "BACKGROUND")
+        background:SetAllPoints()
+        background:SetColorTexture(0, 0, 0, 0.7)
+        local bar = CreateFrame("StatusBar", nil, button)
+        bar:SetAllPoints()
+        bar:SetStatusBarTexture("Interface\\Buttons\\WHITE8X8")
+        bar:SetStatusBarColor(BAR_COLOR[1], BAR_COLOR[2], BAR_COLOR[3])
+        local timeLeft = bar:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        timeLeft:SetPoint("LEFT", bar, "RIGHT", 3, 0)
+        local direction = Enum.StatusBarTimerDirection and Enum.StatusBarTimerDirection.RemainingTime
+        button:SetDurationBar(bar, {direction = direction})
+        button:SetDurationText(timeLeft, {})
+        timer.bar = bar
+    end
+end
+
+local function CreatePlateTimer()
+    local timer = CreateFrame("Frame", nil, UIParent)
+    timer:SetSize(PLATE_TIMER_WIDTH, PLATE_TIMER_HEIGHT)
+    timer:EnableMouse(false)
+    local container = CreateFrame("AuraContainer", nil, timer, CONTAINER_TEMPLATE)
+    container:SetPoint("TOPLEFT")
+    container:SetSize(1, 1)
+    container:AddAuraSlot("fear", AURA_FILTER, {
+        candidateFilters = {includeSpellIDs = FearIDs()},
+        initializeFrame = PlateTimerInitializer(timer),
+    })
+    timer.container = container
+    plates.all[#plates.all + 1] = timer
+    return timer
+end
+
+local function DetachTimer(unit)
+    local timer = plates.byUnit[unit]
+    if not timer then
+        return
+    end
+    plates.byUnit[unit] = nil
+    timer.container:SetUnit("none")
+    timer:Hide()
+    timer:SetParent(UIParent)
+    plates.free[#plates.free + 1] = timer
+end
+
+local function AttachTimer(unit)
+    local settings = WTF.db.control
+    if not settings.enabled or not settings.plateTimers or type(C_NamePlate) ~= "table" then
+        return
+    end
+    local plate = C_NamePlate.GetNamePlateForUnit(unit)
+    if not plate or plate:IsForbidden() then
+        return
+    end
+    DetachTimer(unit)
+    local timer = table.remove(plates.free) or CreatePlateTimer()
+    timer:SetParent(plate)
+    timer:ClearAllPoints()
+    timer:SetPoint("TOP", plate, "BOTTOM", 0, -PLATE_TIMER_GAP)
+    plates.byUnit[unit] = timer
+    timer.container:SetUnit(unit)
+    timer.container:UpdateAllAuras()
+    timer:Show()
+end
+
+local function RefreshPlateTimers()
+    for unit in pairs(plates.byUnit) do
+        DetachTimer(unit)
+    end
+    for index = 1, MAX_NAMEPLATE_UNITS do
+        local unit = "nameplate" .. index
+        if UnitExists(unit) then
+            AttachTimer(unit)
+        end
+    end
+end
+
 local events = CreateFrame("Frame")
 events:SetScript("OnEvent", function(_, event, unit, first, second, third)
+    if event == "NAME_PLATE_UNIT_ADDED" or event == "NAME_PLATE_UNIT_REMOVED" then
+        if event == "NAME_PLATE_UNIT_ADDED" then
+            AttachTimer(unit)
+        else
+            DetachTimer(unit)
+        end
+        Rebind()
+        return
+    end
     if event == "UNIT_SPELLCAST_SENT" then
         OnCastSent(first, second, third)
     elseif event == "UNIT_SPELLCAST_SUCCEEDED" then
@@ -622,6 +739,9 @@ events:SetScript("OnEvent", function(_, event, unit, first, second, third)
         for _, row in ipairs(control.rows) do
             row.container:SetAuraSlotCandidateFilters("control", {includeSpellIDs = control.ids})
         end
+        for _, timer in ipairs(plates.all) do
+            timer.container:SetAuraSlotCandidateFilters("fear", {includeSpellIDs = FearIDs()})
+        end
         ApplyClicks()
     elseif event == "PLAYER_REGEN_ENABLED" then
         if control.placeDirty then
@@ -646,6 +766,7 @@ function WTF.RefreshControl()
     end
     Layout()
     ApplyClicks()
+    RefreshPlateTimers()
 end
 
 function WTF.ResetControlPosition()
@@ -689,6 +810,7 @@ function WTF.InitializeControl()
     end
     Layout()
     ApplyClicks()
+    RefreshPlateTimers()
 end
 
 -- /wtf debug_control: the IDs, each row's mob and click, and the last mark.
@@ -713,5 +835,10 @@ function WTF.ReportControlDebug()
             tostring(row.mobName), tostring(row.boundUnit), tostring(row.holder:IsShown()),
             (tostring(row.holder:GetAttribute("macrotext1")):gsub("\n", " | "))))
     end
-    WTF.Report("debug_control marked=" .. tostring(control.lastMark))
+    local attached = 0
+    for _ in pairs(plates.byUnit) do
+        attached = attached + 1
+    end
+    WTF.Report(string.format("debug_control marked=%s plateTimers=%s attached=%d", tostring(control.lastMark),
+        tostring(WTF.db.control.plateTimers), attached))
 end

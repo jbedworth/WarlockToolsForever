@@ -280,6 +280,9 @@ local function AddControlPage(parent)
                 .. spell.label .. " lands, and %M in its message. In a raid only the leader and assistants mark.")
         end
     end
+    Flag(page, "WTF_CONTROL_PLATE_TIMERS", "Fear timers on nameplates", "control", "plateTimers", true,
+        "A thin bar under each feared mob's nameplate that drains with your Fear's time left, so you see which "
+            .. "one is about to break; click its nameplate to target it.", RefreshControl)
     local scale = Proxy(page, "WTF_CONTROL_SCALE", Settings.VarType.Number, "Bar size (%)",
         WTF.DEFAULT_CONTROL_SCALE,
         function() return WTF.db.control.scale end,
