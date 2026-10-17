@@ -311,11 +311,32 @@ module only after the author agrees its behavior.
   slot in a group, so Fear never marks and has no marker setting; skipped
   when already set). %M puts its chat code in the message ("{moon}"). An
   earlier default diamond moves to the moon once (`markersVersion`).
-- Click to recast: each row has a fixed secure click slot under it
-  (`WarlockToolsForeverControlClick1`..5) with `/cleartarget`, `/targetexact
-  <mob>`, `/cast [@target,harm,nodead] <spell>`, `/targetlasttarget`, set
-  only out of combat: at cast start for a pull, else when combat ends. A slot
-  shows only while it has a click (or while unlocked, to drag by).
+- Click to recast, Banish only (author-approved: single-target control
+  follows the focus): each row has a fixed secure click slot under it
+  (`WarlockToolsForeverControlClick1`..5) with `/cast [@focus,harm,nodead]
+  Banish`, `/stopmacro [@focus,exists]`, then by name: `/cleartarget`,
+  `/targetexact <mob>`, `/cast [@target,harm,nodead] Banish`,
+  `/targetlasttarget`; set only out of combat: at cast start for a pull, else
+  when combat ends. A slot shows only while it has a click (or while
+  unlocked, to drag by). Fear rows have no click (author-approved): a secure
+  macro can aim only at a unit token or a name, never at a GUID (the
+  restricted environment has no UnitGUID), tokens move in combat, and juggled
+  mobs share names. Rows find their mob through focus, target, then its
+  nameplate; a death counts through any unit showing it (by GUID).
+- Fear timers on nameplates (author-approved, `control.plateTimers`, on by
+  default): a thin bar under each nameplate, an AuraContainer slot (Fear IDs,
+  `HARMFUL|PLAYER`) bound to the plate's unit on `NAME_PLATE_UNIT_ADDED` and
+  released on `NAME_PLATE_UNIT_REMOVED` (plates are pooled; a mob back in
+  range may get another plate and token, and the engine shows its real time
+  left). Clicking the plate targets the mob.
+- Macros (author-approved, after the author's own, `control.macros`):
+  "! Banish" once you know Banish and "! Seduction" once you know Summon
+  Succubus: `#showtooltip`, `/focus [@mouseover,harm,nodead]
+  [nocombat,harm,nodead]`, `/cast [@focus,harm,nodead] <spell>` (Seduction
+  with `pet:Succubus`, so it does nothing without a Succubus). They do not
+  `/tm`: WTF marks on landing, and a second mark would toggle it off (the
+  pinned /tm source: SetRaidTarget toggles; "!" skips an equal marker).
+  Written with Stones' macro writer, out of combat; off deletes them.
 - Group messages as the cast starts (Announce page, `WTF.SendGroupAnnouncement`,
   the Announce channel, nothing alone, at most every 3 s per spell): Fear,
   Banish, Enslave Demon, and Howl of Terror (no target).
