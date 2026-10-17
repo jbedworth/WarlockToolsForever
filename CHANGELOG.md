@@ -4,6 +4,17 @@ Player-facing changes for each Warlock Tools Forever release, newest first. The
 release builder copies the section for the TOC version into the GitHub release
 notes and the CurseForge changelog, and fails if that section is missing.
 
+## 0.2.0-beta
+
+- Control bar: a bar for each mob you Fear or Banish, with its name and time left. A Banished mob gets the moon marker when the cast lands (never toggled off), and clicking its row banishes your focus again. Fear timers show under each feared mob's nameplate. Optional group messages for Fear, Banish, Enslave Demon, and Howl of Terror.
+- New macros: "! Fear" (the mob under your mouse, else your target), "! Banish", and "! Seduction" (once your Succubus or Incubus knows it), which focus the mob under your mouse and cast on your focus.
+- Cooldown chimes: a sound just before Death Coil, Howl of Terror, Shadow Ward, your Soulstone, Fel Domination, and other spells you pick are ready again, also in combat, with a sound of your choice for each or a voice that says its name.
+- Shield display: a crescent beside your character that fills with your Shadow Ward, your Voidwalker's Sacrifice, or any absorb on you, like Power Word: Shield, also in combat. A Paladin's Blessing of Protection shows as a gold inner crescent that drains with its time left. With Mage Tools Forever or Shields Up Forever also installed, you still see one display.
+- Demon Armor reminder: a pulsing icon while you have neither Demon Armor nor Demon Skin; click it to cast your armor.
+- The Nightfall sound is picked from menus grouped like the Cooldown Manager's.
+- Every frame is magnetic: drop one near another and it snaps beside it, lined up. Shift-drag moves a snapped group.
+- Warnings also show in red at the top of the screen.
+
 ## 0.1.1-beta
 
 - One lock for every frame: `/wtf unlock` outlines the Stones bar and the shard counter and shows sample DoT tracker rows, so you can drag them all; `/wtf lock` locks them again. The main settings page has the same switch, "Unlock frames to move them", and the separate lock and sample-row switches are gone.
