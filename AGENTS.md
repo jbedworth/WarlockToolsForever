@@ -335,7 +335,8 @@ module only after the author agrees its behavior.
   mob; hover a feared mob's nameplate as its timer ends); "! Banish" once you know Banish and "! Seduction" once your summoned demon
   knows Seduction (a Grimoire teaches it; the pet spellbook, by ID or by name,
   so a Succubus or an Incubus counts; checked on `UNIT_PET` and
-  `SPELLS_CHANGED`; the macro stays when the demon is dismissed): `#showtooltip`, `/focus [@mouseover,harm,nodead]
+  `SPELLS_CHANGED`; the macro stays when the demon is dismissed; per the
+  author, a learned Grimoire teaches both the Succubus and the Incubus): `#showtooltip`, `/focus [@mouseover,harm,nodead]
   [nocombat,harm,nodead]`, `/cast [@focus,harm,nodead] <spell>` (Seduction
   with `pet:Succubus/Incubus`, so it does nothing without one). They do not
   `/tm`: WTF marks on landing, and a second mark would toggle it off (the
