@@ -20,7 +20,7 @@ tested.
 
 ## Summary
 
-Quality-of-life tools for Warlocks in World of Warcraft: Forever: Soul Shard management, Soulstone and Healthstone buttons, summon announcements, and a multi-mob DoT tracker.
+Quality-of-life tools for Warlocks in World of Warcraft: Forever: Soul Shard management, Soulstone and Healthstone buttons, a multi-mob DoT tracker, a Fear and Banish bar, cooldown chimes, and announcements with flavor.
 
 ## Description
 
@@ -64,8 +64,23 @@ Per-file changelogs need no manual text: each CI upload uses the version's
 - A list of up to eight other mobs you DoTed. Expired spells stay as dim icons, so you see what to recast.
 - Optional colored DoT dots above hostile nameplates: grey means missing, at a glance.
 
+### Control bar
+- A bar for each mob you Fear or Banish, with its time left, several at once.
+- Banish marks its mob with the diamond (pick any marker per spell), and Fear, Banish, Enslave Demon, and Howl of Terror can tell your group as you cast.
+- Click a row to cast it on that mob again.
+
+### Cooldown chimes
+- A sound just before Death Coil, Howl of Terror, Shadow Ward, your Soulstone, and Fel Domination are ready again, also in combat.
+- Each spell picks its own sound from the Cooldown Manager's sounds, or a voice that says its name.
+
+### Shield display
+- A crescent that fills with your Shadow Ward, your Voidwalker's Sacrifice, or a shield someone puts on you, and drains as it absorbs.
+
+### Demon Armor reminder
+- An icon with a pulsing border while your armor is down. Click it to cast it.
+
 ### Moving frames
-- `/wtf unlock` (or a switch on the main settings page) outlines every WTF frame so you can drag it, with a grid that marks the center of your screen. `/wtf lock` locks them again; `/wtf reset` puts them back.
+- `/wtf unlock` (or a switch on the main settings page) outlines every WTF frame so you can drag it, with a grid that marks the center of your screen. Frames snap together like magnets; Shift-drag moves a snapped group. `/wtf lock` locks them again; `/wtf reset` puts them back.
 
 ### Commands
 - `/wtf` or `/wtf options` opens the settings (Options > AddOns).

@@ -238,13 +238,94 @@ module only after the author agrees its behavior.
 
 ### Alerts (built)
 
-- Nightfall sound (author-approved, off by default): `C_UnitAuras.AddAuraSound`
+- Nightfall sound (author-approved, off by default; picked from nested menus
+  like the chimes', grouped Imp, Hellish imp, and Interface by the labels'
+  "Group: Name"): `C_UnitAuras.AddAuraSound`
   on the player's Shadow Trance (spell 17941) with the chosen sound, as BigWigs
   registers its aura sounds: imp laughs and chirps by file ID (`soundFileID`;
   default the Imp spell chirp, the author's pick), found in Leatrix Sounds'
   file list for this client, or interface sounds by path (`soundFileName`). The game plays it, also in combat. Registration waits out an
   Encounter restriction (`ADDON_RESTRICTION_STATE_CHANGED`). Choosing a sound
-  previews it with `PlaySoundFile`.
+  previews it with `PlaySoundFile`. `UnitAuraSoundInfo` (pinned
+  UnitConstantsDocumentation) takes only `soundFileName` or `soundFileID`,
+  not sound kits, so the Cooldown Manager's catalog cannot be Nightfall sounds.
+
+### Cooldown chimes (built, ported from MTF)
+
+- A sound just before a chosen spell's cooldown ends, also in combat, timed
+  from your own cast (the combat log is closed and cooldowns are secret in
+  combat): the length last read out of combat (saved per character, 1.5 s to
+  1 h), else Classic's, minus the lead (0-3 s, default 0.5). Spells, on by
+  default: Death Coil, Howl of Terror, Shadow Ward, Soulstone Resurrection
+  (the Soulstone's use), Fel Domination; off: Shadowburn, Conflagrate,
+  Amplify Curse, Bane of Doom (Classic's Curse of Doom, 603), Inferno.
+- Each spell's sound comes from MTF's catalog (Interface SOUNDKIT names, the
+  Cooldown Manager's 93 alert kits by ID, and Text to Speech), in the same
+  nested menu: Options.lua wraps the pooled settings dropdown control's
+  `SetupDropdownMenu` only for an initializer carrying `wtfSoundMenu` and
+  hands every other dropdown on (MTF wraps the same pooled controls with its
+  own flag, so both chain). Default Interface: Talent ready.
+
+### Shield display (built, MTF's shared component)
+
+- Shield.lua is MTF's component, copied byte for byte with its textures and
+  scripts/build_arc.py (tests require the committed TGAs to match the build).
+  It already knows Shadow Ward and the Voidwalker's Sacrifice, and shields
+  others cast, like Power Word: Shield. With MTF and WTF both installed, one
+  display shows, from the newest copy (`ShieldForeverRegistry`); keep the
+  copies identical and bump its VERSION in both when it changes. WTF hands it
+  `WTF.db.shield`, its report function, and the unlock hint; a main-page
+  switch and a Shield page (absorb number, break sound, size) as in MTF. It
+  drags itself and does not snap.
+
+### Demon Armor reminder (built)
+
+- Author-approved: only Demon Armor (Demon Skin counts too; the other buffs
+  are situational). One secure icon, shown out of combat while neither is on
+  you, with a pulsing gold border; a click casts the armor last cast (saved
+  per character), else Demon Armor, else Demon Skin. It sits in a holder
+  hidden for combat by `RegisterStateDriver(holder, "visibility",
+  "[combat] hide; show")`, reads buffs only out of combat, snaps, and resizes
+  with the mouse wheel while unlocked (50-200%, keeping its center).
+
+### Control bar and control announcements (built)
+
+- After MTF's Polymorph bar, for many mobs (author-approved): up to five
+  rows, one per mob you Fear or Banish, each an AuraContainer slot
+  (`HARMFUL|PLAYER`, Fear and Banish IDs plus spellbook IDs of those names)
+  with the mob's name above a bar line. Rows come from your cast events (SENT
+  names the target, matched to a unit for its GUID) and bind to the mob's
+  nameplate, target, focus, or mouseover; a recast on the same mob keeps its
+  row. A row goes when the mob dies, after the longest such spell plus 5 s
+  (Fear 20, Banish 30), or never when the cast fails.
+- A raid marker per spell when the cast succeeds (Control page; Banish
+  diamond, Fear none by default; skipped when already set). %M puts its chat
+  code in the message ("{diamond}"), and is dropped with its space when none.
+- Click to recast: each row has a fixed secure click slot under it
+  (`WarlockToolsForeverControlClick1`..5) with `/cleartarget`, `/targetexact
+  <mob>`, `/cast [@target,harm,nodead] <spell>`, `/targetlasttarget`, set
+  only out of combat: at cast start for a pull, else when combat ends. A slot
+  shows only while it has a click (or while unlocked, to drag by).
+- Group messages as the cast starts (Announce page, `WTF.SendGroupAnnouncement`,
+  the Announce channel, nothing alone, at most every 3 s per spell): Fear,
+  Banish, Enslave Demon, and Howl of Terror (no target).
+
+### Magnetic frames (built)
+
+- Layout.lua (author-approved, MTF's snapping improved): every movable WTF
+  frame registers a save function; while unlocked, a frame dropped within 24
+  units of a spot beside another shown frame snaps there, 20 apart, lined up
+  by tops, centers, or bottoms (lefts, centers, or rights when stacked),
+  whichever is nearest. Frames that far apart and overlapping are snapped;
+  Shift-drag moves the group (others anchored to the dragged frame for the
+  drag), which snaps as one. Positions save as centers from UIParent's
+  bottom left. Only out of combat.
+
+### Warnings
+
+- `WTF.Warn`: a failed click or stopped automation is said in chat and in red
+  through `UIErrorsFrame` (stone clicks, trade placement, macro slots, shard
+  deletion stopping). `/wtf reset` in combat reports once.
 
 ### Slot colors (author-approved)
 
@@ -269,7 +350,8 @@ general frameworks, or speculative modules without agreement.
   `shards.counterLocked`; `tracker.placeholders` follows it (sample rows
   while unlocked, since the tracker drags only while it shows). The main
   page's "Unlock frames to move them" and `/wtf unlock` and `/wtf lock` set
-  it; there are no per-frame lock or placeholder switches. The Stones bar and
+  it (dragging reads `db.locked`, Layout.lua); there are no per-frame lock or
+  placeholder switches. The Stones bar and
   the shard counter show a gold outline and a "Drag to move · /wtf lock when
   done" hint while unlocked (`WTF.CreateMover`). Every new movable frame joins
   this lock.
@@ -282,14 +364,14 @@ general frameworks, or speculative modules without agreement.
 
 ## Project structure
 
-- Runtime files: WarlockToolsForever.toc, Commands.lua, Core.lua, Shards.lua,
-  Stones.lua, Announce.lua, Tracker.lua, Dots.lua, Alerts.lua, Probe.lua,
-  Options.lua, loaded in that order. Core also owns the hardware-input hooks
+- Runtime files: WarlockToolsForever.toc, Commands.lua, Core.lua, Layout.lua, Shards.lua, Stones.lua, Announce.lua, Tracker.lua, Dots.lua, Control.lua, Alerts.lua, Shield.lua, Chimes.lua, Reminders.lua, Probe.lua, Options.lua, loaded in
+  that order, plus Textures/ShieldArc.tga and Textures/ShieldArcInner.tga. Core also owns the hardware-input hooks
   (every key press and world click) that item deletion and trade placement
   wait for.
   Commands parses `/wtf`; Core owns saved settings and their defaults, the
   login banner, class and install checks, slash conflict reporting, and
-  startup; Shards, Stones, Announce, Tracker, Dots, and Alerts own their modules; Probe owns
+  startup; Layout owns snapping; Shards, Stones, Announce, Tracker, Dots, Control, Alerts, Shield,
+  Chimes, and Reminders own their modules; Probe owns
   `/wtf debug_restrictions`; Options owns the settings pages.
 - tests/run.lua holds the Lua 5.1 mock suite. tests/test_*.py cover the release
   helpers in scripts/. .github/workflows/ holds CI, opt-in publishing, and the
@@ -385,8 +467,8 @@ general frameworks, or speculative modules without agreement.
 - Every release needs a `## <version>` section in CHANGELOG.md with player-facing
   changes; the builder puts it at the top of release-notes.md (GitHub release
   notes and CurseForge changelog) and fails without it.
-- Package only WarlockToolsForever.toc, Commands.lua, Core.lua, Shards.lua,
-  Stones.lua, Announce.lua, Tracker.lua, Dots.lua, Alerts.lua, Probe.lua, Options.lua, and LICENSE
+- Package only WarlockToolsForever.toc, Commands.lua, Core.lua, Layout.lua, Shards.lua, Stones.lua, Announce.lua, Tracker.lua, Dots.lua, Control.lua, Alerts.lua, Shield.lua, Chimes.lua, Reminders.lua, Probe.lua, Options.lua, LICENSE,
+  Textures/ShieldArc.tga, and Textures/ShieldArcInner.tga
   under the top-level
   `WarlockToolsForever/` folder, named
   `WarlockToolsForever-<version>-forever.zip`, with the builder's
