@@ -11,6 +11,7 @@ local ANNOUNCE_TITLE = "Announce"
 local TRACKER_TITLE = "DoT Tracker"
 local COLORS_TITLE = "DoT Colors"
 local ALERTS_TITLE = "Alerts"
+local SHIELD_TITLE = "Shield"
 local UNAVAILABLE = "The AddOn settings page is unavailable on this client. Use /wtf shards for status."
 local GOLD = {1, 0.82, 0}
 
@@ -74,6 +75,36 @@ local function RefreshStones()
     if WTF.RefreshStones then
         WTF.RefreshStones()
     end
+end
+
+local function RefreshShield()
+    WTF.RefreshShield()
+end
+
+local function SliderOptions(minValue, maxValue, step)
+    local options = Settings.CreateSliderOptions(minValue, maxValue, step)
+    if type(MinimalSliderWithSteppersMixin) == "table" and type(options.SetLabelFormatter) == "function" then
+        options:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right)
+    end
+    return options
+end
+
+local function AddShieldPage(parent)
+    local page = Settings.RegisterVerticalLayoutSubcategory(parent, SHIELD_TITLE)
+    Flag(page, "WTF_SHIELD_NUMBER", "Show the absorb amount", "shield", "number", true,
+        "Show your remaining absorb as a number beside the ring.", RefreshShield)
+    Flag(page, "WTF_SHIELD_BREAK_SOUND", "Sound when a shield ends", "shield", "breakSound", false,
+        "Play a sound when your Shadow Ward, your Voidwalker's Sacrifice, or another shield on you ends or "
+            .. "breaks, also in combat.", RefreshShield)
+    local display = WTF.ShieldDisplay
+    local scale = Proxy(page, "WTF_SHIELD_SCALE", Settings.VarType.Number, "Display size (%)", display.DEFAULT_SCALE,
+        function() return WTF.db.shield.scale end,
+        function(value)
+            WTF.db.shield.scale = display.SanitizeScale(value)
+            RefreshShield()
+        end)
+    Settings.CreateSlider(page, scale, SliderOptions(display.SCALE_MIN, display.SCALE_MAX, display.SCALE_STEP),
+        "How big the shield display is, in percent.")
 end
 
 local function AddShardPage(parent)
@@ -504,6 +535,10 @@ function WTF.InitializeOptions()
     Flag(category, "WTF_TRACKER_ENABLED", "DoT tracker", "tracker", "enabled", true,
         "A row per mob you DoT, with the time left on your DoTs, Bane, Curse, and Fear.",
         RefreshTracker)
+    Flag(category, "WTF_SHIELD_ENABLED", "Shield display", "shield", "enabled", true,
+        "A crescent beside your character that fills with your remaining shield: Shadow Ward, your "
+            .. "Voidwalker's Sacrifice, or a shield another player puts on you, like Power Word: Shield.",
+        RefreshShield)
     local unlocked = Proxy(category, "WTF_UNLOCKED", Settings.VarType.Boolean, "Unlock frames to move them", false,
         function() return not WTF.db.locked end,
         function(value) WTF.SetFramesLocked(value ~= true) end)
@@ -523,6 +558,7 @@ function WTF.InitializeOptions()
     AddTrackerPage(category)
     AddColorsPage(category)
     AddAlertsPage(category)
+    AddShieldPage(category)
     local announcePage = CreateAnnouncePage()
     WTF.announcePage = announcePage
     Settings.RegisterCanvasLayoutSubcategory(category, announcePage, ANNOUNCE_TITLE)

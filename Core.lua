@@ -77,11 +77,15 @@ local REQUIRED_NAMESPACE = {
     "ReportTrackerDebug", "TrackerCandidateFilters", "TrackerKnowsSlot", "SetTrackerTheme",
     "InitializePlateDots", "RefreshPlateDots", "HasTrackableDots", "ApplyTrackerColors", "ApplyDotColors",
     "InitializeAlerts", "ApplyNightfallSound", "PreviewNightfallSound", "HasNightfallSound",
-    "ReportRestrictions",
+    "ReportRestrictions", "InitializeShield", "RefreshShield", "ResetShieldPosition", "ReportShieldDebug",
     "InitializeOptions", "OpenSettings",
 }
 
 local function CheckInstalledFiles()
+    if type(WTF.ShieldDisplay) ~= "table" or type(WTF.ShieldDisplay.Initialize) ~= "function" then
+        return false, "AddOn files are from different versions (missing Shield.lua). Reinstall every "
+            .. "Warlock Tools Forever file, then restart the client."
+    end
     for _, name in ipairs(REQUIRED_NAMESPACE) do
         if type(WTF[name]) ~= "function" then
             return false, "AddOn files are from different versions (missing " .. name
@@ -338,8 +342,15 @@ function WTF.SanitizeDB(db)
     -- One lock for every frame (author-approved, as MTF), locked by default;
     -- each frame reads its own copy, and the tracker shows its sample rows
     -- while unlocked, since it can only be dragged while it shows.
+    -- The shield display is a self-contained component; it owns its defaults.
+    if WTF.ShieldDisplay then
+        db.shield = WTF.ShieldDisplay.Sanitize(db.shield)
+    end
     db.locked = db.locked ~= false
     db.grid = db.grid ~= false
+    if type(db.shield) == "table" then
+        db.shield.locked = db.locked
+    end
     db.stones.locked = db.locked
     db.tracker.locked = db.locked
     db.tracker.placeholders = not db.locked
@@ -486,20 +497,43 @@ end
 
 -- /wtf unlock and /wtf lock, and the main page's "Unlock frames to move them":
 -- every movable WTF frame together (author-approved, as MTF does).
+-- The shield display (Shield.lua) is a component MTF ships too; WTF hands it
+-- WTF's settings and chat, and it decides whether this copy draws. With both
+-- AddOns installed, one display shows, from the newest copy.
+function WTF.InitializeShield()
+    WTF.ShieldDisplay.Initialize({settings = function() return WTF.db.shield end, report = WTF.Report,
+        unlockHint = "Drag to move · /wtf lock when done"})
+end
+
+function WTF.RefreshShield()
+    WTF.ShieldDisplay.Refresh()
+    WTF.ShieldDisplay.ApplyBreakSound()
+end
+
+function WTF.ResetShieldPosition()
+    WTF.ShieldDisplay.ResetPosition()
+end
+
+function WTF.ReportShieldDebug()
+    WTF.ShieldDisplay.ReportDebug(WTF.Report)
+end
+
 function WTF.SetFramesLocked(locked)
     WTF.db.locked = locked
     WTF.db.stones.locked = locked
     WTF.db.tracker.locked = locked
     WTF.db.tracker.placeholders = not locked
     WTF.db.shards.counterLocked = locked
+    WTF.db.shield.locked = locked
     WTF.RefreshTracker()
     WTF.RefreshStonesMover()
     WTF.RefreshShardCounter()
+    WTF.RefreshShield()
     WTF.RefreshGrid()
     if locked then
-        WTF.Report("Stones bar, DoT tracker, and shard counter locked.")
+        WTF.Report("All WTF frames locked.")
     else
-        WTF.Report("Stones bar, DoT tracker, and shard counter unlocked: drag them where you want, "
+        WTF.Report("All WTF frames unlocked: drag them where you want (Shift-drag moves a snapped group), "
             .. "then type /wtf lock.")
     end
 end
@@ -517,6 +551,7 @@ function WTF.ResetPositions()
     WTF.ResetShardCounterPosition()
     WTF.ResetStonesPosition()
     WTF.ResetTrackerPosition()
+    WTF.ResetShieldPosition()
     if InCombatLockdown() then
         WTF.Report("WTF frames move back to their default places after combat.")
     end
@@ -573,6 +608,7 @@ events:SetScript("OnEvent", function(self, event, loadedName)
     WTF.InitializeTracker()
     WTF.InitializePlateDots()
     WTF.InitializeAlerts()
+    WTF.InitializeShield()
     WTF.InitializeOptions()
     WTF.RefreshGrid()
 end)

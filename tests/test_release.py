@@ -257,11 +257,20 @@ class ReleaseTests(unittest.TestCase):
             with self.subTest(header=data[:18]), self.assertRaises(ValueError):
                 builder._validate_tga("icon.tga", data)
 
-    def test_package_has_no_media(self):
-        self.assertEqual(builder.MEDIA_FILES, ())
+    def test_package_ships_the_shield_arc(self):
+        self.assertEqual(builder.MEDIA_FILES, ("Textures/ShieldArc.tga", "Textures/ShieldArcInner.tga"))
         path, _ = self.build()
         with zipfile.ZipFile(path) as archive:
-            self.assertEqual(len(archive.namelist()), len(builder.TEXT_FILES))
+            self.assertIn("WarlockToolsForever/Textures/ShieldArc.tga", archive.namelist())
+            self.assertIn("WarlockToolsForever/Textures/ShieldArcInner.tga", archive.namelist())
+            self.assertEqual(len(archive.namelist()), len(builder.PACKAGE_FILES))
+
+    def test_committed_shield_arc_matches_the_build(self):
+        spec = importlib.util.spec_from_file_location("build_arc", ROOT / "scripts" / "build_arc.py")
+        arc = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(arc)
+        for name in arc.CRESCENTS:
+            self.assertEqual((ROOT / "Textures" / name).read_bytes(), arc.build(name), name)
 
     def test_release_notes_start_with_the_versions_changelog_section(self):
         changelog = self.source / builder.CHANGELOG_NAME
