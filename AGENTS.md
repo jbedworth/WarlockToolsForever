@@ -303,7 +303,8 @@ module only after the author agrees its behavior.
   (`HARMFUL|PLAYER`, Fear and Banish IDs plus spellbook IDs of those names)
   with the mob's name above a bar line. Rows come from your cast events (SENT
   names the target, matched to a unit for its GUID) and bind to the mob
-  through your focus, then target, then its nameplate (never mouseover); a
+  through your focus, then target, then its nameplate (never mouseover; a
+  cast through mouseover, as "! Fear" does, still counts and marks); a
   recast on the same mob keeps its row. A row goes when the mob dies, after the longest such spell plus 5 s
   (Fear 20, Banish 30), or never when the cast fails.
 - A raid marker per spell when the cast succeeds (Control page; Banish
@@ -362,7 +363,8 @@ module only after the author agrees its behavior.
   whichever is nearest. Frames that far apart and overlapping are snapped;
   Shift-drag moves the group (others anchored to the dragged frame for the
   drag), which snaps as one. Positions save as centers from UIParent's
-  bottom left. Only out of combat.
+  bottom left. Only out of combat; a drop after combat began waits, and the
+  group snaps and saves on `PLAYER_REGEN_ENABLED`.
 
 ### Warnings
 

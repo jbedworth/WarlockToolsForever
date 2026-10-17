@@ -677,6 +677,7 @@ local function fixture(options)
             self.shown = false
         end
         function object:IsShown() return self.shown end
+        function object:IsProtected() return self.protected == true end
         function object:SetPoint(...)
             if state.combat and self.protected then error("SetPoint in combat") end
             self.points[#self.points + 1] = {...}
@@ -1869,6 +1870,16 @@ test("a landed Banish gets the moon; Fear never marks, so WTF takes one marker s
     local chosen = fixture({db = {control = {markers = {banish = 8}, markersVersion = 2}}})
     equal(chosen.wtf.db.control.markers.banish, 8, "a marker you chose stays")
 end)
+test("a Banish cast on the mob under the mouse is tracked and marked", function()
+    local state = controlFixture()
+    state.units.target = nil
+    state.units.mouseover = {name = "Felguard", guid = "Creature-8"}
+    state.emit("UNIT_SPELLCAST_SENT", "player", "Felguard", "cast-mo", BANISH)
+    state.emit("UNIT_SPELLCAST_SUCCEEDED", "player", "cast-mo", BANISH)
+    equal(controlRow(state, 1).name.text, "Felguard", "tracked")
+    equal(state.marks["Creature-8"], 5, "the moon, through mouseover")
+    equal(controlRow(state, 1).container.unit, "none", "rows never bind to mouseover")
+end)
 test("a Banish that lands in combat still gets its marker, on your target", function()
     local state = controlFixture()
     state.units.target = state.units.nameplate4
@@ -1989,10 +2000,10 @@ test("a row never binds to mouseover, which changes with the pointer", function(
     state.units.mouseover = {name = "Ghoul", guid = "Creature-9"}
     state.emit("UNIT_SPELLCAST_SENT", "player", "Ghoul", "cast-m", FEAR)
     state.emit("UNIT_SPELLCAST_SUCCEEDED", "player", "cast-m", FEAR)
-    equal(controlRow(state, 1).shown, false, "a mob seen only under the pointer is not tracked")
+    equal(controlRow(state, 1).name.text, "Ghoul", "a Fear cast through mouseover is tracked")
+    equal(controlRow(state, 1).container.unit, "none", "but the row does not bind to the pointer's unit")
     state.units.nameplate6 = state.units.mouseover
-    state.emit("UNIT_SPELLCAST_SENT", "player", "Ghoul", "cast-n", FEAR)
-    state.emit("UNIT_SPELLCAST_SUCCEEDED", "player", "cast-n", FEAR)
+    state.emit("NAME_PLATE_UNIT_ADDED", "nameplate6")
     equal(controlRow(state, 1).container.unit, "nameplate6", "its nameplate instead")
 end)
 test("a feared mob's nameplate shows a Fear countdown, also after its plate comes back", function()
@@ -2350,6 +2361,27 @@ test("a Shift-dragged group that snaps keeps its spacing", function()
     equal(newBarY, math.floor(spotY + 0.5), "the group snapped")
     equal(select(1, centerOf(state, counter)) - newBarX, gapX, "the counter kept its place beside the bar")
     equal(select(2, centerOf(state, counter)), newBarY)
+end)
+test("a drop after combat began waits, then snaps and saves the group when combat ends", function()
+    local state = stonesFixture()
+    state.slash("unlock")
+    local bar, counter = state.env.WarlockToolsForeverStones, state.wtf.shardCounter
+    dropAt(state, bar, 400, 300)
+    local barX, barY = centerOf(state, bar)
+    dropAt(state, counter, barX + bar.width / 2 + 20 + counter.width / 2, barY)
+    local gapX = select(1, centerOf(state, counter)) - barX
+    local saved = state.wtf.db.shards.counterPosition
+    state.shift = true
+    bar.scripts.OnDragStart(bar)
+    bar:ClearAllPoints()
+    bar:SetPoint("CENTER", nil, "BOTTOMLEFT", 200, 600)
+    state.combat = true
+    bar.scripts.OnDragStop(bar)
+    equal(state.wtf.db.shards.counterPosition, saved, "nothing saved in combat")
+    state.combat = false
+    state.emit("PLAYER_REGEN_ENABLED")
+    equal(state.wtf.db.shards.counterPosition.relativePoint, "BOTTOMLEFT", "saved once combat ends")
+    equal(select(1, centerOf(state, counter)) - select(1, centerOf(state, bar)), gapX, "the group kept together")
 end)
 test("frames do not drag in combat or while locked", function()
     local state = stonesFixture()
