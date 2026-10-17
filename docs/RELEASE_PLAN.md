@@ -37,15 +37,23 @@ WarlockToolsForever/
     WarlockToolsForever.toc
     Commands.lua
     Core.lua
+    Layout.lua
     Shards.lua
     Stones.lua
     Announce.lua
     Tracker.lua
     Dots.lua
+    Control.lua
     Alerts.lua
+    Shield.lua
+    Chimes.lua
+    Reminders.lua
     Probe.lua
     Options.lua
     LICENSE
+    Textures/
+        ShieldArc.tga
+        ShieldArcInner.tga
 ```
 
 The validator permits one optional empty root directory entry. Additional files
@@ -62,8 +70,8 @@ Validate the actual archive, not only the staging folder:
 
 1. Check CRC/integrity, non-empty files, and the exact file list.
 2. Reject absolute paths, traversal paths, symlinks, and extra root folders.
-3. Verify the TOC name, Interface `16001`, and Commands/Core/Shards/Stones/Announce/Tracker/
-   Dots/Alerts/Probe/Options load order. Every listed runtime file must exist inside the archive.
+3. Verify the TOC name, Interface `16001`, and Commands/Core/Layout/Shards/Stones/Announce/Tracker/Dots/Control/Alerts/Shield/Chimes/Reminders/Probe/Options
+   load order. Every listed runtime file must exist inside the archive.
 4. Verify the packaged version matches the selected tag, with one leading `v`
    removed. Verify the packaged MIT copyright/permission notice is intact.
 5. Check the packaged Lua files with Lua 5.1 syntax validation.
