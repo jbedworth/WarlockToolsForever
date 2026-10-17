@@ -25,7 +25,7 @@ local function contains(actual, fragment, context)
 end
 
 local RUNTIME_FILES = {"Commands.lua", "Core.lua", "Layout.lua", "Shards.lua", "Stones.lua", "Announce.lua", "Tracker.lua",
-    "Dots.lua", "Alerts.lua", "Shield.lua", "Chimes.lua", "Reminders.lua", "Probe.lua", "Options.lua"}
+    "Dots.lua", "Control.lua", "Alerts.lua", "Shield.lua", "Chimes.lua", "Reminders.lua", "Probe.lua", "Options.lua"}
 local SHARD = 6265
 local SPELLS = {[1120] = "Drain Soul", [11675] = "Drain Soul", [686] = "Shadow Bolt", [172] = "Corruption",
     [6222] = "Corruption", [980] = "Curse of Agony", [698] = "Ritual of Summoning",
@@ -35,6 +35,7 @@ local SPELLS = {[1120] = "Drain Soul", [11675] = "Drain Soul", [686] = "Shadow B
     [348] = "Immolate", [18265] = "Siphon Life", [5782] = "Fear", [702] = "Curse of Weakness",
     [6201] = "Create Healthstone", [6202] = "Create Healthstone", [5699] = "Create Healthstone",
     [6789] = "Death Coil", [5484] = "Howl of Terror", [6229] = "Shadow Ward", [18708] = "Fel Domination",
+    [710] = "Banish", [1098] = "Enslave Demon",
     [687] = "Demon Skin", [706] = "Demon Armor", [11735] = "Demon Armor",
     [17962] = "Conflagrate", [18288] = "Amplify Curse", [1122] = "Inferno", [603] = "Bane of Doom"}
 local ITEMS = {[5232] = {"Minor Soulstone", 18}, [16892] = {"Lesser Soulstone", 30},
@@ -176,6 +177,17 @@ local function fixture(options)
         return {r = 0.53, g = 0.53, b = 0.93}
     end}
     env.UnitIsDead = function(unit) return state.units[unit] ~= nil and state.units[unit].dead == true end
+    -- Raid markers, by the unit's GUID.
+    state.marks = {}
+    env.GetRaidTargetIndex = function(unit)
+        local data = state.units[unit]
+        return data and state.marks[data.guid or data.name]
+    end
+    env.SetRaidTarget = function(unit, index)
+        local data = state.units[unit]
+        state.marks[data.guid or data.name] = index
+        state.markCount = (state.markCount or 0) + 1
+    end
     env.UnitIsDeadOrGhost = function(unit) return state.units[unit] ~= nil and state.units[unit].dead == true end
     -- State drivers: "[@unit,harm,nodead] show; hide", evaluated by the game.
     state.drivers = {}
@@ -882,7 +894,7 @@ test("a missing client API disables WTF with one message naming it", function()
 end)
 test("a mixed install of old and new files is reported at login", function()
     local state = fixture({files = {"Commands.lua", "Core.lua", "Layout.lua", "Shards.lua", "Stones.lua", "Announce.lua",
-        "Tracker.lua", "Dots.lua", "Alerts.lua", "Shield.lua", "Chimes.lua", "Reminders.lua", "Options.lua"}})
+        "Tracker.lua", "Dots.lua", "Control.lua", "Alerts.lua", "Shield.lua", "Chimes.lua", "Reminders.lua", "Options.lua"}})
     equal(state.wtf.available, false)
     contains(state.last(), "missing ReportRestrictions")
 end)
@@ -1736,6 +1748,129 @@ test("the shard counter drags unless locked, saves its place, and resets", funct
     local saved = fixture({db = {shards = {counterPosition = {point = "TOP", relativePoint = "TOP", x = 1, y = 2}}}})
     equal(saved.wtf.shardCounter.points[1][1], "TOP", "the place survives a reload")
 end)
+-- Control bar --------------------------------------------------------------------------
+
+local FEAR, BANISH, ENSLAVE, HOWL = 5782, 710, 1098, 5484
+
+local function controlFixture(extra)
+    local options = {known = {[FEAR] = true, [BANISH] = true}, units = {
+        target = {name = "Boar", guid = "Creature-1"},
+        nameplate3 = {name = "Boar", guid = "Creature-1"},
+        nameplate4 = {name = "Imp", guid = "Creature-2"},
+    }}
+    for key, value in pairs(extra or {}) do options[key] = value end
+    return fixture(options)
+end
+
+local function castAt(state, spellID, unit)
+    state.units.target = state.units[unit]
+    local name = state.units[unit].name
+    state.emit("UNIT_SPELLCAST_SENT", "player", name, "cast-" .. spellID .. unit, spellID)
+    state.emit("UNIT_SPELLCAST_SUCCEEDED", "player", "cast-" .. spellID .. unit, spellID)
+end
+
+local function controlRow(state, index)
+    return state.env["WarlockToolsForeverControlRow" .. index]
+end
+
+test("each mob you Fear or Banish gets its own bar, bound to its unit", function()
+    local state = controlFixture()
+    castAt(state, FEAR, "nameplate3")
+    castAt(state, BANISH, "nameplate4")
+    local first, second = controlRow(state, 1), controlRow(state, 2)
+    equal(first.shown, true)
+    equal(first.name.text, "Boar")
+    equal(first.container.unit, "nameplate3")
+    equal(second.name.text, "Imp")
+    equal(second.container.unit, "nameplate4")
+    equal(first.container.slots[1].ids[FEAR], true, "the slot takes Fear")
+    equal(first.container.slots[1].ids[BANISH], true, "and Banish")
+    equal(first.container.slots[1].filter, "HARMFUL|PLAYER")
+    equal(controlRow(state, 3).shown, false)
+    castAt(state, FEAR, "nameplate3")
+    equal(controlRow(state, 3).shown, false, "a recast on the same mob keeps its row")
+    state.units.nameplate4.dead = true
+    state.emit("UNIT_HEALTH", "nameplate4")
+    equal(second.shown, false, "gone when the mob dies")
+    state.now = state.now + 26
+    state.runTimers()
+    equal(first.shown, false, "gone once the longest Fear is over")
+end)
+test("a landed Banish gets its marker; Fear has none unless you choose one", function()
+    local state = controlFixture()
+    castAt(state, BANISH, "nameplate4")
+    equal(state.marks["Creature-2"], 3, "the diamond")
+    castAt(state, FEAR, "nameplate3")
+    equal(state.marks["Creature-1"], nil)
+    state.settings.WTF_CONTROL_MARKER_FEAR:SetValue(4)
+    castAt(state, FEAR, "nameplate3")
+    equal(state.marks["Creature-1"], 4, "the triangle")
+    castAt(state, FEAR, "nameplate3")
+    equal(state.markCount, 2, "an existing marker is left alone")
+end)
+test("control spells tell the group as the cast starts, with the marker in chat", function()
+    local state = controlFixture({group = "party", known = {[FEAR] = true, [BANISH] = true, [ENSLAVE] = true}})
+    castAt(state, BANISH, "nameplate4")
+    equal(state.sent[1].chatType, "PARTY")
+    equal(state.sent[1].message, "Banishing >> Imp << {diamond} to the Twisting Nether. Hands off until it comes back"
+        .. " - via Warlock Tools Forever (WTF)")
+    castAt(state, FEAR, "nameplate3")
+    equal(state.sent[2].message, "Fearing >> Boar <<. Let it run; chase it and you bring friends"
+        .. " - via Warlock Tools Forever (WTF)")
+    castAt(state, ENSLAVE, "nameplate4")
+    contains(state.sent[3].message, "Enslaving >> Imp <<")
+    state.emit("UNIT_SPELLCAST_SENT", "player", "", "cast-howl", HOWL)
+    contains(state.sent[4].message, "Howl of Terror! Everything nearby")
+    castAt(state, FEAR, "nameplate3")
+    equal(#state.sent, 4, "not again within a few seconds")
+    state.wtf.db.announce.banishGroup = false
+    state.now = state.now + 5
+    castAt(state, BANISH, "nameplate4")
+    equal(#state.sent, 4, "its switch")
+    local alone = controlFixture()
+    castAt(alone, FEAR, "nameplate3")
+    equal(#alone.sent, 0, "nothing when alone")
+end)
+test("clicking a row recasts its spell on its mob; a click begun in combat follows after", function()
+    local state = controlFixture()
+    castAt(state, FEAR, "nameplate3")
+    local click = state.env.WarlockToolsForeverControlClick1
+    equal(click.protected, true, "a secure button")
+    equal(click.shown, true)
+    equal(click.attributes.macrotext1, "/cleartarget\n/targetexact Boar\n/cast [@target,harm,nodead] Fear"
+        .. "\n/targetlasttarget")
+    -- A pull: the cast starts out of combat and lands in it.
+    state.units.target = state.units.nameplate4
+    state.emit("UNIT_SPELLCAST_SENT", "player", "Imp", "cast-banish", BANISH)
+    state.combat = true
+    state.emit("UNIT_SPELLCAST_SUCCEEDED", "player", "cast-banish", BANISH)
+    contains(state.env.WarlockToolsForeverControlClick2.attributes.macrotext1, "Banish", "ready for the fight")
+    -- Started in combat: the click waits for combat to end.
+    state.units.nameplate5 = {name = "Wolf", guid = "Creature-3"}
+    castAt(state, FEAR, "nameplate5")
+    equal(controlRow(state, 3).name.text, "Wolf", "the bar shows in combat")
+    equal(state.env.WarlockToolsForeverControlClick3.attributes.macrotext1, nil)
+    state.combat = false
+    state.emit("PLAYER_REGEN_ENABLED")
+    contains(state.env.WarlockToolsForeverControlClick3.attributes.macrotext1, "/targetexact Wolf")
+    equal(state.env.WarlockToolsForeverControlClick4.shown, false, "no click area without a mob")
+end)
+test("unlocked, the control bar shows samples to drag; debug_control reports the rows", function()
+    local state = controlFixture()
+    state.slash("unlock")
+    equal(controlRow(state, 1).name.text, "Fear (sample)")
+    equal(controlRow(state, 2).name.text, "Banish (sample)")
+    equal(state.env.WarlockToolsForeverControl.mover.shown, true)
+    state.slash("lock")
+    equal(controlRow(state, 1).shown, false)
+    state.settings.WTF_CONTROL_ENABLED:SetValue(false)
+    castAt(state, FEAR, "nameplate3")
+    equal(controlRow(state, 1).shown, false, "its switch")
+    state.clear()
+    state.slash("debug_control")
+    contains(state.messages[1], "debug_control available=true known=true")
+end)
+
 -- Demon Armor reminder ---------------------------------------------------------------
 
 local DEMON_SKIN, DEMON_ARMOR = 687, 706
@@ -1917,10 +2052,11 @@ test("Shift-dragging a frame moves every frame snapped to it", function()
     dropAt(state, counter, barX + bar.width / 2 + 20 + counter.width / 2 + 3, barY)
     local counterX, counterY = centerOf(state, counter)
     state.shift = true
-    dropAt(state, bar, 200, 500)
+    dropAt(state, bar, 150, 760)
+    local newBarX, newBarY = centerOf(state, bar)
     local movedX, movedY = centerOf(state, counter)
-    equal(movedX, counterX - 200, "the counter came along")
-    equal(movedY, counterY + 200)
+    equal(movedX - newBarX, counterX - barX, "the counter came along, the same distance away")
+    equal(movedY - newBarY, counterY - barY)
     equal(state.wtf.db.shards.counterPosition.relativePoint, "BOTTOMLEFT", "each saved on its own")
     state.shift = false
     dropAt(state, bar, 600, 600)

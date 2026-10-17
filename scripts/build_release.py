@@ -21,7 +21,7 @@ from pathlib import Path
 
 ADDON = "WarlockToolsForever"
 RUNTIME_FILES = ("Commands.lua", "Core.lua", "Layout.lua", "Shards.lua", "Stones.lua", "Announce.lua", "Tracker.lua",
-                 "Dots.lua", "Alerts.lua", "Shield.lua", "Chimes.lua", "Reminders.lua",
+                 "Dots.lua", "Control.lua", "Alerts.lua", "Shield.lua", "Chimes.lua", "Reminders.lua",
                  "Probe.lua", "Options.lua")
 TEXT_FILES = (ADDON + ".toc",) + RUNTIME_FILES + ("LICENSE",)
 # Runtime textures shipped in the package: the shield display's crescents,
