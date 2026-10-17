@@ -312,7 +312,11 @@ and printing.
       in chat.
 - [ ] Control bar: Fear two mobs and Banish a third: a row each, draining,
       following the mobs as you tab, empty when one breaks, gone when it
-      dies. Banish puts the moon on its mob; Fear marks nothing. In a party, each
+      dies. Banish puts the moon on its mob; Fear marks nothing. Each feared
+      mob's nameplate shows a draining Fear timer, also after it leaves plate
+      range and comes back. "! Banish" and (with a Succubus) "! Seduction"
+      focus the mob under the mouse and cast on it; Seduction does nothing
+      with another pet. A Banish row's click banishes the focus. In a party, each
       cast starts with its group message (Banish with {moon} as an icon). Fear a mob
       before the pull, then click its row in combat after it breaks: it
       recasts on that mob and returns to your target; with the mob gone,

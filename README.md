@@ -172,10 +172,20 @@ breaks early, and goes when the mob dies.
 - **Group messages:** Fear, Banish, Enslave Demon, and Howl of Terror can tell
   your party or raid as you start casting, with the mob's name and marker
   (Announce page).
-- **Click a row** to cast its spell on that mob again; WTF targets it by name
-  and returns you to your target. The game lets the click change only out of
-  combat: a Fear or Banish that starts before the pull is clickable all fight;
-  one started in combat on a new mob becomes clickable when combat ends.
+- **Click a Banish row** to banish your focus again (with no focus, WTF targets
+  the mob by name and returns you to your target). The game lets the click
+  change only out of combat: a Banish that starts before the pull is
+  clickable all fight; one started in combat becomes clickable when combat
+  ends.
+- **Fear rows** show each feared mob and its time left; they take no clicks,
+  since the game gives AddOns no way to aim at one of several same-named
+  mobs. Instead, a **Fear timer under each feared mob's nameplate** shows which
+  one is about to break: click its nameplate to target it, then Fear.
+- **Macros:** WTF keeps "! Banish" and "! Seduction" in your character macros,
+  each once you know its spell (Seduction once you know Summon Succubus). They
+  focus the hostile mob under your mouse (or your target, out of combat) and
+  cast on your focus; "! Seduction" does nothing unless your pet is a
+  Succubus. Turn them off on the Control settings page.
 
 ## Cooldown chimes
 

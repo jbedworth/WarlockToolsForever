@@ -68,7 +68,8 @@ Per-file changelogs need no manual text: each CI upload uses the version's
 - Tracker with a countdown bar for each mob you fear or banish.
 - Each bar tracks the time left on the effect.
 - Banish marks its mob with the moon so your group leaves it alone, and Fear, Banish, Enslave Demon, and Howl of Terror can tell your group as you cast.
-- Click a row to cast it on that mob again.
+- A Fear timer under each feared mob's nameplate shows which one is about to break.
+- Click a Banish row to banish your focus again. "! Banish" and "! Seduction" macros focus the mob under your mouse and cast on it.
 
 ### Cooldown chimes
 - A sound just before Death Coil, Howl of Terror, Shadow Ward, your Soulstone, and Fel Domination are ready again; works in and out of combat.
