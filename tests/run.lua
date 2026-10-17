@@ -2013,6 +2013,8 @@ test("a feared mob's nameplate shows a Fear countdown, also after its plate come
 end)
 test("control macros appear only for the spells you know; Seduction needs your Succubus", function()
     local state = controlFixture({known = {[FEAR] = true}})
+    equal(macroBody(state, "! Fear"), "#showtooltip Fear\n/cast [@mouseover,harm,nodead][harm,nodead] Fear",
+        "the mob under the mouse, else your target; no focus")
     equal(macroBody(state, "! Banish"), nil, "no Banish before you learn it")
     equal(macroBody(state, "! Seduction"), nil, "no Seduction before Summon Succubus")
     state.known[BANISH] = true
@@ -2030,6 +2032,7 @@ test("control macros appear only for the spells you know; Seduction needs your S
     state.emit("PLAYER_REGEN_ENABLED")
     equal(macroBody(state, "! Banish"), nil, "turning them off deletes them")
     equal(macroBody(state, "! Seduction"), nil)
+    equal(macroBody(state, "! Fear"), nil)
 end)
 test("unlocked, the control bar shows samples to drag; debug_control reports the rows", function()
     local state = controlFixture()

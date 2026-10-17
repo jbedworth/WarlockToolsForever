@@ -181,11 +181,13 @@ breaks early, and goes when the mob dies.
   since the game gives AddOns no way to aim at one of several same-named
   mobs. Instead, a **Fear timer under each feared mob's nameplate** shows which
   one is about to break: click its nameplate to target it, then Fear.
-- **Macros:** WTF keeps "! Banish" and "! Seduction" in your character macros,
-  each once you know its spell (Seduction once you know Summon Succubus). They
-  focus the hostile mob under your mouse (or your target, out of combat) and
-  cast on your focus; "! Seduction" does nothing unless your pet is a
-  Succubus. Turn them off on the Control settings page.
+- **Macros:** WTF keeps "! Fear", "! Banish", and "! Seduction" in your
+  character macros, each once you know its spell (Seduction once you know
+  Summon Succubus). "! Fear" Fears the mob under your mouse, else your
+  target: hover a feared mob's nameplate as its timer runs out and press it.
+  "! Banish" and "! Seduction" focus the hostile mob under your mouse (or your
+  target, out of combat) and cast on your focus; "! Seduction" does nothing
+  unless your pet is a Succubus. Turn them off on the Control settings page.
 
 ## Cooldown chimes
 
