@@ -15,6 +15,7 @@ Stones.lua
 Announce.lua
 Tracker.lua
 Dots.lua
+Control.lua
 Alerts.lua
 Shield.lua
 Chimes.lua

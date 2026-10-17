@@ -73,7 +73,8 @@ local REQUIRED_NAMESPACE = {
     "ReportStoneStatus", "RemindStones", "ApplyStoneMacros", "AddInputHandler", "RunOnNextInput", "ReportClickDebug",
     "Warn", "RegisterMovable", "BeginDrag", "EndDrag", "ScaleKeepingCenter",
     "InitializeReminders", "RefreshReminders", "ResetRemindersPosition", "ReportRemindersDebug",
-    "SanitizeReminders", "InitializeAnnounce", "FormatAnnouncement", "ReportAnnounceDebug", "DebugEmote", "FriendlyTargetNames",
+    "SanitizeReminders", "SendGroupAnnouncement",
+    "InitializeControl", "RefreshControl", "ResetControlPosition", "ReportControlDebug", "SanitizeControl", "InitializeAnnounce", "FormatAnnouncement", "ReportAnnounceDebug", "DebugEmote", "FriendlyTargetNames",
     "WhisperHealthstoneGift",
     "CheckTrackerCapabilities", "InitializeTracker", "ResetTrackerPosition", "RefreshTracker",
     "ReportTrackerDebug", "TrackerCandidateFilters", "TrackerKnowsSlot", "SetTrackerTheme",
@@ -152,6 +153,11 @@ WTF.ANNOUNCE_DEFAULTS = {
     healthstoneEmoteText = "crushes a Soul Shard and forges a Healthstone from the screaming essence within. - via Warlock Tools Forever (WTF)",
     soulstoneEmoteText = "binds a captured soul into a Soulstone. Someone's afterlife just got an escape hatch. - via Warlock Tools Forever (WTF)",
     healthstoneWhisperText = "Here, have a Healthstone. Some poor creature's essence gives you more health! Courtesy of Warlock Tools Forever (WTF)",
+    -- Control (author-approved): %T the mob, %M its raid marker in chat.
+    fearGroupText = "Fearing >> %T << %M. Let it run; chase it and you bring friends" .. WTF.ANNOUNCE_CREDIT,
+    banishGroupText = "Banishing >> %T << %M to the Twisting Nether. Hands off until it comes back" .. WTF.ANNOUNCE_CREDIT,
+    enslaveGroupText = "Enslaving >> %T <<. It works for me now; leave my new pet alone" .. WTF.ANNOUNCE_CREDIT,
+    howlGroupText = "Howl of Terror! Everything nearby is about to run screaming" .. WTF.ANNOUNCE_CREDIT,
 }
 -- Saved copies of earlier defaults, never edited, become the new ones.
 local OLD_ANNOUNCE_DEFAULTS = {
@@ -264,7 +270,8 @@ WTF.NIGHTFALL_SOUNDS = {
 WTF.DEFAULT_NIGHTFALL_SOUND = "impspell"
 
 local ANNOUNCE_SWITCHES = {"summonGroup", "summonWhisper", "soulstoneGroup", "soulstoneWhisper",
-    "healthstoneWhisper", "healthstoneEmote", "soulstoneEmote"}
+    "healthstoneWhisper", "healthstoneEmote", "soulstoneEmote", "fearGroup", "banishGroup", "enslaveGroup",
+    "howlGroup"}
 
 function WTF.SanitizeDB(db)
     if type(db) ~= "table" then
@@ -353,6 +360,9 @@ function WTF.SanitizeDB(db)
     end
     if WTF.SanitizeReminders then
         db.reminders = WTF.SanitizeReminders(db.reminders, SanitizePosition)
+    end
+    if WTF.SanitizeControl then
+        db.control = WTF.SanitizeControl(db.control, SanitizePosition)
     end
     -- The shield display is a self-contained component; it owns its defaults.
     if WTF.ShieldDisplay then
@@ -542,6 +552,7 @@ function WTF.SetFramesLocked(locked)
     WTF.RefreshShardCounter()
     WTF.RefreshShield()
     WTF.RefreshReminders()
+    WTF.RefreshControl()
     WTF.RefreshGrid()
     if locked then
         WTF.Report("All WTF frames locked.")
@@ -566,6 +577,7 @@ function WTF.ResetPositions()
     WTF.ResetTrackerPosition()
     WTF.ResetShieldPosition()
     WTF.ResetRemindersPosition()
+    WTF.ResetControlPosition()
     if InCombatLockdown() then
         WTF.Report("WTF frames move back to their default places after combat.")
     end
@@ -620,6 +632,7 @@ events:SetScript("OnEvent", function(self, event, loadedName)
     WTF.InitializeStones()
     WTF.InitializeAnnounce()
     WTF.InitializeTracker()
+    WTF.InitializeControl()
     WTF.InitializePlateDots()
     WTF.InitializeAlerts()
     WTF.InitializeShield()

@@ -13,6 +13,7 @@ local COLORS_TITLE = "DoT Colors"
 local ALERTS_TITLE = "Alerts"
 local SHIELD_TITLE = "Shield"
 local CHIMES_TITLE = "Cooldown Chimes"
+local CONTROL_TITLE = "Control"
 local UNAVAILABLE = "The AddOn settings page is unavailable on this client. Use /wtf shards for status."
 local GOLD = {1, 0.82, 0}
 
@@ -248,6 +249,47 @@ local function AddChimesPage(parent)
         NestSoundMenu(dropdown, CHIME_SOUND_SOURCE)
         dropdown:SetParentInitializer(switch, function() return WTF.db.chimes.spells[chime.key] end)
     end
+end
+
+local function RefreshControl()
+    WTF.RefreshControl()
+end
+
+local function AddControlPage(parent)
+    local page = Settings.RegisterVerticalLayoutSubcategory(parent, CONTROL_TITLE)
+    local function MarkerChoices()
+        local container = Settings.CreateControlTextContainer()
+        for _, marker in ipairs(WTF.RAID_MARKERS) do
+            container:Add(marker.index, marker.label)
+        end
+        return container:GetData()
+    end
+    for _, spell in ipairs(WTF.CONTROL_SPELLS) do
+        if spell.bar then
+            local marker = Proxy(page, "WTF_CONTROL_MARKER_" .. spell.key:upper(), Settings.VarType.Number,
+                spell.label .. " marker", spell.marker,
+                function() return WTF.db.control.markers[spell.key] end,
+                function(value)
+                    for _, choice in ipairs(WTF.RAID_MARKERS) do
+                        if choice.index == value then
+                            WTF.db.control.markers[spell.key] = value
+                        end
+                    end
+                end)
+            Settings.CreateDropdown(page, marker, MarkerChoices, "The raid marker WTF puts on a mob when your "
+                .. spell.label .. " lands, and %M in its message. In a raid only the leader and assistants mark.")
+        end
+    end
+    local scale = Proxy(page, "WTF_CONTROL_SCALE", Settings.VarType.Number, "Bar size (%)",
+        WTF.DEFAULT_CONTROL_SCALE,
+        function() return WTF.db.control.scale end,
+        function(value)
+            WTF.db.control.scale = WTF.SanitizeControlScale(value)
+            RefreshControl()
+        end)
+    Settings.CreateSlider(page, scale,
+        SliderOptions(WTF.CONTROL_SCALE_MIN, WTF.CONTROL_SCALE_MAX, WTF.CONTROL_SCALE_STEP),
+        "How big the control bar is, in percent. A change in combat applies when combat ends.")
 end
 
 local function AddShardPage(parent)
@@ -513,6 +555,10 @@ local ANNOUNCE_ROWS = {
     {switch = "healthstoneWhisper", label = "Healthstone trade: whisper the player"},
     {switch = "healthstoneEmote", label = "Healthstone created: emote (starts with your name; once a minute)"},
     {switch = "soulstoneEmote", label = "Soulstone created: emote (starts with your name; once a minute)"},
+    {switch = "fearGroup", label = "Fear: tell the group as you start casting (%M: its marker)"},
+    {switch = "banishGroup", label = "Banish: tell the group as you start casting (%M: its marker)"},
+    {switch = "enslaveGroup", label = "Enslave Demon: tell the group as you start casting"},
+    {switch = "howlGroup", label = "Howl of Terror: tell the group"},
 }
 local PAGE_LEFT = 16
 local ROW_GAP = 10
@@ -559,7 +605,8 @@ local function CreateAnnouncePage()
     local title = Text(content, "GameFontHighlightHuge", ANNOUNCE_TITLE)
     title:SetPoint("TOPLEFT", PAGE_LEFT, -16)
     local help = Text(content, "GameFontHighlightSmall",
-        "%T is the target's full name and %Z your zone. Press Enter to keep an edit, Escape to undo it. "
+        "%T is the target's full name (for control spells, the mob), %Z your zone, and %M the mob's raid "
+            .. "marker. Press Enter to keep an edit, Escape to undo it. "
             .. "Nothing is sent for yourself or for a cast that fails.")
     help:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -8)
     help:SetWidth(EDIT_WIDTH)
@@ -683,6 +730,8 @@ function WTF.InitializeOptions()
         "A crescent beside your character that fills with your remaining shield: Shadow Ward, your "
             .. "Voidwalker's Sacrifice, or a shield another player puts on you, like Power Word: Shield.",
         RefreshShield)
+    Flag(category, "WTF_CONTROL_ENABLED", "Control bar", "control", "enabled", true,
+        "A bar per mob you Fear or Banish with its time left; click one to cast it again.", RefreshControl)
     Flag(category, "WTF_REMINDERS_ENABLED", "Demon Armor reminder", "reminders", "enabled", true,
         "An icon with a pulsing border while you lack Demon Armor (or Demon Skin), out of combat. Click it "
             .. "to cast your armor.", function() WTF.RefreshReminders() end)
@@ -709,6 +758,7 @@ function WTF.InitializeOptions()
     AddAlertsPage(category)
     AddShieldPage(category)
     AddChimesPage(category)
+    AddControlPage(category)
     local announcePage = CreateAnnouncePage()
     WTF.announcePage = announcePage
     Settings.RegisterCanvasLayoutSubcategory(category, announcePage, ANNOUNCE_TITLE)
