@@ -237,24 +237,26 @@ end
 -- Nightfall sound choices (Alerts): demon chirps and laughs by file ID, from
 -- the game's sound files as Leatrix Sounds lists them for this client
 -- (sound/creature/demonfelimp and hellish_imp), and three interface sounds by
--- path. A number is a file ID, a string a file path.
+-- path. A number is a file ID, a string a file path. Labels are "Group: Name"
+-- for the nested menu. The game's aura sounds take only sound files, not the
+-- Cooldown Manager's sound kits, so the cooldown chimes' catalog is not here.
 WTF.NIGHTFALL_SOUNDS = {
-    {key = "implaugh1", label = "Imp laugh 1", file = 639142},
-    {key = "implaugh2", label = "Imp laugh 2", file = 639144},
-    {key = "implaugh3", label = "Imp laugh 3", file = 639146},
-    {key = "implaugh4", label = "Imp laugh 4", file = 639148},
-    {key = "implaugh5", label = "Imp laugh 5", file = 639150},
-    {key = "implaugh6", label = "Imp laugh 6", file = 639152},
-    {key = "implaugh7", label = "Imp laugh 7", file = 639154},
-    {key = "impfunny", label = "Imp chuckle", file = 639140},
-    {key = "impattack1", label = "Imp attack chirp 1", file = 639100},
-    {key = "impattack2", label = "Imp attack chirp 2", file = 639104},
-    {key = "impspell", label = "Imp spell chirp", file = 639156},
-    {key = "hellishimp1", label = "Hellish imp 1", file = 1281685},
-    {key = "hellishimp2", label = "Hellish imp 2", file = 1281691},
-    {key = "raidwarning", label = "Raid warning", file = "Sound\\Interface\\RaidWarning.ogg"},
-    {key = "readycheck", label = "Ready check", file = "Sound\\Interface\\ReadyCheck.ogg"},
-    {key = "alarm", label = "Alarm clock", file = "Sound\\Interface\\AlarmClockWarning3.ogg"},
+    {key = "implaugh1", label = "Imp: Laugh 1", file = 639142},
+    {key = "implaugh2", label = "Imp: Laugh 2", file = 639144},
+    {key = "implaugh3", label = "Imp: Laugh 3", file = 639146},
+    {key = "implaugh4", label = "Imp: Laugh 4", file = 639148},
+    {key = "implaugh5", label = "Imp: Laugh 5", file = 639150},
+    {key = "implaugh6", label = "Imp: Laugh 6", file = 639152},
+    {key = "implaugh7", label = "Imp: Laugh 7", file = 639154},
+    {key = "impfunny", label = "Imp: Chuckle", file = 639140},
+    {key = "impattack1", label = "Imp: Attack chirp 1", file = 639100},
+    {key = "impattack2", label = "Imp: Attack chirp 2", file = 639104},
+    {key = "impspell", label = "Imp: Spell chirp", file = 639156},
+    {key = "hellishimp1", label = "Hellish imp: Cackle 1", file = 1281685},
+    {key = "hellishimp2", label = "Hellish imp: Cackle 2", file = 1281691},
+    {key = "raidwarning", label = "Interface: Raid warning", file = "Sound\\Interface\\RaidWarning.ogg"},
+    {key = "readycheck", label = "Interface: Ready check", file = "Sound\\Interface\\ReadyCheck.ogg"},
+    {key = "alarm", label = "Interface: Alarm clock", file = "Sound\\Interface\\AlarmClockWarning3.ogg"},
 }
 -- The author's pick after auditioning; players audition the rest.
 WTF.DEFAULT_NIGHTFALL_SOUND = "impspell"

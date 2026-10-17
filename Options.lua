@@ -178,6 +178,35 @@ local CHIME_SOUND_SOURCE = {
     label = function(key) return WTF.ChimeSoundLabel(key) end,
 }
 
+-- Nightfall's sounds in the same nested menu, grouped by their labels.
+local function SoundParts(sound)
+    local group, name = sound.label:match("^(.-): (.+)$")
+    return group, name or sound.label
+end
+
+local NIGHTFALL_SOUND_SOURCE = {
+    groups = function()
+        local groups, byName = {}, {}
+        for _, sound in ipairs(WTF.NIGHTFALL_SOUNDS) do
+            local group = SoundParts(sound) or sound.label
+            if not byName[group] then
+                byName[group] = {name = group, sounds = {}}
+                groups[#groups + 1] = byName[group]
+            end
+            byName[group].sounds[#byName[group].sounds + 1] = sound
+        end
+        return groups
+    end,
+    parts = SoundParts,
+    label = function(key)
+        for _, sound in ipairs(WTF.NIGHTFALL_SOUNDS) do
+            if sound.key == key then
+                return sound.label
+            end
+        end
+    end,
+}
+
 local function AddChimesPage(parent)
     local page = Settings.RegisterVerticalLayoutSubcategory(parent, CHIMES_TITLE)
     -- Every sound by its full label: the dropdown's plain list, used when the
@@ -468,6 +497,7 @@ local function AddAlertsPage(parent)
     end
     local soundInitializer = Settings.CreateDropdown(page, sound, Choices,
         "The sound to play. Choosing one plays it once.")
+    NestSoundMenu(soundInitializer, NIGHTFALL_SOUND_SOURCE)
     soundInitializer:SetParentInitializer(nightfall, function()
         return WTF.db.alerts.nightfall and WTF.HasNightfallSound()
     end)
