@@ -168,7 +168,9 @@ breaks early, and goes when the mob dies.
 
 - **Raid marker:** a mob you Banish gets the moon when the cast lands, so your
   group knows it is out of the fight (change it on the Control settings page).
-  Fear marks nothing, so WTF uses only one marker slot in a group.
+  Fear marks nothing, so WTF uses only one marker slot in a group. If you mark
+  with your own `/tm` macro, set Banish's marker to None: the game toggles a
+  marker that is set twice, and in combat WTF cannot see yours.
 - **Group messages:** Fear, Banish, Enslave Demon, and Howl of Terror can tell
   your party or raid as you start casting, with the mob's name and marker
   (Announce page).

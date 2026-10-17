@@ -302,15 +302,22 @@ module only after the author agrees its behavior.
   rows, one per mob you Fear or Banish, each an AuraContainer slot
   (`HARMFUL|PLAYER`, Fear and Banish IDs plus spellbook IDs of those names)
   with the mob's name above a bar line. Rows come from your cast events (SENT
-  names the target, matched to a unit for its GUID) and bind to the mob's
-  nameplate, target, focus, or mouseover; a recast on the same mob keeps its
-  row. A row goes when the mob dies, after the longest such spell plus 5 s
+  names the target, matched to a unit for its GUID) and bind to the mob
+  through your focus, then target, then its nameplate (never mouseover); a
+  recast on the same mob keeps its row. A row goes when the mob dies, after the longest such spell plus 5 s
   (Fear 20, Banish 30), or never when the cast fails.
 - A raid marker per spell when the cast succeeds (Control page; Banish
   moon by default; author-approved: single-target control only, one marker
-  slot in a group, so Fear never marks and has no marker setting; skipped
-  when already set). %M puts its chat code in the message ("{moon}"). An
-  earlier default diamond moves to the moon once (`markersVersion`).
+  slot in a group, so Fear never marks and has no marker setting). %M puts
+  its chat code in the message ("{moon}"). An earlier default diamond moves
+  to the moon once (`markersVersion`). SetRaidTarget toggles: a unit that already has the marker loses it (the
+  pinned /tm source; its "!" prefix skips an equal marker). GetRaidTargetIndex
+  is secret to AddOn code in combat, so the mark is skipped when the index is
+  readable and equal, or, unreadable, when this AddOn marked that mob (by GUID)
+  already. The mark goes on your target or focus when it is the mob, as
+  TankHelper marks `TARGET`. A player's own `/tm` macro would clash in combat
+  (the AddOn cannot see that mark), so the README says to turn the AddOn's
+  marking off when using one.
 - Click to recast, Banish only (author-approved: single-target control
   follows the focus): each row has a fixed secure click slot under it
   (`WarlockToolsForeverControlClick1`..5) with `/cast [@focus,harm,nodead]
