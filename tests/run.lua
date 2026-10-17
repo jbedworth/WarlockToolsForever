@@ -535,6 +535,9 @@ local function fixture(options)
                 return object
             end,
             OpenToCategory = function(id) state.opened = id end,
+            InitDropdown = function(dropdown, setting, inserter)
+                dropdown.setting, dropdown.inserter = setting, inserter
+            end,
             NotifyUpdate = function(variable) state.notified[#state.notified + 1] = variable end,
         }
     end
@@ -2180,8 +2183,77 @@ test("the Alerts page has the switch and a sound dropdown under it", function()
     equal(dropdown.parentInitializer, page.initializers[1])
     local choices = dropdown.choices()
     equal(#choices, 16)
-    equal(choices[1].label, "Imp laugh 1")
-    equal(choices[14].label, "Raid warning")
+    equal(choices[1].label, "Imp: Laugh 1")
+    equal(choices[14].label, "Interface: Raid warning")
+end)
+
+-- A menu description as the client's menu API builds it: buttons open submenus.
+local function menuDescription()
+    local description = {entries = {}}
+    function description:CreateButton(text)
+        local submenu = menuDescription()
+        submenu.text = text
+        self.entries[#self.entries + 1] = submenu
+        return submenu
+    end
+    function description:CreateRadio(text, isSelected, setSelected, data)
+        local radio = {text = text, data = data, isSelected = isSelected, setSelected = setSelected}
+        self.entries[#self.entries + 1] = radio
+        return radio
+    end
+    return description
+end
+
+-- Opens a dropdown as the client would: a pooled control, with Blizzard's
+-- own builder, is initialized for it.
+local function openMenu(dropdown, setting)
+    dropdown.GetSetting = function() return setting end
+    local control = {Dropdown = {}}
+    function control:SetupDropdownMenu() self.blizzardMenu = true end
+    function control:Init(initializer)
+        self:SetupDropdownMenu(self.Dropdown, initializer.setting, nil, nil, initializer)
+    end
+    dropdown:InitFrame(control)
+    control:Init(dropdown)
+    local root = menuDescription()
+    control.Dropdown.inserter(control.Dropdown.setting, root)
+    return root, control
+end
+
+local function groupNames(root)
+    local names = {}
+    for _, entry in ipairs(root.entries) do names[#names + 1] = entry.text end
+    return table.concat(names, ",")
+end
+
+test("the Nightfall sound is picked from a menu of submenus", function()
+    local state = fixture()
+    local page = state.categories.Alerts
+    local dropdown, setting = page.initializers[2], state.settings.WTF_ALERTS_NIGHTFALL_SOUND
+    equal(dropdown.data.forceSteppersHidden, true)
+    local root = openMenu(dropdown, setting)
+    equal(groupNames(root), "Imp,Hellish imp,Interface")
+    local imp = root.entries[1]
+    equal(imp.entries[1].text, "Laugh 1", "names inside their group")
+    imp.entries[1].setSelected(imp.entries[1].data)
+    equal(state.wtf.db.alerts.nightfallSound, "implaugh1")
+    equal(state.played.file, 639142, "choosing one plays it")
+    equal(dropdown.getSelectionTextFunc(), "Imp: Laugh 1")
+end)
+test("each chime's sound menu has the Cooldown Manager's groups; other dropdowns keep Blizzard's", function()
+    local state = fixture()
+    local page = state.categories["Cooldown Chimes"]
+    local setting = state.settings.WTF_CHIME_SOUND_DEATHCOIL
+    local dropdown
+    for _, initializer in ipairs(page.initializers) do
+        if initializer.setting == setting then dropdown = initializer end
+    end
+    local root, control = openMenu(dropdown, setting)
+    equal(groupNames(root), "Interface,Animals,Devices,Impacts,Instruments,Short,Warcraft 2,Warcraft 3")
+    equal(control.blizzardMenu, nil, "WTF's own menu")
+    control.Dropdown.inserter = nil
+    control:Init({setting = {}})
+    equal(control.blizzardMenu, true, "another dropdown gets Blizzard's menu")
 end)
 
 -- Announce ---------------------------------------------------------------------
