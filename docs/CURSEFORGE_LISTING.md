@@ -20,7 +20,7 @@ tested.
 
 ## Summary
 
-Quality-of-life tools for Warlocks in World of Warcraft: Forever: Soul Shard management, Soulstone and Healthstone buttons, a multi-mob DoT tracker, a Fear and Banish bar, cooldown chimes, and announcements with flavor.
+Quality-of-life tools for Warlocks in World of Warcraft: Forever: Soul Shard management, Soulstone and Healthstone buttons, a multi-mob DoT tracker, a Fear and Banish bar, cooldown chimes, and customizable announcements with flavor.
 
 ## Description
 
@@ -65,16 +65,17 @@ Per-file changelogs need no manual text: each CI upload uses the version's
 - Optional colored DoT dots above hostile nameplates: grey means missing, at a glance.
 
 ### Control bar
-- A bar for each mob you Fear or Banish, with its time left, several at once.
+- Tracker with a countdown bar for each mob you fear or banish.
+- Each bar tracks the time left on the effect.
 - Banish marks its mob with the diamond (pick any marker per spell), and Fear, Banish, Enslave Demon, and Howl of Terror can tell your group as you cast.
 - Click a row to cast it on that mob again.
 
 ### Cooldown chimes
-- A sound just before Death Coil, Howl of Terror, Shadow Ward, your Soulstone, and Fel Domination are ready again, also in combat.
-- Each spell picks its own sound from the Cooldown Manager's sounds, or a voice that says its name.
+- A sound just before Death Coil, Howl of Terror, Shadow Ward, your Soulstone, and Fel Domination are ready again; works in and out of combat.
+- You can configure a sound (or text-to-speech) for each.
 
 ### Shield display
-- A crescent that fills with your Shadow Ward, your Voidwalker's Sacrifice, or a shield someone puts on you, and drains as it absorbs.
+- A crescent that fills with your Shadow Ward, your Voidwalker's Sacrifice, or any absorb shield on you (Power Word: Shield, protection potions, trinkets), and drains as it absorbs.
 
 ### Demon Armor reminder
 - An icon with a pulsing border while your armor is down. Click it to cast it.
