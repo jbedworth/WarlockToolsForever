@@ -138,6 +138,11 @@ function WTF.EndDrag(frame)
     end
     layout.dragging[frame] = nil
     frame:StopMovingOrSizing()
+    -- Combat began during the drag: secure frames cannot move now, so the
+    -- frames stay where they are and keep their saved places.
+    if InCombatLockdown() then
+        return
+    end
     local inGroup = {}
     for _, member in ipairs(group) do
         inGroup[member] = true
