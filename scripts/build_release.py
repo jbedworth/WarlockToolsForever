@@ -20,7 +20,7 @@ from pathlib import Path
 
 
 ADDON = "WarlockToolsForever"
-RUNTIME_FILES = ("Commands.lua", "Core.lua", "Shards.lua", "Stones.lua", "Announce.lua", "Tracker.lua",
+RUNTIME_FILES = ("Commands.lua", "Core.lua", "Layout.lua", "Shards.lua", "Stones.lua", "Announce.lua", "Tracker.lua",
                  "Dots.lua", "Alerts.lua", "Probe.lua", "Options.lua")
 TEXT_FILES = (ADDON + ".toc",) + RUNTIME_FILES + ("LICENSE",)
 # Runtime textures shipped in the package. WTF uses only built-in client

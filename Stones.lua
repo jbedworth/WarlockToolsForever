@@ -522,11 +522,6 @@ local function ShowTooltip(button)
     GameTooltip:Show()
 end
 
-local function SavePosition(bar)
-    local point, _, relativePoint, x, y = bar:GetPoint()
-    WTF.db.stones.position = {point = point, relativePoint = relativePoint, x = x, y = y}
-end
-
 local function PlaceBar(bar)
     local position = WTF.db.stones.position
     bar:ClearAllPoints()
@@ -537,16 +532,13 @@ local function PlaceBar(bar)
     end
 end
 
+-- Dragging and snapping: Layout.lua.
 local function StartDrag()
-    if WTF.db.stones.locked or InCombatLockdown() then
-        return
-    end
-    buttons.bar:StartMoving()
+    WTF.BeginDrag(buttons.bar)
 end
 
 local function StopDrag()
-    buttons.bar:StopMovingOrSizing()
-    SavePosition(buttons.bar)
+    WTF.EndDrag(buttons.bar)
 end
 
 local function CreateStoneButton(bar, name, kind, index)
@@ -795,6 +787,7 @@ function WTF.InitializeStones()
     bar:SetScript("OnDragStart", StartDrag)
     bar:SetScript("OnDragStop", StopDrag)
     bar.mover = WTF.CreateMover(bar)
+    WTF.RegisterMovable(bar, function(position) WTF.db.stones.position = position end)
     buttons.bar = bar
     buttons.soulstone = CreateStoneButton(bar, "WarlockToolsForeverSoulstone", "soulstone", 1)
     buttons.healthstone = CreateStoneButton(bar, "WarlockToolsForeverHealthstone", "healthstone", 2)

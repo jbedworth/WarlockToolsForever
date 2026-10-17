@@ -354,16 +354,10 @@ local function CreateCounter()
     end
     counter.count:SetShadowColor(0, 0, 0, 1)
     counter.count:SetShadowOffset(1, -1)
-    counter:SetScript("OnDragStart", function(self)
-        if not WTF.db.shards.counterLocked then
-            self:StartMoving()
-        end
-    end)
-    counter:SetScript("OnDragStop", function(self)
-        self:StopMovingOrSizing()
-        local point, _, relativePoint, x, y = self:GetPoint()
-        WTF.db.shards.counterPosition = {point = point, relativePoint = relativePoint, x = x, y = y}
-    end)
+    -- Dragging and snapping: Layout.lua.
+    counter:SetScript("OnDragStart", WTF.BeginDrag)
+    counter:SetScript("OnDragStop", WTF.EndDrag)
+    WTF.RegisterMovable(counter, function(position) WTF.db.shards.counterPosition = position end)
     counter:SetScript("OnEnter", ShowCounterTooltip)
     counter:SetScript("OnLeave", function() GameTooltip:Hide() end)
     counter.mover = WTF.CreateMover(counter)
