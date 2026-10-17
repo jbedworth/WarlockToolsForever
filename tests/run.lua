@@ -598,7 +598,11 @@ local function fixture(options)
         function object:EnableMouse(value) self.mouseDisabled = value == false end
         function object:SetHeight(height) self.height = height end
         function object:SetSize(width, height) self.width, self.height = width, height end
-        function object:SetScale(value) self.scale = value end
+        -- As in client, secure frames refuse layout changes in combat.
+        function object:SetScale(value)
+            if state.combat and self.protected then error("SetScale in combat") end
+            self.scale = value
+        end
         function object:GetWidth() return self.width or 0 end
         function object:GetHeight() return self.height or 0 end
         function object:GetEffectiveScale()
@@ -652,8 +656,14 @@ local function fixture(options)
             self.shown = false
         end
         function object:IsShown() return self.shown end
-        function object:SetPoint(...) self.points[#self.points + 1] = {...} end
-        function object:ClearAllPoints() self.points = {} end
+        function object:SetPoint(...)
+            if state.combat and self.protected then error("SetPoint in combat") end
+            self.points[#self.points + 1] = {...}
+        end
+        function object:ClearAllPoints()
+            if state.combat and self.protected then error("ClearAllPoints in combat") end
+            self.points = {}
+        end
         function object:GetPoint()
             -- As in client, a frame with no points returns nothing.
             local point = self.points[#self.points]
