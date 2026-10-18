@@ -24,6 +24,12 @@ local addonName, ns = ...
 -- the shield's length; out of combat your buffs are read too, so a shield that
 -- broke early hides then.
 --
+-- Tiny absorbs never show (a Paladin's Seal of Righteousness gives one of
+-- 10-20 points, used up at once, so the ring flickered). The absorb cannot be
+-- compared, so a hidden gate bar does it: its range is one point wide, ending
+-- at the minimum, so its fill is empty below the minimum and full from it. A
+-- clipping frame spans that fill, and everything visible sits inside it.
+--
 -- Shields with no absorb amount drain with time instead (see `timed` below):
 -- Mana Shield in the inner crescent, and bubbles (Divine Shield, Divine
 -- Protection, Blessing of Protection: immunities with only a duration) in the
@@ -49,7 +55,7 @@ local addonName, ns = ...
 -- other copy says which AddOn shows it. Version 1 copies elect among every
 -- registered copy, so a version 1 copy stands down for any newer one.
 
-local VERSION = 4
+local VERSION = 5
 local REGISTRY_NAME = "ShieldForeverRegistry"
 
 local ARC_TEXTURE = "Interface\\AddOns\\" .. addonName .. "\\Textures\\ShieldArc"
@@ -73,6 +79,14 @@ local DEFAULT_POINT = {"CENTER", "CENTER", 20, -20}
 local TEXT_X = 0.8
 local TEXT_Y = 0.02
 local BACKGROUND_ALPHA = 0.35
+-- The smallest absorb the ring shows: this many points, or this share of your
+-- health when the client lets AddOn code read it, whichever is larger. Below
+-- every real shield (rank 1 Power Word: Shield absorbs 44).
+local MIN_ABSORB = 25
+local MIN_ABSORB_SHARE = 0.05
+-- How far below the frame the gate reaches, so the number under it shows.
+local GATE_TEXT_ROOM = 40
+local GATE_TEXTURE = "Interface\\Buttons\\WHITE8X8"
 -- Seconds after your shield cast during which an absorb change is that shield
 -- landing, so its total is the shield's size.
 local CAPTURE_SECONDS = 0.5
@@ -225,6 +239,16 @@ local function HasAbsorbAPI()
     return type(UnitGetTotalAbsorbs) == "function" and type(UnitHealthMax) == "function"
 end
 
+-- Your health may be secret (SecretWhenUnitHealthMaxRestricted); then only
+-- the fixed minimum counts.
+local function MinimumAbsorb()
+    local maxHealth = UnitHealthMax("player")
+    if IsSecret(maxHealth) or type(maxHealth) ~= "number" then
+        return MIN_ABSORB
+    end
+    return math.max(MIN_ABSORB, math.floor(maxHealth * MIN_ABSORB_SHARE))
+end
+
 -- The client hands both values over as they are, secret or not.
 local function UpdateFill()
     if not frame then
@@ -232,6 +256,8 @@ local function UpdateFill()
     end
     if not Config().locked then
         frame.visible:SetAlpha(1)
+        frame.gate:SetMinMaxValues(0, 1)
+        frame.gate:SetValue(1)
         frame.bar:SetMinMaxValues(0, 1)
         frame.bar:SetValue(SAMPLE_FILL)
         frame.text:SetText(SAMPLE_TEXT)
@@ -239,6 +265,9 @@ local function UpdateFill()
     end
     local absorb = UnitGetTotalAbsorbs("player")
     frame.visible:SetAlpha(absorb)
+    local minimum = MinimumAbsorb()
+    frame.gate:SetMinMaxValues(minimum - 1, minimum)
+    frame.gate:SetValue(absorb)
     -- Against the shield's size when it landed; your health until one is known.
     frame.bar:SetMinMaxValues(0, shield.size or UnitHealthMax("player"))
     frame.bar:SetValue(absorb)
@@ -639,12 +668,22 @@ local function CreateRing()
     -- Everything visible sits in one frame whose opacity follows the absorb.
     frame.visible = CreateFrame("Frame", nil, frame)
     frame.visible:SetAllPoints()
-    frame.background = frame.visible:CreateTexture(nil, "BACKGROUND")
+    -- The gate: never seen, its fill only sizes the clipping frame.
+    frame.gate = CreateFrame("StatusBar", nil, frame)
+    frame.gate:SetAllPoints()
+    frame.gate:SetStatusBarTexture(GATE_TEXTURE)
+    frame.gate:SetOrientation("HORIZONTAL")
+    frame.gate:SetAlpha(0)
+    frame.gated = CreateFrame("Frame", nil, frame.visible)
+    frame.gated:SetClipsChildren(true)
+    frame.gated:SetPoint("TOPLEFT", frame, "TOPLEFT")
+    frame.gated:SetPoint("BOTTOMRIGHT", frame.gate:GetStatusBarTexture(), "BOTTOMRIGHT", 0, -GATE_TEXT_ROOM)
+    frame.background = frame.gated:CreateTexture(nil, "BACKGROUND")
     FitCrescent(frame.background, OUTER_SPAN)
     frame.background:SetTexture(ARC_TEXTURE)
     frame.background:SetVertexColor(0, 0, 0)
     frame.background:SetAlpha(BACKGROUND_ALPHA)
-    frame.bar = CreateFrame("StatusBar", nil, frame.visible)
+    frame.bar = CreateFrame("StatusBar", nil, frame.gated)
     FitCrescent(frame.bar, OUTER_SPAN)
     frame.bar:SetStatusBarTexture(ARC_TEXTURE)
     frame.bar:SetOrientation("VERTICAL")
@@ -808,7 +847,7 @@ function ShieldDisplay.ReportDebug(report)
         -- The ring's opacity is the absorb; this shows what the client made of it.
         if frame then
             local alpha = frame.visible:GetAlpha()
-            Report("ringAlpha=" .. Describe(alpha))
+            Report("ringAlpha=" .. Describe(alpha) .. " minimumAbsorb=" .. MinimumAbsorb())
         end
     end)
     Step("maxHealth", function()

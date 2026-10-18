@@ -614,6 +614,13 @@ local function fixture(options)
         function object:SetBackdrop(backdrop) self.backdrop = backdrop end
         function object:SetStatusBarColor(...) self.barColor = {...} end
         function object:SetStatusBarTexture(texture) self.statusBarTexture = texture end
+        function object:SetMinMaxValues(minValue, maxValue) self.minValue, self.maxValue = minValue, maxValue end
+        function object:SetValue(value) self.value = value end
+        function object:GetStatusBarTexture()
+            self.fill = self.fill or widget("Texture", nil, self)
+            return self.fill
+        end
+        function object:SetClipsChildren(value) self.clips = value end
         function object:SetColorTexture(...) self.color = {...} end
         function object:SetWidth(width) self.width = width end
         function object:EnableMouse(value) self.mouseDisabled = value == false end
@@ -2171,6 +2178,20 @@ local function dropAt(state, frame, x, y, handle)
     handle.scripts.OnDragStop(handle)
 end
 
+test("a tiny absorb stays hidden: a gate bar ending at the minimum clips the ring", function()
+    local state = fixture()
+    local ring = state.wtf.ShieldDisplay.frame
+    state.emit("UNIT_ABSORB_AMOUNT_CHANGED", "player")
+    equal(ring.gate.value, state.absorb, "the secret absorb, passed on unread")
+    equal(ring.gate.minValue, 74, "one point wide, so the fill is empty or full")
+    equal(ring.gate.maxValue, 75, "5% of 1500 health beats 25 points")
+    equal(ring.gated.clips, true)
+    equal(ring.gated.points[2][2], ring.gate:GetStatusBarTexture(), "the clip ends where the gate's fill ends")
+    equal(ring.bar.parent, ring.gated)
+    equal(ring.gated.parent, ring.visible, "the opacity still follows the absorb")
+    state.slash("unlock")
+    equal(ring.gate.value, 1, "unlocked, the gate is open for the sample")
+end)
 test("WTF ships the shield display: it follows its switch and the lock", function()
     local state = fixture()
     local ring = state.wtf.ShieldDisplay.frame
@@ -2247,17 +2268,17 @@ end)
 
 test("a copy registered first whose AddOn stays off does not keep WTF's display away", function()
     -- MTF loads first (folder order) but stays off on a Warlock.
-    local state = fixture({shieldCopies = {{addon = "MageToolsForever", version = 4, before = true}}})
+    local state = fixture({shieldCopies = {{addon = "MageToolsForever", version = 5, before = true}}})
     equal(state.wtf.ShieldDisplay.IsOwner(), true, "only running copies take part")
     equal(state.wtf.ShieldDisplay.frame ~= nil, true, "WTF draws the ring")
     state.clear()
     state.slash("debug_shield")
     contains(table.concat(state.messages, "|"),
-        "owner=WarlockToolsForever copies=MageToolsForever v4, WarlockToolsForever v4 (running)")
+        "owner=WarlockToolsForever copies=MageToolsForever v5, WarlockToolsForever v5 (running)")
     equal(table.concat(state.messages, "|"):find("failed", 1, true), nil, "every debug step ran")
 end)
 test("a newer running copy takes over, and WTF says which AddOn shows the display", function()
-    local state = fixture({shieldCopies = {{addon = "ShieldForever", version = 5}}})
+    local state = fixture({shieldCopies = {{addon = "ShieldForever", version = 6}}})
     equal(state.wtf.ShieldDisplay.frame ~= nil, true, "drawing while it is the only one running")
     local other = state.copies.ShieldForever.ShieldDisplay
     other.Initialize({settings = function() return other.Sanitize({}) end, report = function() end})

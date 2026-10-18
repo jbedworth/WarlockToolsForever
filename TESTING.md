@@ -187,6 +187,10 @@ the automated test method, and the in-client checklist.
   `UNIT_SPELLCAST_SUCCEEDED` (spell ID) stay readable: Corruption 6222 and
   Drain Life 699, the Classic spell IDs. Nameplate units and their GUIDs are
   readable too.
+- The minimum-absorb gate (shield display v5) works: a frame anchored to a
+  StatusBar's fill texture follows a secret value, and its clipping hides the
+  crescent while the fill is empty. A Paladin's Seal of Righteousness shield
+  no longer flickers the ring (confirmed on a Paladin).
 
 ### Open client questions
 
