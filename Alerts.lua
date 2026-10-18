@@ -1,4 +1,4 @@
-local _, WTF = ...
+local addonName, WTF = ...
 
 -- Alerts: a sound when Nightfall procs. Forever's Nightfall talent gives
 -- Corruption, Drain Soul, Drain Life, and Wrack a chance to grant Shadow
@@ -16,10 +16,13 @@ local SOUND_THROTTLE = 1
 
 local alerts = {soundID = nil, deferred = false, available = false}
 
+local SOUND_FOLDER = "Interface\\AddOns\\" .. addonName .. "\\Sounds\\"
+
+-- A file ID (a number), or the path of one of WTF's own sounds.
 local function SoundFile(key)
     for _, sound in ipairs(WTF.NIGHTFALL_SOUNDS) do
         if sound.key == key then
-            return sound.file
+            return sound.pick and SOUND_FOLDER .. sound.pick or sound.file
         end
     end
 end

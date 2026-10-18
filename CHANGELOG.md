@@ -4,6 +4,14 @@ Player-facing changes for each Warlock Tools Forever release, newest first. The
 release builder copies the section for the TOC version into the GitHub release
 notes and the CurseForge changelog, and fails if that section is missing.
 
+## 0.2.1-beta
+
+- Shield display: tiny shields no longer flicker the crescent. Absorbs under 25 points or 5% of your health, whichever is larger, are not drawn (a Paladin's Seal of Righteousness gives one of 10-20 points).
+- The sound when a shield ends now plays (the old sound did not play on Forever). Choose it from nine sounds under its switch; choosing one plays it.
+- Cooldown chimes: Dyre's Picks, nine new sounds, lead each chime's sound menu.
+- Nightfall sound: Dyre's Picks lead its menu too. Raid warning, Ready check, and Alarm clock are gone, since they did not play on Forever; if you chose one, the Imp spell chirp plays instead.
+- With Dyre's Shields Up (formerly Shields Up Forever) also installed, you still see one display.
+
 ## 0.2.0-beta
 
 - Control bar: a bar for each mob you Fear or Banish, with its name and time left. A Banished mob gets the moon marker when the cast lands (never toggled off), and clicking its row banishes your focus again. Fear timers show under each feared mob's nameplate. Optional group messages for Fear, Banish, Enslave Demon, and Howl of Terror.

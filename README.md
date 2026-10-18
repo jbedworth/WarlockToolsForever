@@ -154,8 +154,8 @@ above nameplates** if it overlaps your nameplate AddOn.
 
 **Nightfall sound** (off by default, on the Alerts settings page): a sound
 when Nightfall procs Shadow Trance, so your next Shadow Bolt is instant. Choose
-from imp laughs and chirps (the default is the Imp spell chirp) or Raid warning,
-Ready check, or Alarm clock, in a menu grouped like the Cooldown Manager's;
+from Dyre's Picks (sounds that ship with WTF) or imp laughs and chirps (the
+default is the Imp spell chirp), in a menu grouped like the Cooldown Manager's;
 choosing one plays it once, so you can audition them. The game
 plays the sound itself, also in combat.
 

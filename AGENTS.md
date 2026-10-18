@@ -239,12 +239,14 @@ module only after the author agrees its behavior.
 ### Alerts (built)
 
 - Nightfall sound (author-approved, off by default; picked from nested menus
-  like the chimes', grouped Imp, Hellish imp, and Interface by the labels'
+  like the chimes', grouped Dyre's Picks, Imp, and Hellish imp by the labels'
   "Group: Name"): `C_UnitAuras.AddAuraSound`
   on the player's Shadow Trance (spell 17941) with the chosen sound, as BigWigs
   registers its aura sounds: imp laughs and chirps by file ID (`soundFileID`;
   default the Imp spell chirp, the author's pick), found in Leatrix Sounds'
-  file list for this client, or interface sounds by path (`soundFileName`). The game plays it, also in combat. Registration waits out an
+  file list for this client, or Dyre's Picks, WTF's own files in Sounds/ by
+  path (`soundFileName`). The interface sounds by game path are gone: the
+  client plays no game sound by path (found in client). The game plays it, also in combat. Registration waits out an
   Encounter restriction (`ADDON_RESTRICTION_STATE_CHANGED`). Choosing a sound
   previews it with `PlaySoundFile`. `UnitAuraSoundInfo` (pinned
   UnitConstantsDocumentation) takes only `soundFileName` or `soundFileID`,

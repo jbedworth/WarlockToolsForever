@@ -332,7 +332,7 @@ and printing.
       your armor, hides as combat starts and returns after; no taint.
 - [ ] Cooldown chimes: Death Coil chimes half a second before it is ready,
       also in combat; the sound menus match the Cooldown Manager's; the
-      Nightfall sound menu has Imp, Hellish imp, and Interface groups.
+      Nightfall sound menu has Dyre's Picks, Imp, and Hellish imp groups.
 - [ ] Shield display: Shadow Ward and Sacrifice fill the crescent, each icon
       in its own spot; with MTF installed too, the display shows on both a
       Warlock and a Mage. A Blessing of Protection from a Paladin, also in

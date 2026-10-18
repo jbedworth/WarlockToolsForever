@@ -245,11 +245,22 @@ end
 
 -- Nightfall sound choices (Alerts): demon chirps and laughs by file ID, from
 -- the game's sound files as Leatrix Sounds lists them for this client
--- (sound/creature/demonfelimp and hellish_imp), and three interface sounds by
--- path. A number is a file ID, a string a file path. Labels are "Group: Name"
+-- (sound/creature/demonfelimp and hellish_imp), after Dyre's Picks, WTF's own
+-- sounds in Sounds/ (author-approved, first, as in the chimes). The client
+-- plays no game sound by path, so the interface sounds by path are gone.
+-- file is a file ID, pick a file in Sounds/. Labels are "Group: Name"
 -- for the nested menu. The game's aura sounds take only sound files, not the
 -- Cooldown Manager's sound kits, so the cooldown chimes' catalog is not here.
 WTF.NIGHTFALL_SOUNDS = {
+    {key = "pickfadingslow", label = "Dyre's Picks: Fading slow disappear", pick = "FadingSlowDisappear.mp3"},
+    {key = "pickblowswoosh", label = "Dyre's Picks: Disappear blow swoosh", pick = "DisappearBlowSwoosh.mp3"},
+    {key = "pickcartoonvanish", label = "Dyre's Picks: Cartoon vanish", pick = "CartoonVanish.mp3"},
+    {key = "pickdisappear", label = "Dyre's Picks: Disappear", pick = "Disappear.mp3"},
+    {key = "pickmagical", label = "Dyre's Picks: Magical disappear", pick = "MagicalDisappear.mp3"},
+    {key = "pickdisappearshort", label = "Dyre's Picks: Disappear (short)", pick = "DisappearShort.wav"},
+    {key = "pickdisappearingswoosh", label = "Dyre's Picks: Disappearing swoosh", pick = "DisappearingSwoosh.wav"},
+    {key = "pickteleportvanish", label = "Dyre's Picks: Teleport warp vanish", pick = "TeleportWarpVanish.wav"},
+    {key = "pickslowswoosh", label = "Dyre's Picks: Slow swoosh", pick = "SlowSwoosh.wav"},
     {key = "implaugh1", label = "Imp: Laugh 1", file = 639142},
     {key = "implaugh2", label = "Imp: Laugh 2", file = 639144},
     {key = "implaugh3", label = "Imp: Laugh 3", file = 639146},
@@ -263,9 +274,6 @@ WTF.NIGHTFALL_SOUNDS = {
     {key = "impspell", label = "Imp: Spell chirp", file = 639156},
     {key = "hellishimp1", label = "Hellish imp: Cackle 1", file = 1281685},
     {key = "hellishimp2", label = "Hellish imp: Cackle 2", file = 1281691},
-    {key = "raidwarning", label = "Interface: Raid warning", file = "Sound\\Interface\\RaidWarning.ogg"},
-    {key = "readycheck", label = "Interface: Ready check", file = "Sound\\Interface\\ReadyCheck.ogg"},
-    {key = "alarm", label = "Interface: Alarm clock", file = "Sound\\Interface\\AlarmClockWarning3.ogg"},
 }
 -- The author's pick after auditioning; players audition the rest.
 WTF.DEFAULT_NIGHTFALL_SOUND = "impspell"
