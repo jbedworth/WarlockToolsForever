@@ -55,6 +55,16 @@ WarlockToolsForever/
         ShieldArc.tga
         ShieldArcInner.tga
         ShieldArcInnermost.tga
+    Sounds/
+        FadingSlowDisappear.mp3
+        DisappearBlowSwoosh.mp3
+        CartoonVanish.mp3
+        Disappear.mp3
+        MagicalDisappear.mp3
+        DisappearShort.wav
+        DisappearingSwoosh.wav
+        TeleportWarpVanish.wav
+        SlowSwoosh.wav
 ```
 
 The validator permits one optional empty root directory entry. Additional files

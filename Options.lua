@@ -96,10 +96,30 @@ local function AddShieldPage(parent)
     local page = Settings.RegisterVerticalLayoutSubcategory(parent, SHIELD_TITLE)
     Flag(page, "WTF_SHIELD_NUMBER", "Show the absorb amount", "shield", "number", true,
         "Show your remaining absorb as a number beside the ring.", RefreshShield)
-    Flag(page, "WTF_SHIELD_BREAK_SOUND", "Sound when a shield ends", "shield", "breakSound", false,
+    local soundSwitch = Flag(page, "WTF_SHIELD_BREAK_SOUND", "Sound when a shield ends", "shield", "breakSound",
+        false,
         "Play a sound when your Shadow Ward, your Voidwalker's Sacrifice, or another shield on you ends or "
             .. "breaks, also in combat.", RefreshShield)
     local display = WTF.ShieldDisplay
+    -- Which sound, under its switch (author-approved: a default you can change).
+    local sound = Proxy(page, "WTF_SHIELD_BREAK_SOUND_CHOICE", Settings.VarType.String, "Sound",
+        display.DEFAULT_BREAK_SOUND,
+        function() return WTF.db.shield.breakSoundKey end,
+        function(value)
+            WTF.db.shield.breakSoundKey = display.SanitizeBreakSound(value)
+            RefreshShield()
+            display.PreviewBreakSound()
+        end)
+    local function SoundChoices()
+        local container = Settings.CreateControlTextContainer()
+        for _, choice in ipairs(display.BREAK_SOUNDS) do
+            container:Add(choice.key, choice.label)
+        end
+        return container:GetData()
+    end
+    local dropdown = Settings.CreateDropdown(page, sound, SoundChoices,
+        "The sound when a shield ends. Choosing one plays it once.")
+    dropdown:SetParentInitializer(soundSwitch, function() return WTF.db.shield.breakSound end)
     local scale = Proxy(page, "WTF_SHIELD_SCALE", Settings.VarType.Number, "Display size (%)", display.DEFAULT_SCALE,
         function() return WTF.db.shield.scale end,
         function(value)

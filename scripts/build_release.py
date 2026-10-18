@@ -27,11 +27,25 @@ TEXT_FILES = (ADDON + ".toc",) + RUNTIME_FILES + ("LICENSE",)
 # Runtime textures shipped in the package: the shield display's crescents,
 # built by scripts/build_arc.py. The builder requires uncompressed 32-bit,
 # square, power-of-two TGAs.
-MEDIA_FILES = ("Textures/ShieldArc.tga", "Textures/ShieldArcInner.tga", "Textures/ShieldArcInnermost.tga")
+# The break sounds ship too: the client plays no game sound by path.
+MEDIA_FILES = ("Textures/ShieldArc.tga", "Textures/ShieldArcInner.tga", "Textures/ShieldArcInnermost.tga",
+               "Sounds/FadingSlowDisappear.mp3",
+               "Sounds/DisappearBlowSwoosh.mp3",
+               "Sounds/CartoonVanish.mp3",
+               "Sounds/Disappear.mp3",
+               "Sounds/MagicalDisappear.mp3",
+               "Sounds/DisappearShort.wav",
+               "Sounds/DisappearingSwoosh.wav",
+               "Sounds/TeleportWarpVanish.wav",
+               "Sounds/SlowSwoosh.wav")
 PACKAGE_FILES = TEXT_FILES + MEDIA_FILES
 TGA_HEADER_SIZE = 18
 TGA_TRUECOLOR = 2
 TGA_SIZES = (16, 32, 64, 128, 256)
+# The client stops an aura sound after five seconds; a short MP3 is small.
+MP3_MAX_BYTES = 256 * 1024
+# PCM WAV is larger; the client plays it too (found in client).
+WAV_MAX_BYTES = 512 * 1024
 # Release metadata: the TOC Interface, CurseForge game version, and the build last
 # tested in client. The runtime itself detects features, not builds.
 INTERFACE = 16001
@@ -121,10 +135,37 @@ def _validate_tga(name, data):
         raise ValueError(f"{name}: TGA size does not match its header")
 
 
+def _validate_mp3(name, data):
+    """Require an MP3: an ID3 tag or an MPEG frame sync first, and a small file."""
+    if not 0 < len(data) <= MP3_MAX_BYTES:
+        raise ValueError(f"{name}: require an MP3 of at most {MP3_MAX_BYTES} bytes")
+    # An MPEG audio Layer III frame: 11 sync bits, a known version, layer bits 01.
+    frame = len(data) > 1 and data[0] == 0xFF and data[1] & 0xE0 == 0xE0
+    if not (data[:3] == b"ID3" or (frame and data[1] & 0x18 != 0x08 and data[1] & 0x06 == 0x02)):
+        raise ValueError(f"{name}: require an MP3 file")
+
+
+def _validate_wav(name, data):
+    """Require a small RIFF WAVE file with PCM audio."""
+    if not 0 < len(data) <= WAV_MAX_BYTES:
+        raise ValueError(f"{name}: require a WAV of at most {WAV_MAX_BYTES} bytes")
+    if data[:4] != b"RIFF" or data[8:16] != b"WAVEfmt " or data[20:22] != b"\x01\x00":
+        raise ValueError(f"{name}: require a PCM WAV file")
+
+
+def _validate_media(name, data):
+    if name.endswith(".mp3"):
+        _validate_mp3(name, data)
+    elif name.endswith(".wav"):
+        _validate_wav(name, data)
+    else:
+        _validate_tga(name, data)
+
+
 def _validate_files(files, expected_version=None):
     texts = {name: _text(name, files[name]) for name in TEXT_FILES}
     for name in MEDIA_FILES:
-        _validate_tga(name, files[name])
+        _validate_media(name, files[name])
     metadata = {}
     loads = []
     for line in texts[ADDON + ".toc"].splitlines():

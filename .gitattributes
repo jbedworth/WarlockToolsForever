@@ -7,3 +7,5 @@
 *.webp binary
 *.zip binary
 *.tga binary
+*.mp3 binary
+*.wav binary

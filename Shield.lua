@@ -24,6 +24,12 @@ local addonName, ns = ...
 -- the shield's length; out of combat your buffs are read too, so a shield that
 -- broke early hides then.
 --
+-- Tiny absorbs never show (a Paladin's Seal of Righteousness gives one of
+-- 10-20 points, used up at once, so the ring flickered). The absorb cannot be
+-- compared, so a hidden gate bar does it: its range is one point wide, ending
+-- at the minimum, so its fill is empty below the minimum and full from it. A
+-- clipping frame spans that fill, and everything visible sits inside it.
+--
 -- Shields with no absorb amount drain with time instead (see `timed` below):
 -- Mana Shield in the inner crescent, and bubbles (Divine Shield, Divine
 -- Protection, Blessing of Protection: immunities with only a duration) in the
@@ -49,7 +55,7 @@ local addonName, ns = ...
 -- other copy says which AddOn shows it. Version 1 copies elect among every
 -- registered copy, so a version 1 copy stands down for any newer one.
 
-local VERSION = 4
+local VERSION = 6
 local REGISTRY_NAME = "ShieldForeverRegistry"
 
 local ARC_TEXTURE = "Interface\\AddOns\\" .. addonName .. "\\Textures\\ShieldArc"
@@ -73,6 +79,14 @@ local DEFAULT_POINT = {"CENTER", "CENTER", 20, -20}
 local TEXT_X = 0.8
 local TEXT_Y = 0.02
 local BACKGROUND_ALPHA = 0.35
+-- The smallest absorb the ring shows: this many points, or this share of your
+-- health when the client lets AddOn code read it, whichever is larger. Below
+-- every real shield (rank 1 Power Word: Shield absorbs 44).
+local MIN_ABSORB = 25
+local MIN_ABSORB_SHARE = 0.05
+-- How far below the frame the gate reaches, so the number under it shows.
+local GATE_TEXT_ROOM = 40
+local GATE_TEXTURE = "Interface\\Buttons\\WHITE8X8"
 -- Seconds after your shield cast during which an absorb change is that shield
 -- landing, so its total is the shield's size.
 local CAPTURE_SECONDS = 0.5
@@ -88,7 +102,23 @@ local OTHER_SECONDS = 30
 -- An absorb change this soon after a known shield ended is that shield going.
 local ENDING_GRACE = 2
 local OTHER_COLOR = {1, 0.85, 0.45}
-local BREAK_SOUND = "Sound\\Interface\\RaidWarning.ogg"
+-- The break sounds you can choose from (author-approved), shipped with the
+-- AddOn: the client plays no game sound by path (found in client:
+-- RaidWarning.ogg stayed silent, an AddOn's file played).
+local SOUND_FOLDER = "Interface\\AddOns\\" .. addonName .. "\\Sounds\\"
+local BREAK_SOUNDS = {
+    {key = "fadingslow", label = "Fading slow disappear", file = "FadingSlowDisappear.mp3"},
+    {key = "blowswoosh", label = "Disappear blow swoosh", file = "DisappearBlowSwoosh.mp3"},
+    {key = "cartoonvanish", label = "Cartoon vanish", file = "CartoonVanish.mp3"},
+    {key = "disappear", label = "Disappear", file = "Disappear.mp3"},
+    {key = "magical", label = "Magical disappear", file = "MagicalDisappear.mp3"},
+    {key = "disappearshort", label = "Disappear (short)", file = "DisappearShort.wav"},
+    {key = "disappearingswoosh", label = "Disappearing swoosh", file = "DisappearingSwoosh.wav"},
+    {key = "teleportvanish", label = "Teleport warp vanish", file = "TeleportWarpVanish.wav"},
+    {key = "slowswoosh", label = "Slow swoosh", file = "SlowSwoosh.wav"},
+}
+local DEFAULT_BREAK_SOUND = "fadingslow"
+local BREAK_CHANNEL = "Master"
 -- At most one break sound per this many seconds (the API allows 0 to 5).
 local BREAK_THROTTLE = 1
 -- Seconds /mtf debug_shield shows the absorb total on screen.
@@ -180,6 +210,9 @@ ShieldDisplay.SCALE_MIN = 50
 ShieldDisplay.SCALE_MAX = 150
 ShieldDisplay.SCALE_STEP = 5
 ShieldDisplay.DEFAULT_SCALE = 100
+-- The break sounds, for the settings page's choice.
+ShieldDisplay.BREAK_SOUNDS = BREAK_SOUNDS
+ShieldDisplay.DEFAULT_BREAK_SOUND = DEFAULT_BREAK_SOUND
 
 function ShieldDisplay.SanitizeScale(value)
     if type(value) ~= "number" or value ~= math.floor(value) then
@@ -187,6 +220,19 @@ function ShieldDisplay.SanitizeScale(value)
     end
     local stepped = math.floor(value / ShieldDisplay.SCALE_STEP + 0.5) * ShieldDisplay.SCALE_STEP
     return math.max(ShieldDisplay.SCALE_MIN, math.min(ShieldDisplay.SCALE_MAX, stepped))
+end
+
+local function BreakSound(key)
+    for _, sound in ipairs(ShieldDisplay.BREAK_SOUNDS) do
+        if sound.key == key then
+            return sound
+        end
+    end
+end
+
+-- A known sound's key, else the default.
+function ShieldDisplay.SanitizeBreakSound(key)
+    return BreakSound(key) and key or ShieldDisplay.DEFAULT_BREAK_SOUND
 end
 
 -- Settings with defaults, repaired so a damaged or older table cannot break it.
@@ -205,6 +251,7 @@ function ShieldDisplay.Sanitize(settings)
             x = position.x, y = position.y},
         number = settings.number ~= false,
         breakSound = settings.breakSound == true,
+        breakSoundKey = ShieldDisplay.SanitizeBreakSound(settings.breakSoundKey),
         scale = ShieldDisplay.SanitizeScale(settings.scale),
     }
 end
@@ -225,6 +272,16 @@ local function HasAbsorbAPI()
     return type(UnitGetTotalAbsorbs) == "function" and type(UnitHealthMax) == "function"
 end
 
+-- Your health may be secret (SecretWhenUnitHealthMaxRestricted); then only
+-- the fixed minimum counts.
+local function MinimumAbsorb()
+    local maxHealth = UnitHealthMax("player")
+    if IsSecret(maxHealth) or type(maxHealth) ~= "number" then
+        return MIN_ABSORB
+    end
+    return math.max(MIN_ABSORB, math.floor(maxHealth * MIN_ABSORB_SHARE))
+end
+
 -- The client hands both values over as they are, secret or not.
 local function UpdateFill()
     if not frame then
@@ -232,6 +289,8 @@ local function UpdateFill()
     end
     if not Config().locked then
         frame.visible:SetAlpha(1)
+        frame.gate:SetMinMaxValues(0, 1)
+        frame.gate:SetValue(1)
         frame.bar:SetMinMaxValues(0, 1)
         frame.bar:SetValue(SAMPLE_FILL)
         frame.text:SetText(SAMPLE_TEXT)
@@ -239,6 +298,9 @@ local function UpdateFill()
     end
     local absorb = UnitGetTotalAbsorbs("player")
     frame.visible:SetAlpha(absorb)
+    local minimum = MinimumAbsorb()
+    frame.gate:SetMinMaxValues(minimum - 1, minimum)
+    frame.gate:SetValue(absorb)
     -- Against the shield's size when it landed; your health until one is known.
     frame.bar:SetMinMaxValues(0, shield.size or UnitHealthMax("player"))
     frame.bar:SetValue(absorb)
@@ -399,8 +461,9 @@ end
 
 -- Break sound -----------------------------------------------------------------
 -- The ring cannot see a shield end in combat, so it asks the game to play the
--- sound when the buff goes (C_UnitAuras.AddAuraSound). Off by default. The
--- game refuses changes during an encounter.
+-- sound when the buff goes (C_UnitAuras.AddAuraSound; found in client to play
+-- when a buff runs out). Off by default. The game refuses changes during an
+-- encounter.
 
 local function EncounterRestricted()
     if type(C_RestrictedActions) ~= "table" or type(C_RestrictedActions.IsAddOnRestrictionActive) ~= "function"
@@ -413,6 +476,18 @@ end
 local function HasAuraSounds()
     return type(C_UnitAuras) == "table" and type(C_UnitAuras.AddAuraSound) == "function"
         and type(C_UnitAuras.RemoveAuraSound) == "function"
+end
+
+local function BreakSoundFile()
+    local sound = BreakSound(Config().breakSoundKey) or BreakSound(ShieldDisplay.DEFAULT_BREAK_SOUND)
+    return SOUND_FOLDER .. sound.file
+end
+
+-- Plays the chosen sound once, so the settings page can preview it.
+function ShieldDisplay.PreviewBreakSound()
+    if host and type(PlaySoundFile) == "function" then
+        PlaySoundFile(BreakSoundFile(), BREAK_CHANNEL)
+    end
 end
 
 function ShieldDisplay.ApplyBreakSound()
@@ -428,15 +503,22 @@ function ShieldDisplay.ApplyBreakSound()
         C_UnitAuras.RemoveAuraSound(id)
     end
     shield.soundIDs = {}
-    if not Config().enabled or not Config().breakSound then
+    -- Turning the sound on plays it once, so you hear it (never at login).
+    local wanted = Config().breakSound
+    if wanted and shield.soundWanted == false then
+        ShieldDisplay.PreviewBreakSound()
+    end
+    shield.soundWanted = wanted
+    if not Config().enabled or not wanted then
         return
     end
+    local file = BreakSoundFile()
     local trigger = Enum.UnitAuraSoundTrigger and Enum.UnitAuraSoundTrigger.Removed or 2
     for _, entry in ipairs(SHIELDS) do
         for _, spellID in ipairs(shield.spots[entry.key] and entry.ranks or {}) do
             shield.soundIDs[#shield.soundIDs + 1] = C_UnitAuras.AddAuraSound(trigger, {
                 spellID = spellID, unitToken = "player", outputChannel = "master",
-                throttleSeconds = BREAK_THROTTLE, soundFileName = BREAK_SOUND})
+                throttleSeconds = BREAK_THROTTLE, soundFileName = file})
         end
     end
 end
@@ -639,12 +721,22 @@ local function CreateRing()
     -- Everything visible sits in one frame whose opacity follows the absorb.
     frame.visible = CreateFrame("Frame", nil, frame)
     frame.visible:SetAllPoints()
-    frame.background = frame.visible:CreateTexture(nil, "BACKGROUND")
+    -- The gate: never seen, its fill only sizes the clipping frame.
+    frame.gate = CreateFrame("StatusBar", nil, frame)
+    frame.gate:SetAllPoints()
+    frame.gate:SetStatusBarTexture(GATE_TEXTURE)
+    frame.gate:SetOrientation("HORIZONTAL")
+    frame.gate:SetAlpha(0)
+    frame.gated = CreateFrame("Frame", nil, frame.visible)
+    frame.gated:SetClipsChildren(true)
+    frame.gated:SetPoint("TOPLEFT", frame, "TOPLEFT")
+    frame.gated:SetPoint("BOTTOMRIGHT", frame.gate:GetStatusBarTexture(), "BOTTOMRIGHT", 0, -GATE_TEXT_ROOM)
+    frame.background = frame.gated:CreateTexture(nil, "BACKGROUND")
     FitCrescent(frame.background, OUTER_SPAN)
     frame.background:SetTexture(ARC_TEXTURE)
     frame.background:SetVertexColor(0, 0, 0)
     frame.background:SetAlpha(BACKGROUND_ALPHA)
-    frame.bar = CreateFrame("StatusBar", nil, frame.visible)
+    frame.bar = CreateFrame("StatusBar", nil, frame.gated)
     FitCrescent(frame.bar, OUTER_SPAN)
     frame.bar:SetStatusBarTexture(ARC_TEXTURE)
     frame.bar:SetOrientation("VERTICAL")
@@ -808,7 +900,7 @@ function ShieldDisplay.ReportDebug(report)
         -- The ring's opacity is the absorb; this shows what the client made of it.
         if frame then
             local alpha = frame.visible:GetAlpha()
-            Report("ringAlpha=" .. Describe(alpha))
+            Report("ringAlpha=" .. Describe(alpha) .. " minimumAbsorb=" .. MinimumAbsorb())
         end
     end)
     Step("maxHealth", function()
