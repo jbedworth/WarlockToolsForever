@@ -2207,6 +2207,16 @@ test("WTF ships the shield display: it follows its switch and the lock", functio
     state.slash("debug_shield")
     contains(state.messages[1], "debug_shield UnitGetTotalAbsorbs=function")
 end)
+test("the shield break sound is chosen under its switch, and choosing one plays it", function()
+    local state = fixture()
+    equal(state.wtf.db.shield.breakSoundKey, "fadingslow", "the default")
+    state.settings.WTF_SHIELD_BREAK_SOUND:SetValue(true)
+    equal(state.played.file, "Interface\\AddOns\\WarlockToolsForever\\Sounds\\FadingSlowDisappear.mp3",
+        "turning it on plays it once")
+    state.settings.WTF_SHIELD_BREAK_SOUND_CHOICE:SetValue("blowswoosh")
+    equal(state.played.file, "Interface\\AddOns\\WarlockToolsForever\\Sounds\\DisappearBlowSwoosh.mp3")
+    equal(state.wtf.db.shield.breakSoundKey, "blowswoosh")
+end)
 
 -- Cooldown chimes ----------------------------------------------------------------
 
@@ -2228,6 +2238,21 @@ test("a chime plays just before Death Coil is ready again, also in combat", func
     equal(#state.sounds, 1, "half a second early")
     equal(state.sounds[1].kit, 73281, "Talent ready by default")
     equal(state.sounds[1].channel, "Master")
+end)
+test("a chime can use one of WTF's own effect sounds, played by file", function()
+    local state = fixture()
+    state.settings.WTF_CHIME_SOUND_DEATHCOIL:SetValue("effectcartoonvanish")
+    equal(state.wtf.db.chimes.sounds.deathcoil, "effectcartoonvanish")
+    local file = "Interface\\AddOns\\WarlockToolsForever\\Sounds\\CartoonVanish.mp3"
+    equal(state.played.file, file, "previewed")
+    state.played = nil
+    state.combat = true
+    state.emit("UNIT_SPELLCAST_SUCCEEDED", "player", "cast-1", DEATH_COIL)
+    wait(state, 0.1)
+    wait(state, 120)
+    equal(state.played.file, file, "the chime plays the file, also in combat")
+    equal(state.played.channel, "Master")
+    equal(#state.sounds, 0, "no sound kit as well")
 end)
 test("out of combat the real cooldown is read and learned; switches turn chimes off", function()
     local state = fixture()
@@ -2268,17 +2293,17 @@ end)
 
 test("a copy registered first whose AddOn stays off does not keep WTF's display away", function()
     -- MTF loads first (folder order) but stays off on a Warlock.
-    local state = fixture({shieldCopies = {{addon = "MageToolsForever", version = 5, before = true}}})
+    local state = fixture({shieldCopies = {{addon = "MageToolsForever", version = 6, before = true}}})
     equal(state.wtf.ShieldDisplay.IsOwner(), true, "only running copies take part")
     equal(state.wtf.ShieldDisplay.frame ~= nil, true, "WTF draws the ring")
     state.clear()
     state.slash("debug_shield")
     contains(table.concat(state.messages, "|"),
-        "owner=WarlockToolsForever copies=MageToolsForever v5, WarlockToolsForever v5 (running)")
+        "owner=WarlockToolsForever copies=MageToolsForever v6, WarlockToolsForever v6 (running)")
     equal(table.concat(state.messages, "|"):find("failed", 1, true), nil, "every debug step ran")
 end)
 test("a newer running copy takes over, and WTF says which AddOn shows the display", function()
-    local state = fixture({shieldCopies = {{addon = "ShieldForever", version = 6}}})
+    local state = fixture({shieldCopies = {{addon = "ShieldForever", version = 7}}})
     equal(state.wtf.ShieldDisplay.frame ~= nil, true, "drawing while it is the only one running")
     local other = state.copies.ShieldForever.ShieldDisplay
     other.Initialize({settings = function() return other.Sanitize({}) end, report = function() end})
@@ -2807,7 +2832,7 @@ test("each chime's sound menu has the Cooldown Manager's groups; other dropdowns
         if initializer.setting == setting then dropdown = initializer end
     end
     local root, control = openMenu(dropdown, setting)
-    equal(groupNames(root), "Interface,Animals,Devices,Impacts,Instruments,Short,Warcraft 2,Warcraft 3")
+    equal(groupNames(root), "Dyre's Picks,Interface,Animals,Devices,Impacts,Instruments,Short,Warcraft 2,Warcraft 3")
     equal(control.blizzardMenu, nil, "WTF's own menu")
     control.Dropdown.inserter = nil
     control:Init({setting = {}})

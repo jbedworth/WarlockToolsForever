@@ -1,4 +1,4 @@
-local _, WTF = ...
+local addonName, WTF = ...
 
 -- Seconds before a cooldown ends that its chime plays, so you can act the
 -- moment it is ready.
@@ -28,6 +28,17 @@ WTF.CHIME_SPELLS = {
 -- Chime sounds: the client's own interface sounds, by SOUNDKIT name, from the
 -- pinned SoundKitConstants. A name the client lacks is left out of the list.
 WTF.CHIME_SOUNDS = {
+    -- Dyre's Picks, first (author-approved): the AddOn's own sounds, shipped in
+    -- Sounds/ with the shield display's break sounds and played by file.
+    {key = "effectfadingslow", label = "Dyre's Picks: Fading slow disappear", file = "FadingSlowDisappear.mp3"},
+    {key = "effectblowswoosh", label = "Dyre's Picks: Disappear blow swoosh", file = "DisappearBlowSwoosh.mp3"},
+    {key = "effectcartoonvanish", label = "Dyre's Picks: Cartoon vanish", file = "CartoonVanish.mp3"},
+    {key = "effectdisappear", label = "Dyre's Picks: Disappear", file = "Disappear.mp3"},
+    {key = "effectmagical", label = "Dyre's Picks: Magical disappear", file = "MagicalDisappear.mp3"},
+    {key = "effectdisappearshort", label = "Dyre's Picks: Disappear (short)", file = "DisappearShort.wav"},
+    {key = "effectdisappearingswoosh", label = "Dyre's Picks: Disappearing swoosh", file = "DisappearingSwoosh.wav"},
+    {key = "effectteleportvanish", label = "Dyre's Picks: Teleport warp vanish", file = "TeleportWarpVanish.wav"},
+    {key = "effectslowswoosh", label = "Dyre's Picks: Slow swoosh", file = "SlowSwoosh.wav"},
     -- The client's interface sounds, by SOUNDKIT name.
     {key = "mapping", label = "Interface: Map ping", kit = "MAP_PING"},
     {key = "whisper", label = "Interface: Whisper", kit = "TELL_MESSAGE"},
@@ -217,6 +228,18 @@ local function Timers()
     return type(C_Timer) == "table" and type(C_Timer.After) == "function"
 end
 
+-- The effect sounds ship with the AddOn; the client plays no game sound by
+-- path, but plays an AddOn's own file.
+local SOUND_FOLDER = "Interface\\AddOns\\" .. addonName .. "\\Sounds\\"
+
+local function SoundFile(key)
+    for _, sound in ipairs(WTF.CHIME_SOUNDS) do
+        if sound.key == key and sound.file then
+            return SOUND_FOLDER .. sound.file
+        end
+    end
+end
+
 local function SoundKit(key)
     for _, sound in ipairs(WTF.CHIME_SOUNDS) do
         if sound.key == key then
@@ -263,6 +286,9 @@ local function Speak(text)
 end
 
 local function SoundAvailable(sound)
+    if sound.file then
+        return type(PlaySoundFile) == "function"
+    end
     if sound.voice then
         return SpeechVoice() ~= nil
     end
@@ -316,6 +342,13 @@ local function Play(chime)
     local key = WTF.db.chimes.sounds[chime.key]
     if key == "voice" then
         Speak(chime.label .. " ready")
+        return
+    end
+    local file = SoundFile(key)
+    if file then
+        if type(PlaySoundFile) == "function" then
+            PlaySoundFile(file, "Master")
+        end
         return
     end
     local kit = SoundKit(key) or SoundKit(WTF.DEFAULT_CHIME_SOUND)

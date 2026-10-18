@@ -55,7 +55,7 @@ local addonName, ns = ...
 -- other copy says which AddOn shows it. Version 1 copies elect among every
 -- registered copy, so a version 1 copy stands down for any newer one.
 
-local VERSION = 5
+local VERSION = 6
 local REGISTRY_NAME = "ShieldForeverRegistry"
 
 local ARC_TEXTURE = "Interface\\AddOns\\" .. addonName .. "\\Textures\\ShieldArc"
@@ -102,7 +102,23 @@ local OTHER_SECONDS = 30
 -- An absorb change this soon after a known shield ended is that shield going.
 local ENDING_GRACE = 2
 local OTHER_COLOR = {1, 0.85, 0.45}
-local BREAK_SOUND = "Sound\\Interface\\RaidWarning.ogg"
+-- The break sounds you can choose from (author-approved), shipped with the
+-- AddOn: the client plays no game sound by path (found in client:
+-- RaidWarning.ogg stayed silent, an AddOn's file played).
+local SOUND_FOLDER = "Interface\\AddOns\\" .. addonName .. "\\Sounds\\"
+local BREAK_SOUNDS = {
+    {key = "fadingslow", label = "Fading slow disappear", file = "FadingSlowDisappear.mp3"},
+    {key = "blowswoosh", label = "Disappear blow swoosh", file = "DisappearBlowSwoosh.mp3"},
+    {key = "cartoonvanish", label = "Cartoon vanish", file = "CartoonVanish.mp3"},
+    {key = "disappear", label = "Disappear", file = "Disappear.mp3"},
+    {key = "magical", label = "Magical disappear", file = "MagicalDisappear.mp3"},
+    {key = "disappearshort", label = "Disappear (short)", file = "DisappearShort.wav"},
+    {key = "disappearingswoosh", label = "Disappearing swoosh", file = "DisappearingSwoosh.wav"},
+    {key = "teleportvanish", label = "Teleport warp vanish", file = "TeleportWarpVanish.wav"},
+    {key = "slowswoosh", label = "Slow swoosh", file = "SlowSwoosh.wav"},
+}
+local DEFAULT_BREAK_SOUND = "fadingslow"
+local BREAK_CHANNEL = "Master"
 -- At most one break sound per this many seconds (the API allows 0 to 5).
 local BREAK_THROTTLE = 1
 -- Seconds /mtf debug_shield shows the absorb total on screen.
@@ -194,6 +210,9 @@ ShieldDisplay.SCALE_MIN = 50
 ShieldDisplay.SCALE_MAX = 150
 ShieldDisplay.SCALE_STEP = 5
 ShieldDisplay.DEFAULT_SCALE = 100
+-- The break sounds, for the settings page's choice.
+ShieldDisplay.BREAK_SOUNDS = BREAK_SOUNDS
+ShieldDisplay.DEFAULT_BREAK_SOUND = DEFAULT_BREAK_SOUND
 
 function ShieldDisplay.SanitizeScale(value)
     if type(value) ~= "number" or value ~= math.floor(value) then
@@ -201,6 +220,19 @@ function ShieldDisplay.SanitizeScale(value)
     end
     local stepped = math.floor(value / ShieldDisplay.SCALE_STEP + 0.5) * ShieldDisplay.SCALE_STEP
     return math.max(ShieldDisplay.SCALE_MIN, math.min(ShieldDisplay.SCALE_MAX, stepped))
+end
+
+local function BreakSound(key)
+    for _, sound in ipairs(ShieldDisplay.BREAK_SOUNDS) do
+        if sound.key == key then
+            return sound
+        end
+    end
+end
+
+-- A known sound's key, else the default.
+function ShieldDisplay.SanitizeBreakSound(key)
+    return BreakSound(key) and key or ShieldDisplay.DEFAULT_BREAK_SOUND
 end
 
 -- Settings with defaults, repaired so a damaged or older table cannot break it.
@@ -219,6 +251,7 @@ function ShieldDisplay.Sanitize(settings)
             x = position.x, y = position.y},
         number = settings.number ~= false,
         breakSound = settings.breakSound == true,
+        breakSoundKey = ShieldDisplay.SanitizeBreakSound(settings.breakSoundKey),
         scale = ShieldDisplay.SanitizeScale(settings.scale),
     }
 end
@@ -428,8 +461,9 @@ end
 
 -- Break sound -----------------------------------------------------------------
 -- The ring cannot see a shield end in combat, so it asks the game to play the
--- sound when the buff goes (C_UnitAuras.AddAuraSound). Off by default. The
--- game refuses changes during an encounter.
+-- sound when the buff goes (C_UnitAuras.AddAuraSound; found in client to play
+-- when a buff runs out). Off by default. The game refuses changes during an
+-- encounter.
 
 local function EncounterRestricted()
     if type(C_RestrictedActions) ~= "table" or type(C_RestrictedActions.IsAddOnRestrictionActive) ~= "function"
@@ -442,6 +476,18 @@ end
 local function HasAuraSounds()
     return type(C_UnitAuras) == "table" and type(C_UnitAuras.AddAuraSound) == "function"
         and type(C_UnitAuras.RemoveAuraSound) == "function"
+end
+
+local function BreakSoundFile()
+    local sound = BreakSound(Config().breakSoundKey) or BreakSound(ShieldDisplay.DEFAULT_BREAK_SOUND)
+    return SOUND_FOLDER .. sound.file
+end
+
+-- Plays the chosen sound once, so the settings page can preview it.
+function ShieldDisplay.PreviewBreakSound()
+    if host and type(PlaySoundFile) == "function" then
+        PlaySoundFile(BreakSoundFile(), BREAK_CHANNEL)
+    end
 end
 
 function ShieldDisplay.ApplyBreakSound()
@@ -457,15 +503,22 @@ function ShieldDisplay.ApplyBreakSound()
         C_UnitAuras.RemoveAuraSound(id)
     end
     shield.soundIDs = {}
-    if not Config().enabled or not Config().breakSound then
+    -- Turning the sound on plays it once, so you hear it (never at login).
+    local wanted = Config().breakSound
+    if wanted and shield.soundWanted == false then
+        ShieldDisplay.PreviewBreakSound()
+    end
+    shield.soundWanted = wanted
+    if not Config().enabled or not wanted then
         return
     end
+    local file = BreakSoundFile()
     local trigger = Enum.UnitAuraSoundTrigger and Enum.UnitAuraSoundTrigger.Removed or 2
     for _, entry in ipairs(SHIELDS) do
         for _, spellID in ipairs(shield.spots[entry.key] and entry.ranks or {}) do
             shield.soundIDs[#shield.soundIDs + 1] = C_UnitAuras.AddAuraSound(trigger, {
                 spellID = spellID, unitToken = "player", outputChannel = "master",
-                throttleSeconds = BREAK_THROTTLE, soundFileName = BREAK_SOUND})
+                throttleSeconds = BREAK_THROTTLE, soundFileName = file})
         end
     end
 end

@@ -260,7 +260,9 @@ module only after the author agrees its behavior.
   (the Soulstone's use), Fel Domination; off: Shadowburn, Conflagrate,
   Amplify Curse, Bane of Doom (Classic's Curse of Doom, 603), Inferno.
 - Each spell's sound comes from MTF's catalog (Interface SOUNDKIT names, the
-  Cooldown Manager's 93 alert kits by ID, and Text to Speech), in the same
+  Cooldown Manager's 93 alert kits by ID, the nine Dyre's Picks sounds (first in the menu) shipped in
+  Sounds/ with the shield display and played with `PlaySoundFile`
+  (author-approved), and Text to Speech), in the same
   nested menu: Options.lua wraps the pooled settings dropdown control's
   `SetupDropdownMenu` only for an initializer carrying `wtfSoundMenu` and
   hands every other dropdown on (MTF wraps the same pooled controls with its
@@ -299,6 +301,15 @@ module only after the author agrees its behavior.
   StatusBar, one point wide and ending at the minimum, takes it as its value,
   and a clipping frame anchored to the gate's fill holds the crescent and the
   number (confirmed on a Paladin). Fixed constants, no setting.
+- Version 6 (with MTF and WTF; found in client): the break sound is one of
+  the AddOn's own files in Sounds/, byte-identical in all three, chosen in a
+  dropdown under the sound switch (author-approved: a default you can change,
+  Fading slow disappear). The client plays no game sound by path
+  (RaidWarning.ogg stayed silent), while an AddOn's file plays, also through
+  `C_UnitAuras.AddAuraSound` when a buff runs out. Turning the sound on, or
+  choosing one, plays it once. The sounds are licensed to Vertiso Corporation
+  from Envato (Elements and AudioJungle; the author keeps the license files,
+  not in Git); they are not under the MIT License.
 
 ### Demon Armor reminder (built)
 
@@ -528,7 +539,7 @@ general frameworks, or speculative modules without agreement.
   changes; the builder puts it at the top of release-notes.md (GitHub release
   notes and CurseForge changelog) and fails without it.
 - Package only WarlockToolsForever.toc, Commands.lua, Core.lua, Layout.lua, Shards.lua, Stones.lua, Announce.lua, Tracker.lua, Dots.lua, Control.lua, Alerts.lua, Shield.lua, Chimes.lua, Reminders.lua, Probe.lua, Options.lua, LICENSE,
-  Textures/ShieldArc.tga, Textures/ShieldArcInner.tga, and Textures/ShieldArcInnermost.tga
+  Textures/ShieldArc.tga, Textures/ShieldArcInner.tga, Textures/ShieldArcInnermost.tga, and the break sounds in Sounds/
   under the top-level
   `WarlockToolsForever/` folder, named
   `WarlockToolsForever-<version>-forever.zip`, with the builder's
