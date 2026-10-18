@@ -4,6 +4,10 @@ Player-facing changes for each Warlock Tools Forever release, newest first. The
 release builder copies the section for the TOC version into the GitHub release
 notes and the CurseForge changelog, and fails if that section is missing.
 
+## 0.2.2-beta
+
+- Shield display: the outer crescent is centered with the inner ones again; since the last update it was drawn lower and taller than them.
+
 ## 0.2.1-beta
 
 - Shield display: tiny shields no longer flicker the crescent. Absorbs under 25 points or 5% of your health, whichever is larger, are not drawn (a Paladin's Seal of Righteousness gives one of 10-20 points).

@@ -312,6 +312,11 @@ module only after the author agrees its behavior.
   choosing one, plays it once. The sounds are licensed to Vertiso Corporation
   from Envato (Elements and AudioJungle; the author keeps the license files,
   not in Git); they are not under the MIT License.
+- Version 7 (with MTF and WTF; found in client): every crescent is anchored
+  to the display itself. In v5 and v6 the outer crescent was fitted to its
+  parent, the minimum-absorb clipping frame, which reaches 40 px below the
+  display for the number, so it was drawn lower and taller than the inner
+  crescents (seen on a Mage with Fire Ward and Mana Shield).
 
 ### Demon Armor reminder (built)
 

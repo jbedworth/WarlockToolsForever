@@ -55,7 +55,7 @@ local addonName, ns = ...
 -- other copy says which AddOn shows it. Version 1 copies elect among every
 -- registered copy, so a version 1 copy stands down for any newer one.
 
-local VERSION = 6
+local VERSION = 7
 local REGISTRY_NAME = "ShieldForeverRegistry"
 
 local ARC_TEXTURE = "Interface\\AddOns\\" .. addonName .. "\\Textures\\ShieldArc"
@@ -576,12 +576,14 @@ local function PlaceIcon(button, spot)
     button:SetPoint("TOPLEFT", frame.text, "BOTTOM", -width / 2 + (spot - 1) * (ICON_SIZE + ICON_GAP), ICON_Y)
 end
 
--- A crescent's texture or bar, centered in its parent (the size of the
--- display) at the crescent's own height.
+-- A crescent's texture or bar, centered on the display at the crescent's own
+-- height. Anchored to the display, not the parent: the outer crescent's
+-- parent is the minimum-absorb clipping frame, which reaches below the
+-- display for the number (in client, v5 drew the outer crescent off-center).
 local function FitCrescent(region, span)
     local inset = ARC_SIZE * (1 - span) / 2
-    region:SetPoint("TOPLEFT", 0, -inset)
-    region:SetPoint("BOTTOMRIGHT", 0, inset)
+    region:SetPoint("TOPLEFT", frame, "TOPLEFT", 0, -inset)
+    region:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", 0, inset)
 end
 
 local function NoMouse(region)

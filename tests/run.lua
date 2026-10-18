@@ -2293,17 +2293,17 @@ end)
 
 test("a copy registered first whose AddOn stays off does not keep WTF's display away", function()
     -- MTF loads first (folder order) but stays off on a Warlock.
-    local state = fixture({shieldCopies = {{addon = "MageToolsForever", version = 6, before = true}}})
+    local state = fixture({shieldCopies = {{addon = "MageToolsForever", version = 7, before = true}}})
     equal(state.wtf.ShieldDisplay.IsOwner(), true, "only running copies take part")
     equal(state.wtf.ShieldDisplay.frame ~= nil, true, "WTF draws the ring")
     state.clear()
     state.slash("debug_shield")
     contains(table.concat(state.messages, "|"),
-        "owner=WarlockToolsForever copies=MageToolsForever v6, WarlockToolsForever v6 (running)")
+        "owner=WarlockToolsForever copies=MageToolsForever v7, WarlockToolsForever v7 (running)")
     equal(table.concat(state.messages, "|"):find("failed", 1, true), nil, "every debug step ran")
 end)
 test("a newer running copy takes over, and WTF says which AddOn shows the display", function()
-    local state = fixture({shieldCopies = {{addon = "ShieldForever", version = 7}}})
+    local state = fixture({shieldCopies = {{addon = "ShieldForever", version = 8}}})
     equal(state.wtf.ShieldDisplay.frame ~= nil, true, "drawing while it is the only one running")
     local other = state.copies.ShieldForever.ShieldDisplay
     other.Initialize({settings = function() return other.Sanitize({}) end, report = function() end})
