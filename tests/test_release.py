@@ -8,6 +8,7 @@ import hashlib
 import importlib.util
 import json
 import os
+import re
 import shutil
 import stat
 import struct
@@ -273,6 +274,17 @@ class ReleaseTests(unittest.TestCase):
         spec.loader.exec_module(arc)
         for name in arc.CRESCENTS:
             self.assertEqual((ROOT / "Textures" / name).read_bytes(), arc.build(name), name)
+
+    def test_shield_lua_draws_each_crescent_at_its_height(self):
+        spec = importlib.util.spec_from_file_location("build_arc", ROOT / "scripts" / "build_arc.py")
+        arc = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(arc)
+        source = (ROOT / "Shield.lua").read_text(encoding="utf-8")
+        for name, constant in (("ShieldArc.tga", "OUTER_SPAN"), ("ShieldArcInner.tga", "INNER_SPAN"),
+                               ("ShieldArcInnermost.tga", "INNERMOST_SPAN")):
+            match = re.search(r"local " + constant + r" = (\d+) / (\d+)$", source, re.MULTILINE)
+            self.assertIsNotNone(match, constant)
+            self.assertEqual(int(match.group(1)) / int(match.group(2)), arc.span(name), name)
 
     def test_release_notes_start_with_the_versions_changelog_section(self):
         changelog = self.source / builder.CHANGELOG_NAME

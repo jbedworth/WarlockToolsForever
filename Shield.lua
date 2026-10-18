@@ -49,7 +49,7 @@ local addonName, ns = ...
 -- other copy says which AddOn shows it. Version 1 copies elect among every
 -- registered copy, so a version 1 copy stands down for any newer one.
 
-local VERSION = 3
+local VERSION = 4
 local REGISTRY_NAME = "ShieldForeverRegistry"
 
 local ARC_TEXTURE = "Interface\\AddOns\\" .. addonName .. "\\Textures\\ShieldArc"
@@ -58,6 +58,14 @@ local INNER_ARC_TEXTURE = ARC_TEXTURE .. "Inner"
 -- The innermost crescent, for bubbles.
 local INNERMOST_ARC_TEXTURE = ARC_TEXTURE .. "Innermost"
 local ARC_SIZE = 160
+-- Each crescent's height as a fraction of the square (span in
+-- scripts/build_arc.py). Its texture is stretched to fill that height, so a
+-- bar's value runs from the crescent's foot to its tip and the bar empties
+-- when the value reaches 0 (across the whole square, a timed bar emptied a
+-- segment or more before its buff ended).
+local OUTER_SPAN = 118 / 128
+local INNER_SPAN = 94 / 128
+local INNERMOST_SPAN = 70 / 128
 -- The crescent sits in the right part of the square texture, so the frame
 -- centered a little right of your character puts it beside you.
 local DEFAULT_POINT = {"CENTER", "CENTER", 20, -20}
@@ -97,14 +105,14 @@ local CONTAINER_TEMPLATE = "CustomAuraContainerTemplate"
 -- draining with its time left (author-approved), instead of the absorb total.
 -- innermost puts a timed shield in the innermost crescent instead (bubbles).
 -- Known shields by name, so every rank counts: Classic IDs (confirmed on
--- Forever for Mana Shield and Fire Ward), colors, lengths, and each one's spot
--- in the icon row. class marks a shield only that class casts on itself;
--- the others can come from anyone. Each player's row holds their own class's
--- shields first, then the shared ones, one spot each. ranks lists every
--- Classic rank for the break sound, which needs exact IDs. Any other absorb
--- (a protection potion, a trinket, or one Forever adds) fills the crescent
--- in the other-shield color without an icon. Bubble IDs are Classic's; check
--- them on Forever with debug_shield.
+-- Forever for Mana Shield, Fire Ward, and Power Word: Shield), colors,
+-- lengths, and each one's spot in the icon row. class marks a shield only
+-- that class casts on itself; the others can come from anyone. Each
+-- player's row holds their own class's shields first, then the shared ones,
+-- one spot each. ranks lists every Classic rank for the break sound, which
+-- needs exact IDs. Any other absorb (a protection potion, a trinket, or one
+-- Forever adds) fills the crescent in the other-shield color without an
+-- icon. Bubble IDs are Classic's; check them on Forever with debug_shield.
 local SHIELDS = {
     {key = "icebarrier", class = "MAGE", spell = 11426, color = {0.45, 0.78, 1}, seconds = 60,
         ranks = {11426, 13031, 13032, 13033}},
@@ -486,6 +494,14 @@ local function PlaceIcon(button, spot)
     button:SetPoint("TOPLEFT", frame.text, "BOTTOM", -width / 2 + (spot - 1) * (ICON_SIZE + ICON_GAP), ICON_Y)
 end
 
+-- A crescent's texture or bar, centered in its parent (the size of the
+-- display) at the crescent's own height.
+local function FitCrescent(region, span)
+    local inset = ARC_SIZE * (1 - span) / 2
+    region:SetPoint("TOPLEFT", 0, -inset)
+    region:SetPoint("BOTTOMRIGHT", 0, inset)
+end
+
 local function NoMouse(region)
     for _, method in ipairs({"SetMouseClickEnabled", "SetMouseMotionEnabled"}) do
         if type(region[method]) == "function" then
@@ -521,14 +537,15 @@ local function IconInitializer(entry)
         NoMouse(button)
         if entry.timed then
             local texture = entry.innermost and INNERMOST_ARC_TEXTURE or INNER_ARC_TEXTURE
+            local span = entry.innermost and INNERMOST_SPAN or INNER_SPAN
             button:SetAllPoints(frame)
             local track = button:CreateTexture(nil, "BACKGROUND")
-            track:SetAllPoints()
+            FitCrescent(track, span)
             track:SetTexture(texture)
             track:SetVertexColor(0, 0, 0)
             track:SetAlpha(BACKGROUND_ALPHA)
             local bar = CreateFrame("StatusBar", nil, button)
-            bar:SetAllPoints()
+            FitCrescent(bar, span)
             bar:SetStatusBarTexture(texture)
             bar:SetOrientation("VERTICAL")
             bar:SetStatusBarColor(entry.color[1], entry.color[2], entry.color[3])
@@ -587,12 +604,12 @@ local function CreateSample()
     frame.sample = CreateFrame("Frame", nil, frame)
     frame.sample:SetAllPoints()
     local inner = frame.sample:CreateTexture(nil, "ARTWORK")
-    inner:SetAllPoints()
+    FitCrescent(inner, INNER_SPAN)
     inner:SetTexture(INNER_ARC_TEXTURE)
     local purple = SHIELDS[2].color
     inner:SetVertexColor(purple[1], purple[2], purple[3])
     local innermost = frame.sample:CreateTexture(nil, "ARTWORK")
-    innermost:SetAllPoints()
+    FitCrescent(innermost, INNERMOST_SPAN)
     innermost:SetTexture(INNERMOST_ARC_TEXTURE)
     local gold = SHIELDS[#SHIELDS].color
     innermost:SetVertexColor(gold[1], gold[2], gold[3])
@@ -623,12 +640,12 @@ local function CreateRing()
     frame.visible = CreateFrame("Frame", nil, frame)
     frame.visible:SetAllPoints()
     frame.background = frame.visible:CreateTexture(nil, "BACKGROUND")
-    frame.background:SetAllPoints()
+    FitCrescent(frame.background, OUTER_SPAN)
     frame.background:SetTexture(ARC_TEXTURE)
     frame.background:SetVertexColor(0, 0, 0)
     frame.background:SetAlpha(BACKGROUND_ALPHA)
     frame.bar = CreateFrame("StatusBar", nil, frame.visible)
-    frame.bar:SetAllPoints()
+    FitCrescent(frame.bar, OUTER_SPAN)
     frame.bar:SetStatusBarTexture(ARC_TEXTURE)
     frame.bar:SetOrientation("VERTICAL")
     frame.text = frame.bar:CreateFontString(nil, "OVERLAY", "NumberFontNormal")

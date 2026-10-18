@@ -282,9 +282,16 @@ module only after the author agrees its behavior.
   get a spot each, then the shared ones; bubbles (Divine Shield, Divine
   Protection: Paladin; Blessing of Protection: anyone) are timed, drawing a
   gold innermost crescent that drains with their time left (Classic IDs;
-  check on Forever). In combat the display stays shown, since buffs others
-  cast cannot be read: the outer crescent is invisible with no absorb, and
-  the engine shows each icon and timed crescent only while its buff is up.
+  check on Forever; Power Word: Shield's Classic IDs are confirmed there).
+  In combat the display stays shown, since buffs others cast cannot be read:
+  the outer crescent is invisible with no absorb, and the engine shows each
+  icon and timed crescent only while its buff is up.
+- Version 4: each crescent texture spans its own height (scripts/build_arc.py
+  stretches it; Shield.lua's `*_SPAN` constants match, checked by a Python
+  test), and every crescent texture and bar is drawn at that height. A
+  StatusBar fills its whole height, so across the full square a timed bar
+  emptied a segment or more before its buff ended (found in client; the
+  fix confirmed on a Mage).
 
 ### Demon Armor reminder (built)
 
