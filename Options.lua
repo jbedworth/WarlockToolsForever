@@ -515,8 +515,21 @@ local function AddColorsPage(parent)
     end
 end
 
+-- With Dyre's Buff Reminders 0.3.0 or later installed the page only says that
+-- it plays the Nightfall sound.
 local function AddAlertsPage(parent)
-    local page = Settings.RegisterVerticalLayoutSubcategory(parent, ALERTS_TITLE)
+    local by = WTF.NightfallStandAside()
+    local page, layout = Settings.RegisterVerticalLayoutSubcategory(parent,
+        ManagedTitle(ALERTS_TITLE, by and by.title, by ~= nil))
+    if by then
+        ManagedHeading(layout, true, "The Nightfall sound is now managed by " .. by.title,
+            "Use " .. by.slash .. " to change it. "
+                .. "WTF keeps its own settings as they are, and uses them again if you remove " .. by.title .. ".")
+        Notice(page, "WTF_ALERTS_NIGHTFALL", "Nightfall sound (played by " .. by.title .. ")",
+            by.title .. " plays your Nightfall sound now (Proc Sounds), so WTF plays none. Type " .. by.slash
+                .. " to change it. WTF keeps its own Nightfall settings as they are.")
+        return
+    end
     local library = WTF.SoundLibrary()
     local nightfall = Flag(page, "WTF_ALERTS_NIGHTFALL", "Nightfall sound", "alerts", "nightfall", false,
         "Play a sound when Nightfall procs (Shadow Trance: your next Shadow Bolt is instant), also in combat."

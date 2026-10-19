@@ -4,6 +4,10 @@ Player-facing changes for each Warlock Tools Forever release, newest first. The
 release builder copies the section for the TOC version into the GitHub release
 notes and the CurseForge changelog, and fails if that section is missing.
 
+## 0.3.3-beta
+
+- With **Dyre's Buff Reminders** 0.3.0 or later installed, WTF plays no Nightfall sound of its own, so you do not hear it twice. Dyre's Buff Reminders now plays it with its proc sounds and copies your WTF Nightfall switch and sound the first time they run. WTF's Alerts page is greyed out and points you to `/dbr`; your WTF Nightfall settings stay as they are. With an older Dyre's Buff Reminders, WTF plays the Nightfall sound as before.
+
 ## 0.3.2-beta
 
 - With **Dyre's Buff Reminders** 0.2.0 or later installed, WTF plays no cooldown chimes of its own, so you do not hear each chime twice. Dyre's Buff Reminders now plays them and copies your WTF chime choices the first time its chimes run. WTF's chime settings are greyed out and point you to `/dbr`; your WTF chime settings stay as they are. The Nightfall sound stays in WTF.

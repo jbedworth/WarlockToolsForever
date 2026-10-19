@@ -167,7 +167,8 @@ when Nightfall procs Shadow Trance, so your next Shadow Bolt is instant. Choose
 from Dyre's Sounds' Dyre's Picks or imp laughs and chirps (the default is the
 Imp spell chirp), in a menu grouped like the Cooldown Manager's; choosing one
 plays it once, so you can audition them. The game plays the sound itself, also
-in combat.
+in combat. With Dyre's Buff Reminders 0.3.0 or later installed, it plays the
+Nightfall sound instead (see below).
 
 ## Control bar
 
@@ -220,8 +221,11 @@ for every class. With it installed, WTF hides its own reminder icons and
 plays no chimes of its own, so you never see two icons for one buff or hear
 a chime twice. Its chime and reminder settings are greyed out, and WTF keeps
 them as they are. Dyre's Buff Reminders copies your WTF chime choices the
-first time its chimes run; use `/dbr` for them. The Nightfall sound stays in
-WTF.
+first time its chimes run; use `/dbr` for them. From version 0.3.0, Dyre's
+Buff Reminders also plays proc sounds, Nightfall included: WTF then plays no
+Nightfall sound of its own, greys out its Alerts page, and keeps its Nightfall
+settings as they are. Dyre's Buff Reminders copies your Nightfall switch and
+sound the first time its proc sounds run.
 
 ## Shield display
 

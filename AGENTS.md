@@ -269,8 +269,16 @@ module only after the author agrees its behavior.
   game plays it, also in combat. Registration waits out an Encounter
   restriction (`ADDON_RESTRICTION_STATE_CHANGED`). `UnitAuraSoundInfo`
   (pinned UnitConstantsDocumentation) takes only `soundFileName` or
-  `soundFileID`, not sound kits. The Nightfall sound stays in WTF also with
-  Dyre's Buff Reminders installed (it is not a chime).
+  `soundFileID`, not sound kits.
+- Stand aside for the Proc Sounds of Dyre's Buff Reminders (author-approved):
+  when DBR is loaded and its TOC Version (`C_AddOns.GetAddOnMetadata`) is
+  0.3.0 or later (`WTF.NIGHTFALL_ADDON`, `WTF.NightfallStandAside`; parsed as
+  major.minor.patch, as DBR's Chimes.lua compares `asideFrom`; a missing or
+  odd version counts as older, since DBR 0.2.x has no Nightfall sound), WTF
+  registers no aura sound and previews none; the Alerts page is listed as
+  "Alerts (Dyre's Buff Reminders)" and only says, greyed out, that DBR plays
+  it (`/dbr`). WTF's saved `alerts.nightfall` and `alerts.nightfallSound`
+  stay untouched: DBR copies them on its first run.
 
 ### Cooldown chimes (built, ported from MTF)
 

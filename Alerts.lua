@@ -69,6 +69,9 @@ end
 
 -- Plays the chosen sound once, so the settings page can preview it.
 function WTF.PreviewNightfallSound()
+    if not alerts.available then
+        return
+    end
     local library = WTF.SoundLibrary()
     if library then
         library.Play(WTF.db.alerts.nightfallSound)
@@ -83,6 +86,10 @@ events:SetScript("OnEvent", function()
 end)
 
 function WTF.InitializeAlerts()
+    -- Dyre's Buff Reminders plays it; WTF registers nothing and keeps its settings.
+    if WTF.NightfallStandAside() then
+        return
+    end
     if type(C_UnitAuras) ~= "table" or type(C_UnitAuras.AddAuraSound) ~= "function"
         or type(C_UnitAuras.RemoveAuraSound) ~= "function" then
         return

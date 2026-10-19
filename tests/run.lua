@@ -93,8 +93,12 @@ local function fixture(options)
         local key, value = text:match("^##%s*([^:]+):%s*(.-)%s*$")
         if key then state.toc[key] = value end
     end
+    -- options.addOnVersions: other AddOns' TOC versions, as {DyresBuffReminders = "0.3.0-beta"}.
     env.C_AddOns = {GetAddOnMetadata = function(name, field)
-        equal(name, "WarlockToolsForever", "metadata uses the AddOn folder name")
+        if name ~= "WarlockToolsForever" then
+            equal(field, "Version", "only another AddOn's version is read")
+            return (options.addOnVersions or {})[name]
+        end
         return state.toc[field] or ""
     end}
     env.CreateSettingsListSectionHeaderInitializer = function(name, tooltip)
@@ -3084,6 +3088,50 @@ test("without Dyre's Sounds the Nightfall sound registers nothing and keeps its 
     contains(page.initializers[1].tooltip, "Install Dyre's Sounds")
     state.wtf.PreviewNightfallSound()
     equal(state.played, nil)
+end)
+test("with Dyre's Buff Reminders 0.3.0 or later WTF plays no Nightfall sound and keeps its settings", function()
+    local saved = {chimes = {enabled = false}, alerts = {nightfall = true, nightfallSound = "implaugh1"}}
+    for _, version in ipairs({"0.3.0-beta", "0.3.1", "0.10.0-beta", "1.0.0"}) do
+        local state = fixture({loadedAddOns = {DyresBuffReminders = true},
+            addOnVersions = {DyresBuffReminders = version}, db = saved})
+        equal(#liveSounds(state), 0, "no aura sound with DBR " .. version)
+        state.wtf.ApplyNightfallSound()
+        equal(#liveSounds(state), 0, "nothing registers later either")
+        state.wtf.PreviewNightfallSound()
+        equal(#state.soundsPlayed, 0, "no preview")
+        equal(state.wtf.db.alerts.nightfall, true, "kept for DBR to copy")
+        equal(state.wtf.db.alerts.nightfallSound, "implaugh1")
+        equal(state.categories.Alerts, nil, "the list name says who plays it")
+        local page = state.categories["Alerts (Dyre's Buff Reminders)"]
+        equal(page.headings[1].heading, "The Nightfall sound is now managed by Dyre's Buff Reminders")
+        contains(page.headings[1].tooltip, "/dbr")
+        equal(#page.initializers, 1, "the page only says who plays it")
+        local notice = page.initializers[1]
+        equal(notice.setting.name, "Nightfall sound (played by Dyre's Buff Reminders)")
+        contains(notice.tooltip, "Dyre's Buff Reminders plays your Nightfall sound")
+        contains(notice.tooltip, "/dbr")
+        equal(notice.modifyPredicates[1](), false, "greyed out")
+        notice.setting:SetValue(false)
+        equal(state.wtf.db.alerts.nightfall, true, "the greyed switch changes nothing")
+    end
+end)
+test("with an older or unreadable Dyre's Buff Reminders version WTF still plays Nightfall", function()
+    local saved = {chimes = {enabled = false}, alerts = {nightfall = true}}
+    for _, version in ipairs({"0.2.0-beta", "0.2.9", "beta", "", false}) do
+        local state = fixture({loadedAddOns = {DyresBuffReminders = true},
+            addOnVersions = {DyresBuffReminders = version or nil}, db = saved})
+        equal(#liveSounds(state), 1, "WTF plays it with DBR " .. tostring(version))
+        equal(state.categories["Alerts (Dyre's Buff Reminders)"], nil)
+        equal(state.categories.Alerts.initializers[1].setting.variable, "WTF_ALERTS_NIGHTFALL")
+    end
+    local alone = fixture({addOnVersions = {DyresBuffReminders = "0.3.0-beta"}, db = saved})
+    equal(#liveSounds(alone), 1, "a version alone, without DBR loaded, changes nothing")
+end)
+test("the missing-sounds line leaves out a Nightfall sound that DBR plays", function()
+    local state = fixture({noSounds = true, loadedAddOns = {DyresBuffReminders = true},
+        addOnVersions = {DyresBuffReminders = "0.3.0-beta"},
+        db = {chimes = {enabled = false}, alerts = {nightfall = true}}})
+    equal(table.concat(state.messages, "|"):find("Dyre's Sounds", 1, true), nil, "nothing WTF plays wants a sound")
 end)
 test("the Alerts page has the switch and Dyre's Sounds' aura sounds under it", function()
     local state = fixture()

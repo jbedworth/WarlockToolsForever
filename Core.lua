@@ -126,6 +126,43 @@ function WTF.ChimesStandAside()
     end
 end
 
+-- Dyre's Buff Reminders plays the Nightfall sound from 0.3.0 on (its Proc
+-- Sounds; author-approved), so WTF registers none; WTF's Nightfall settings
+-- stay as they are, since DBR copies them on its first run. Older DBR has no
+-- Nightfall sound, so its version is checked.
+WTF.NIGHTFALL_ADDON = {addon = "DyresBuffReminders", title = "Dyre's Buff Reminders", slash = "/dbr",
+    from = {0, 3, 0}}
+
+-- Whether another AddOn's TOC version (major.minor.patch) is at least `from`.
+-- A version that cannot be read counts as older.
+local function VersionAtLeast(addon, from)
+    if type(C_AddOns.GetAddOnMetadata) ~= "function" then
+        return false
+    end
+    local version = C_AddOns.GetAddOnMetadata(addon, "Version")
+    local major, minor, patch = (type(version) == "string" and version or ""):match("^(%d+)%.(%d+)%.(%d+)")
+    if not major then
+        return false
+    end
+    local found = {tonumber(major), tonumber(minor), tonumber(patch)}
+    for index = 1, 3 do
+        if found[index] ~= from[index] then
+            return found[index] > from[index]
+        end
+    end
+    return true
+end
+
+-- WTF.NIGHTFALL_ADDON when it is loaded and plays the Nightfall sound, else nil.
+function WTF.NightfallStandAside()
+    local other = WTF.NIGHTFALL_ADDON
+    if type(C_AddOns) ~= "table" or type(C_AddOns.IsAddOnLoaded) ~= "function"
+        or C_AddOns.IsAddOnLoaded(other.addon) ~= true then
+        return nil
+    end
+    return VersionAtLeast(other.addon, other.from) and other or nil
+end
+
 -- Reads TOC fields so the banner follows the packaged version; never gates operations.
 local function Metadata(field)
     if type(C_AddOns) ~= "table" or type(C_AddOns.GetAddOnMetadata) ~= "function" then
@@ -708,7 +745,8 @@ events:SetScript("OnEvent", function(self, event, loadedName)
         WTF.Report(message)
         return
     end
-    if (WTF.db.chimes.enabled and not WTF.ChimesStandAside()) or WTF.db.alerts.nightfall then
+    if (WTF.db.chimes.enabled and not WTF.ChimesStandAside())
+            or (WTF.db.alerts.nightfall and not WTF.NightfallStandAside()) then
         WTF.ReportMissingSounds()
     end
     -- Called directly rather than from each file's own PLAYER_LOGIN handler,

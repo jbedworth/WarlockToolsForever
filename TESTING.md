@@ -349,9 +349,15 @@ and printing.
       once, from DBR); the main page's Cooldown chimes switch and the page
       "Cooldown Chimes (Dyre's Buff Reminders)" say, greyed out, that DBR
       plays them, with `/dbr` in the tooltip; DBR's first run copied WTF's
-      chime choices and DBR does not warn that WTF also plays chimes; the
-      Nightfall sound still plays from WTF. Disable DBR: WTF's chimes and
-      their saved choices are back.
+      chime choices and DBR does not warn that WTF also plays chimes. With
+      DBR 0.2.x, the Nightfall sound still plays from WTF. Disable DBR:
+      WTF's chimes and their saved choices are back.
+- [ ] With Dyre's Buff Reminders 0.3.0 or later enabled: a Nightfall proc
+      plays one sound, from DBR's Proc Sounds, not two; the page "Alerts
+      (Dyre's Buff Reminders)" says, greyed out, that DBR plays it, with
+      `/dbr` in the tooltip; DBR's first run copied WTF's Nightfall switch
+      and sound. Disable DBR: WTF's Nightfall sound and its saved choice are
+      back.
 - [ ] With Dyre's Cooldown Chimes still enabled (with or without DBR): the
       settings name Dyre's Cooldown Chimes and `/dcc`, and WTF plays no
       chimes.
