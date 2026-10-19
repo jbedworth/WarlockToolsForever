@@ -152,7 +152,7 @@ local function fixture(options)
     env.C_XMLUtil = {GetTemplateInfo = function(name)
         if name == "CustomAuraContainerTemplate" and not options.noAuraContainer then return {} end
     end}
-    -- options.loadedAddOns: other AddOns already loaded, as {DyresCooldownChimes = true}.
+    -- options.loadedAddOns: other AddOns already loaded, as {DyresBuffReminders = true}.
     state.loadedAddOns = options.loadedAddOns
     env.C_AddOns.IsAddOnLoaded = function(name) return state.loadedAddOns and state.loadedAddOns[name] end
     env.C_AddOns.LoadAddOn = function(name)
@@ -2466,10 +2466,11 @@ test("without Dyre's Sounds chimes still time, play nothing, and WTF says once w
     local quiet = fixture({noSounds = true, db = {chimes = {enabled = false}}})
     equal(table.concat(quiet.messages, "|"):find("Dyre's Sounds", 1, true), nil, "nothing wants a sound")
 end)
-test("with Dyre's Cooldown Chimes installed WTF plays no chimes and keeps its settings", function()
+-- Plays no chime, keeps the saved settings, and names `title` and `slash` in the settings.
+local function checkChimesStandAside(loaded, addon, title, slash)
     local saved = {chimes = {enabled = true, lead = 1, spells = {inferno = true}, sounds = {howl = "voice"},
         learned = {deathcoil = 90}}}
-    local state = fixture({loadedAddOns = {DyresCooldownChimes = true}, db = saved})
+    local state = fixture({loadedAddOns = loaded, db = saved})
     state.emit("UNIT_SPELLCAST_SUCCEEDED", "player", "cast-1", DEATH_COIL)
     wait(state, 200)
     equal(#state.soundsPlayed, 0, "no chime")
@@ -2480,23 +2481,39 @@ test("with Dyre's Cooldown Chimes installed WTF plays no chimes and keeps its se
     equal(db.lead, 1)
     equal(db.spells.inferno, true)
     equal(db.sounds.howl, "voice")
-    equal(db.learned.deathcoil, 90, "kept for Dyre's Cooldown Chimes to copy")
+    equal(db.learned.deathcoil, 90, "kept for the other AddOn to copy")
     equal(state.categories["Cooldown Chimes"], nil, "the list name says who runs them")
-    local page = state.categories["Cooldown Chimes (Dyre's Cooldown Chimes)"]
-    equal(page.headings[1].heading, "Cooldown chimes are now managed by Dyre's Cooldown Chimes")
+    local page = state.categories["Cooldown Chimes (" .. title .. ")"]
+    equal(page.headings[1].heading, "Cooldown chimes are now managed by " .. title)
+    contains(page.headings[1].tooltip, slash)
     equal(#page.initializers, 1, "the page only says who plays them")
-    equal(page.initializers[1].setting.name, "Played by Dyre's Cooldown Chimes")
-    contains(page.initializers[1].tooltip, "/dcc")
+    equal(page.initializers[1].setting.name, "Played by " .. title)
+    contains(page.initializers[1].tooltip, slash)
     equal(page.initializers[1].modifyPredicates[1](), false, "greyed out")
     local main = initializerFor(state.categories["Warlock Tools Forever"], "WTF_CHIMES_ENABLED")
-    contains(main.tooltip, "Dyre's Cooldown Chimes plays your cooldown chimes")
+    equal(main.setting.name, "Cooldown chimes (played by " .. title .. ")")
+    contains(main.tooltip, title .. " plays your cooldown chimes")
     main.setting:SetValue(false)
     equal(state.wtf.db.chimes.enabled, true, "the main page's switch changes nothing")
     state.settings.WTF_ALERTS_NIGHTFALL:SetValue(true)
     equal(#liveNightfall(state), 1, "the Nightfall sound stays in WTF")
     state.clear()
     state.slash("debug_chimes")
-    contains(table.concat(state.messages, "|"), "dyresCooldownChimes=true")
+    contains(table.concat(state.messages, "|"), "playedBy=" .. addon)
+end
+test("with Dyre's Buff Reminders installed WTF plays no chimes and keeps its settings", function()
+    checkChimesStandAside({DyresBuffReminders = true}, "DyresBuffReminders", "Dyre's Buff Reminders", "/dbr")
+end)
+test("Dyre's Cooldown Chimes, while still installed, plays the chimes instead of WTF and DBR", function()
+    checkChimesStandAside({DyresCooldownChimes = true}, "DyresCooldownChimes", "Dyre's Cooldown Chimes", "/dcc")
+    checkChimesStandAside({DyresCooldownChimes = true, DyresBuffReminders = true}, "DyresCooldownChimes",
+        "Dyre's Cooldown Chimes", "/dcc")
+end)
+test("without a chimes AddOn WTF plays its own chimes", function()
+    local state = fixture()
+    equal(state.wtf.ChimesStandAside(), nil)
+    state.slash("debug_chimes")
+    contains(table.concat(state.messages, "|"), "playedBy=WTF")
 end)
 test("out of combat the real cooldown is read and learned; switches turn chimes off", function()
     local state = fixture()

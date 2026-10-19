@@ -215,14 +215,13 @@ how early it plays on the Cooldown Chimes page.
 installed, WTF draws no shield ring of its own and greys out its shield
 settings; use `/dsu` for them.
 
-**Dyre's Buff Reminders** shows buff reminders for every class. With it
-installed, WTF hides its own reminder icons, so you never see two for one
-buff, and keeps its own reminder settings as they are. Use `/dbr` for them.
-
-If you install **Dyre's Cooldown Chimes**, which plays chimes for any class,
-WTF plays no chimes of its own, so you do not hear each one twice. Dyre's
-Cooldown Chimes takes over your WTF chime choices the first time it runs; set
-them with `/dcc`.
+**Dyre's Buff Reminders** shows buff reminders and plays cooldown chimes
+for every class. With it installed, WTF hides its own reminder icons and
+plays no chimes of its own, so you never see two icons for one buff or hear
+a chime twice. Its chime and reminder settings are greyed out, and WTF keeps
+them as they are. Dyre's Buff Reminders copies your WTF chime choices the
+first time its chimes run; use `/dbr` for them. The Nightfall sound stays in
+WTF.
 
 ## Shield display
 

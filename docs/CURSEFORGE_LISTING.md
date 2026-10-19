@@ -69,7 +69,7 @@ Per-file changelogs need no manual text: each CI upload uses the version's
 - **Announcements with flavor:** summons, Soulstones, and Healthstone trades tell your group or whisper the target. Every message can be edited or turned off.
 
 ### Sounds: Dyre's Sounds (required)
-WTF's sounds come from **Dyre's Sounds**, which holds the sounds for all of Dyre's AddOns, so your computer keeps one copy. The CurseForge app installs it with WTF. Without it, WTF works but plays no sounds, and says so once in chat. With **Dyre's Cooldown Chimes** installed, WTF leaves the cooldown chimes to it, so you never hear one twice.
+WTF's sounds come from **Dyre's Sounds**, which holds the sounds for all of Dyre's AddOns, so your computer keeps one copy. The CurseForge app installs it with WTF. Without it, WTF works but plays no sounds, and says so once in chat. With **Dyre's Buff Reminders** installed, WTF leaves the cooldown chimes to it, so you never hear one twice.
 
 ### Commands
 - `/wtf` opens the settings. `/wtf shards` shows your shards and limit.

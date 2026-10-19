@@ -270,7 +270,7 @@ module only after the author agrees its behavior.
   restriction (`ADDON_RESTRICTION_STATE_CHANGED`). `UnitAuraSoundInfo`
   (pinned UnitConstantsDocumentation) takes only `soundFileName` or
   `soundFileID`, not sound kits. The Nightfall sound stays in WTF also with
-  Dyre's Cooldown Chimes installed.
+  Dyre's Buff Reminders installed (it is not a chime).
 
 ### Cooldown chimes (built, ported from MTF)
 
@@ -306,13 +306,19 @@ module only after the author agrees its behavior.
   icons stay hidden, also unlocked (WTF.RemindersStandAside), and the settings say DBR
   shows them; WTF's saved reminder settings stay as they are. Later WTF drops
   its reminders.
-- Stand aside for Dyre's Cooldown Chimes (DCC, `src/DyresCooldownChimes`; the
-  second step of the move to shared AddOns, author-approved): when
-  `C_AddOns.IsAddOnLoaded("DyresCooldownChimes")` is true, WTF registers no
-  cast event and plays no chime or preview; the Cooldown Chimes page and the
-  main page's switch only say, greyed out, that DCC plays them (`/dcc`). WTF's
-  saved chime settings stay untouched: DCC copies them on its first run.
-  Later WTF drops its chimes, with a CHANGELOG note and a chat message.
+- Stand aside for the chimes of Dyre's Buff Reminders (DBR 0.2.0 took in
+  Dyre's Cooldown Chimes, DCC, which was never released; the second step of
+  the move to shared AddOns, author-approved): when
+  `C_AddOns.IsAddOnLoaded("DyresBuffReminders")` or
+  `C_AddOns.IsAddOnLoaded("DyresCooldownChimes")` is true
+  (`WTF.CHIMES_ADDONS`; DCC first, since DBR plays none while DCC is loaded),
+  WTF registers no cast event and plays no chime or preview; the Cooldown
+  Chimes page and the main page's switch only say, greyed out, which AddOn
+  plays them and its slash command (`/dbr`, `/dcc`). WTF's saved chime
+  settings stay untouched: DBR copies them on its first run. DBR's
+  `OTHER_CHIMES` counts WTF as standing aside from version 0.3.2 on, so keep
+  this in every later version. Later WTF drops its chimes, with a CHANGELOG
+  note and a chat message.
 
 ### Shield display (built, MTF's shared component)
 

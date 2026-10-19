@@ -344,11 +344,17 @@ and printing.
       chimes, Nightfall, and the shield break play nothing; the chime and
       Nightfall switches show without sound menus. Enable it again: the
       sounds you chose before are still selected.
-- [ ] With Dyre's Cooldown Chimes enabled: WTF plays no chimes (you hear
-      each chime once, from DCC); the main page's Cooldown chimes switch and
-      the Cooldown Chimes page say, greyed out, that DCC plays them; DCC's
-      first run copied WTF's chime choices; the Nightfall sound still plays
-      from WTF. Disable DCC: WTF's chimes and their saved choices are back.
+- [ ] With Dyre's Buff Reminders 0.2.0 or later enabled (and Dyre's
+      Cooldown Chimes disabled): WTF plays no chimes (you hear each chime
+      once, from DBR); the main page's Cooldown chimes switch and the page
+      "Cooldown Chimes (Dyre's Buff Reminders)" say, greyed out, that DBR
+      plays them, with `/dbr` in the tooltip; DBR's first run copied WTF's
+      chime choices and DBR does not warn that WTF also plays chimes; the
+      Nightfall sound still plays from WTF. Disable DBR: WTF's chimes and
+      their saved choices are back.
+- [ ] With Dyre's Cooldown Chimes still enabled (with or without DBR): the
+      settings name Dyre's Cooldown Chimes and `/dcc`, and WTF plays no
+      chimes.
 - [ ] Shield display: Shadow Ward and Sacrifice fill the crescent, each icon
       in its own spot; with MTF installed too, the display shows on both a
       Warlock and a Mage. A Blessing of Protection from a Paladin, also in

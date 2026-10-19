@@ -28,8 +28,11 @@ local category
 local SOUNDS_MISSING_TIP = " Install Dyre's Sounds to hear it and to choose its sound."
 local REMINDERS_ELSEWHERE_TIP = "Dyre's Buff Reminders shows your buff reminders now, so WTF's "
     .. "Demon Armor icon stays hidden. Type /dbr to change it. WTF keeps its own setting as it is."
-local CHIMES_ELSEWHERE_TIP = "Dyre's Cooldown Chimes plays your cooldown chimes now, so WTF plays none. "
-    .. "Type /dcc to change them. WTF keeps its own chime settings as they are."
+-- by: the WTF.CHIMES_ADDONS entry that plays the chimes.
+local function ChimesElsewhereTip(by)
+    return by.title .. " plays your cooldown chimes now, so WTF plays none. Type " .. by.slash
+        .. " to change them. WTF keeps its own chime settings as they are."
+end
 
 local function HasSettingsAPI()
     if type(Settings) ~= "table" or type(Settings.VarType) ~= "table" then
@@ -193,17 +196,18 @@ local function Notice(page, variable, name, tooltip)
 end
 
 -- Each spell's switch, and under it its sound from Dyre's Sounds (the nested
--- menu, author-approved as in MTF). With Dyre's Cooldown Chimes installed the
+-- menu, author-approved as in MTF). With Dyre's Buff Reminders installed the
 -- page only says that it plays the chimes.
 local function AddChimesPage(parent)
-    local aside = WTF.ChimesStandAside()
+    local by = WTF.ChimesStandAside()
+    local aside = by ~= nil
     local page, layout = Settings.RegisterVerticalLayoutSubcategory(parent,
-        ManagedTitle(CHIMES_TITLE, "Dyre's Cooldown Chimes", aside))
-    ManagedHeading(layout, aside, "Cooldown chimes are now managed by Dyre's Cooldown Chimes",
-        "Use /dcc to change them. "
-            .. "WTF keeps its own settings as they are, and uses them again if you remove Dyre's Cooldown Chimes.")
+        ManagedTitle(CHIMES_TITLE, by and by.title, aside))
     if aside then
-        Notice(page, "WTF_CHIMES_ELSEWHERE", "Played by Dyre's Cooldown Chimes", CHIMES_ELSEWHERE_TIP)
+        ManagedHeading(layout, true, "Cooldown chimes are now managed by " .. by.title,
+            "Use " .. by.slash .. " to change them. "
+                .. "WTF keeps its own settings as they are, and uses them again if you remove " .. by.title .. ".")
+        Notice(page, "WTF_CHIMES_ELSEWHERE", "Played by " .. by.title, ChimesElsewhereTip(by))
         return
     end
     local library = WTF.SoundLibrary()
@@ -741,10 +745,11 @@ function WTF.InitializeOptions()
             "An icon with a pulsing border while you lack Demon Armor (or Demon Skin), out of combat. Click it "
                 .. "to cast your armor.", function() WTF.RefreshReminders() end)
     end
-    if WTF.ChimesStandAside() then
-        -- Dyre's Cooldown Chimes plays them; the saved switch stays as it is.
-        Notice(category, "WTF_CHIMES_ENABLED", "Cooldown chimes (played by Dyre's Cooldown Chimes)",
-            CHIMES_ELSEWHERE_TIP)
+    local chimesBy = WTF.ChimesStandAside()
+    if chimesBy then
+        -- Dyre's Buff Reminders plays them; the saved switch stays as it is.
+        Notice(category, "WTF_CHIMES_ENABLED", "Cooldown chimes (played by " .. chimesBy.title .. ")",
+            ChimesElsewhereTip(chimesBy))
     else
         Flag(category, "WTF_CHIMES_ENABLED", "Cooldown chimes", "chimes", "enabled", true,
             "A sound just before Death Coil, Howl of Terror, and your other chosen spells are ready again."

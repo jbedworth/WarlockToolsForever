@@ -111,7 +111,7 @@ end
 -- A chime's own sound through Dyre's Sounds; Text to Speech says
 -- "<Spell> ready". A sound that cannot play (no text-to-speech voice) falls
 -- back to the default. Without the library nothing plays, and WTF says once
--- what to install. With Dyre's Cooldown Chimes installed, it plays the chimes.
+-- what to install. With Dyre's Buff Reminders installed, it plays the chimes.
 local function Play(chime)
     if WTF.ChimesStandAside() then
         return
@@ -213,7 +213,7 @@ events:SetScript("OnEvent", function(_, _, _, _, spellID)
 end)
 
 function WTF.InitializeChimes()
-    -- Dyre's Cooldown Chimes plays them; WTF times nothing and keeps its settings.
+    -- Dyre's Buff Reminders plays them; WTF times nothing and keeps its settings.
     if WTF.ChimesStandAside() then
         return
     end
@@ -256,8 +256,9 @@ function WTF.ReportChimesDebug()
     end
     local last = chimes.lastCast
     local _, sounds = WTF.SoundLibrary()
-    Report(string.format("sounds=%s dyresCooldownChimes=%s lead=%s lastCast=%s", SOUNDS_STATES[sounds],
-        tostring(WTF.ChimesStandAside()), tostring(WTF.db and WTF.db.chimes.lead),
+    local playedBy = WTF.ChimesStandAside()
+    Report(string.format("sounds=%s playedBy=%s lead=%s lastCast=%s", SOUNDS_STATES[sounds],
+        playedBy and playedBy.addon or "WTF", tostring(WTF.db and WTF.db.chimes.lead),
         last and string.format("%s %.1fs ago", last.key, now - last.time) or "none"))
     for _, entry in ipairs(chimes.log) do
         Report(string.format("log %.1fs ago %s", now - entry.time, entry.text))

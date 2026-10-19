@@ -82,10 +82,15 @@ function WTF.ReportMissingSounds()
     WTF.Report(SOUNDS_MESSAGES[state])
 end
 
--- Dyre's Cooldown Chimes plays the chimes when it is installed (author-
--- approved), so WTF plays none; WTF's chime settings stay as they are, since
--- Dyre's Cooldown Chimes copies them on its first run.
-WTF.CHIMES_ADDON = "DyresCooldownChimes"
+-- Dyre's Buff Reminders plays the chimes when it is installed (author-
+-- approved; it took in Dyre's Cooldown Chimes, never released, which then
+-- plays them instead while still installed), so WTF plays none; WTF's chime
+-- settings stay as they are, since the other AddOn copies them on its first
+-- run. The first one loaded is the one that plays.
+WTF.CHIMES_ADDONS = {
+    {addon = "DyresCooldownChimes", title = "Dyre's Cooldown Chimes", slash = "/dcc"},
+    {addon = "DyresBuffReminders", title = "Dyre's Buff Reminders", slash = "/dbr"},
+}
 
 -- Dyre's Buff Reminders shows buff reminders for every class (author-approved
 -- two-step move): while it is loaded, WTF's own reminder icons stay hidden and
@@ -109,9 +114,16 @@ function WTF.ShieldStandAside()
     return loaded == true
 end
 
+-- The entry of WTF.CHIMES_ADDONS that plays the chimes, or nil when WTF does.
 function WTF.ChimesStandAside()
-    return type(C_AddOns) == "table" and type(C_AddOns.IsAddOnLoaded) == "function"
-        and C_AddOns.IsAddOnLoaded(WTF.CHIMES_ADDON) == true
+    if type(C_AddOns) ~= "table" or type(C_AddOns.IsAddOnLoaded) ~= "function" then
+        return nil
+    end
+    for _, other in ipairs(WTF.CHIMES_ADDONS) do
+        if C_AddOns.IsAddOnLoaded(other.addon) == true then
+            return other
+        end
+    end
 end
 
 -- Reads TOC fields so the banner follows the packaged version; never gates operations.
