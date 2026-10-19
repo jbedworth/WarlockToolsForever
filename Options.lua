@@ -96,15 +96,65 @@ local function SliderOptions(minValue, maxValue, step)
     return options
 end
 
+-- A page whose feature a stand-alone Dyre's AddOn now runs (author-approved rule)
+-- says so twice: its name in the settings list names that AddOn, and a heading
+-- with a tooltip tops the page. Headings as Blizzard's Controls page adds them
+-- (Blizzard_SettingControls.lua: CreateSettingsListSectionHeaderInitializer).
+local function ManagedTitle(title, addonTitle, managed)
+    return managed and (title .. " (" .. addonTitle .. ")") or title
+end
+
+local function ManagedHeading(layout, managed, heading, tooltip)
+    if managed and type(CreateSettingsListSectionHeaderInitializer) == "function" and type(layout) == "table"
+            and type(layout.AddInitializer) == "function" then
+        layout:AddInitializer(CreateSettingsListSectionHeaderInitializer(heading, tooltip))
+    end
+end
+
+-- The shield display draws in one AddOn only (Shield.lua's election); in the
+-- others its settings do nothing, so they are greyed out (author-approved) with
+-- a note naming the AddOn that draws it. Checked each time the page shows.
+local SHIELD_ELSEWHERE = " Dyre's Shields Up shows the shield display now, so these settings do nothing "
+    .. "here. Type /dsu to change it. WTF keeps its own shield settings as they are."
+
+local function ShieldOwnerNote(display)
+    if WTF.ShieldStandAside() then
+        return SHIELD_ELSEWHERE
+    end
+    if display.IsOwner() then
+        return ""
+    end
+    local owner = display.OwnerAddOn()
+    local title = owner and type(C_AddOns) == "table" and type(C_AddOns.GetAddOnMetadata) == "function"
+        and C_AddOns.GetAddOnMetadata(owner, "Title")
+    if type(title) ~= "string" or title == "" then
+        title = tostring(owner)
+    end
+    return " " .. title .. " draws the shield display, so use its settings for it."
+end
+
+local function GreyUnlessOwner(initializer, display)
+    if type(initializer) == "table" and type(initializer.AddModifyPredicate) == "function" then
+        initializer:AddModifyPredicate(function() return not WTF.ShieldStandAside() and display.IsOwner() end)
+    end
+    return initializer
+end
+
 local function AddShieldPage(parent)
-    local page = Settings.RegisterVerticalLayoutSubcategory(parent, SHIELD_TITLE)
-    Flag(page, "WTF_SHIELD_NUMBER", "Show the absorb amount", "shield", "number", true,
-        "Show your remaining absorb as a number beside the ring.", RefreshShield)
-    local soundSwitch = Flag(page, "WTF_SHIELD_BREAK_SOUND", "Sound when a shield ends", "shield", "breakSound",
-        false,
-        "Play a sound when your Shadow Ward, your Voidwalker's Sacrifice, or another shield on you ends or "
-            .. "breaks, also in combat.", RefreshShield)
+    local aside = WTF.ShieldStandAside()
+    local page, layout = Settings.RegisterVerticalLayoutSubcategory(parent,
+        ManagedTitle(SHIELD_TITLE, "Dyre's Shields Up", aside))
+    ManagedHeading(layout, aside, "Shields are now managed by Dyre's Shields Up",
+        "Use /dsu to change the shield display. "
+            .. "WTF keeps its own settings as they are, and uses them again if you remove Dyre's Shields Up.")
     local display = WTF.ShieldDisplay
+    local note = ShieldOwnerNote(display)
+    GreyUnlessOwner(Flag(page, "WTF_SHIELD_NUMBER", "Show the absorb amount", "shield", "number", true,
+        "Show your remaining absorb as a number beside the ring." .. note, RefreshShield), display)
+    local soundSwitch = GreyUnlessOwner(Flag(page, "WTF_SHIELD_BREAK_SOUND", "Sound when a shield ends",
+        "shield", "breakSound", false,
+        "Play a sound when your Shadow Ward, your Voidwalker's Sacrifice, or another shield on you ends or "
+            .. "breaks, also in combat." .. note, RefreshShield), display)
     -- Which sound, under its switch (author-approved: a default you can change).
     local sound = Proxy(page, "WTF_SHIELD_BREAK_SOUND_CHOICE", Settings.VarType.String, "Sound",
         display.DEFAULT_BREAK_SOUND,
@@ -116,8 +166,9 @@ local function AddShieldPage(parent)
         end)
     -- The sounds come from Dyre's Sounds; without it the list is empty.
     local dropdown = Settings.CreateDropdown(page, sound, display.SoundChoices,
-        "The sound when a shield ends. Choosing one plays it once. The sounds come from Dyre's Sounds.")
+        "The sound when a shield ends. Choosing one plays it once. The sounds come from Dyre's Sounds." .. note)
     display.SetupSoundMenu(dropdown)
+    GreyUnlessOwner(dropdown, display)
     dropdown:SetParentInitializer(soundSwitch, function() return WTF.db.shield.breakSound end)
     local scale = Proxy(page, "WTF_SHIELD_SCALE", Settings.VarType.Number, "Display size (%)", display.DEFAULT_SCALE,
         function() return WTF.db.shield.scale end,
@@ -125,8 +176,9 @@ local function AddShieldPage(parent)
             WTF.db.shield.scale = display.SanitizeScale(value)
             RefreshShield()
         end)
-    Settings.CreateSlider(page, scale, SliderOptions(display.SCALE_MIN, display.SCALE_MAX, display.SCALE_STEP),
-        "How big the shield display is, in percent.")
+    GreyUnlessOwner(Settings.CreateSlider(page, scale,
+        SliderOptions(display.SCALE_MIN, display.SCALE_MAX, display.SCALE_STEP),
+        "How big the shield display is, in percent." .. note), display)
 end
 
 -- A greyed-out checkbox that only says something; never saved.
@@ -144,8 +196,13 @@ end
 -- menu, author-approved as in MTF). With Dyre's Cooldown Chimes installed the
 -- page only says that it plays the chimes.
 local function AddChimesPage(parent)
-    local page = Settings.RegisterVerticalLayoutSubcategory(parent, CHIMES_TITLE)
-    if WTF.ChimesStandAside() then
+    local aside = WTF.ChimesStandAside()
+    local page, layout = Settings.RegisterVerticalLayoutSubcategory(parent,
+        ManagedTitle(CHIMES_TITLE, "Dyre's Cooldown Chimes", aside))
+    ManagedHeading(layout, aside, "Cooldown chimes are now managed by Dyre's Cooldown Chimes",
+        "Use /dcc to change them. "
+            .. "WTF keeps its own settings as they are, and uses them again if you remove Dyre's Cooldown Chimes.")
+    if aside then
         Notice(page, "WTF_CHIMES_ELSEWHERE", "Played by Dyre's Cooldown Chimes", CHIMES_ELSEWHERE_TIP)
         return
     end
@@ -669,10 +726,10 @@ function WTF.InitializeOptions()
     Flag(category, "WTF_TRACKER_ENABLED", "DoT tracker", "tracker", "enabled", true,
         "A row per mob you DoT, with the time left on your DoTs, Bane, Curse, and Fear.",
         RefreshTracker)
-    Flag(category, "WTF_SHIELD_ENABLED", "Shield display", "shield", "enabled", true,
+    GreyUnlessOwner(Flag(category, "WTF_SHIELD_ENABLED", "Shield display", "shield", "enabled", true,
         "A crescent beside your character that fills with your remaining shield: Shadow Ward, your "
-            .. "Voidwalker's Sacrifice, or a shield another player puts on you, like Power Word: Shield.",
-        RefreshShield)
+            .. "Voidwalker's Sacrifice, or a shield another player puts on you, like Power Word: Shield."
+            .. ShieldOwnerNote(WTF.ShieldDisplay), RefreshShield), WTF.ShieldDisplay)
     Flag(category, "WTF_CONTROL_ENABLED", "Control bar", "control", "enabled", true,
         "A bar per mob you Fear or Banish with its time left; click one to cast it again.", RefreshControl)
     if WTF.RemindersStandAside() then

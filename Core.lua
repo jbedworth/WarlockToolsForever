@@ -98,6 +98,17 @@ function WTF.RemindersStandAside()
     return loaded == true
 end
 
+-- The stand-alone Dyre's AddOn wins when it is installed (author-approved rule
+-- for every shared feature): while Dyre's Shields Up is loaded, WTF starts no
+-- shield display of its own and its shield settings stay as they are.
+function WTF.ShieldStandAside()
+    if type(C_AddOns) ~= "table" or type(C_AddOns.IsAddOnLoaded) ~= "function" then
+        return false
+    end
+    local loaded = C_AddOns.IsAddOnLoaded("DyresShieldsUp")
+    return loaded == true
+end
+
 function WTF.ChimesStandAside()
     return type(C_AddOns) == "table" and type(C_AddOns.IsAddOnLoaded) == "function"
         and C_AddOns.IsAddOnLoaded(WTF.CHIMES_ADDON) == true
@@ -579,6 +590,10 @@ end
 -- WTF's settings and chat, and it decides whether this copy draws. With both
 -- AddOns installed, one display shows, from the newest copy.
 function WTF.InitializeShield()
+    -- Not even a candidate in the display's election: Dyre's Shields Up draws it.
+    if WTF.ShieldStandAside() then
+        return
+    end
     WTF.ShieldDisplay.Initialize({settings = function() return WTF.db.shield end, report = WTF.Report,
         unlockHint = "Drag to move · /wtf lock when done", missingSounds = WTF.ReportMissingSounds})
 end

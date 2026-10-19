@@ -211,6 +211,10 @@ like the Cooldown Manager's: Dyre's Picks, the game's interface sounds, the
 Cooldown Manager's alert sounds, or a voice that says the spell's name. Pick
 how early it plays on the Cooldown Chimes page.
 
+**Dyre's Shields Up** shows the shield display for every class. With it
+installed, WTF draws no shield ring of its own and greys out its shield
+settings; use `/dsu` for them.
+
 **Dyre's Buff Reminders** shows buff reminders for every class. With it
 installed, WTF hides its own reminder icons, so you never see two for one
 buff, and keeps its own reminder settings as they are. Use `/dbr` for them.

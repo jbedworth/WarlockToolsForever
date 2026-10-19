@@ -4,6 +4,11 @@ Player-facing changes for each Warlock Tools Forever release, newest first. The
 release builder copies the section for the TOC version into the GitHub release
 notes and the CurseForge changelog, and fails if that section is missing.
 
+## 0.3.1-beta
+
+- The Shield and Cooldown Chimes settings pages say when one of Dyre's AddOns runs that feature: the name in the settings list names it, and a heading at the top says so.
+- With **Dyre's Shields Up** installed, WTF leaves the shield display to it: WTF draws no ring of its own, and its shield settings are greyed out and point you to `/dsu`. Your WTF shield settings stay as they are.
+
 ## 0.3.0-beta
 
 - With **Dyre's Buff Reminders** installed, WTF hides its own Demon Armor reminder, so you never see two icons. Your setting in WTF stays as it is.

@@ -97,6 +97,9 @@ local function fixture(options)
         equal(name, "WarlockToolsForever", "metadata uses the AddOn folder name")
         return state.toc[field] or ""
     end}
+    env.CreateSettingsListSectionHeaderInitializer = function(name, tooltip)
+        return {heading = name, tooltip = tooltip}
+    end
     env.UnitClass = function(unit)
         equal(unit, "player")
         local class = options.class or "WARLOCK"
@@ -615,7 +618,15 @@ local function fixture(options)
         env.Settings = {
             VarType = {Boolean = "boolean", Number = "number", String = "string"},
             RegisterVerticalLayoutCategory = function(name) return newCategory(name) end,
-            RegisterVerticalLayoutSubcategory = function(parent, name) return newCategory(name, parent) end,
+            -- Returns the page and its layout, as the client does; a heading the
+            -- layout gets is kept on the page.
+            RegisterVerticalLayoutSubcategory = function(parent, name)
+                local page = newCategory(name, parent)
+                page.headings = {}
+                local layout = {}
+                function layout:AddInitializer(heading) page.headings[#page.headings + 1] = heading end
+                return page, layout
+            end,
             RegisterCanvasLayoutSubcategory = function(parent, frame, name)
                 local page = newCategory(name, parent)
                 page.frame = frame
@@ -2470,7 +2481,9 @@ test("with Dyre's Cooldown Chimes installed WTF plays no chimes and keeps its se
     equal(db.spells.inferno, true)
     equal(db.sounds.howl, "voice")
     equal(db.learned.deathcoil, 90, "kept for Dyre's Cooldown Chimes to copy")
-    local page = state.categories["Cooldown Chimes"]
+    equal(state.categories["Cooldown Chimes"], nil, "the list name says who runs them")
+    local page = state.categories["Cooldown Chimes (Dyre's Cooldown Chimes)"]
+    equal(page.headings[1].heading, "Cooldown chimes are now managed by Dyre's Cooldown Chimes")
     equal(#page.initializers, 1, "the page only says who plays them")
     equal(page.initializers[1].setting.name, "Played by Dyre's Cooldown Chimes")
     contains(page.initializers[1].tooltip, "/dcc")
@@ -2533,12 +2546,57 @@ test("a copy registered first whose AddOn stays off does not keep WTF's display 
         "owner=WarlockToolsForever copies=MageToolsForever v8, WarlockToolsForever v8 (running)")
     equal(table.concat(state.messages, "|"):find("failed", 1, true), nil, "every debug step ran")
 end)
+test("with Dyre's Shields Up loaded, WTF draws no shield and greys out its shield settings", function()
+    local state = fixture({loadedAddOns = {DyresShieldsUp = true}, db = {shield = {scale = 80, breakSound = true}}})
+    equal(state.wtf.ShieldDisplay.frame, nil, "no ring of its own: Dyre's Shields Up draws it")
+    equal(state.wtf.ShieldDisplay.IsOwner(), false, "not even a candidate")
+    state.emit("UNIT_ABSORB_AMOUNT_CHANGED", "player")
+    state.slash("unlock")
+    state.slash("lock")
+    for _, message in ipairs(state.messages) do
+        equal(message:find("shown by", 1, true), nil, "no election message")
+    end
+    equal(state.wtf.db.shield.scale, 80, "its saved shield settings stay as they are")
+    equal(state.wtf.db.shield.breakSound, true)
+    local seen = 0
+    for _, page in pairs(state.categories) do
+        for _, initializer in ipairs(page.initializers) do
+            local variable = initializer.setting and initializer.setting.variable or ""
+            if variable:find("^WTF_SHIELD_") then
+                seen = seen + 1
+                equal(initializer.modifyPredicates[1](), false, variable .. " is greyed out")
+                contains(initializer.tooltip, "Dyre's Shields Up shows the shield display now")
+            end
+        end
+    end
+    equal(seen, 5, "the switch, number, sound, its choice, and the size")
+    equal(state.categories.Shield, nil, "the list name says who runs it")
+    local page = state.categories["Shield (Dyre's Shields Up)"]
+    equal(page.headings[1].heading, "Shields are now managed by Dyre's Shields Up")
+    contains(page.headings[1].tooltip, "/dsu")
+    equal(#fixture().categories.Shield.headings, 0, "no heading without Dyre's Shields Up")
+end)
 test("a newer running copy takes over, and WTF says which AddOn shows the display", function()
     local state = fixture({shieldCopies = {{addon = "ShieldForever", version = 9}}})
     equal(state.wtf.ShieldDisplay.frame ~= nil, true, "drawing while it is the only one running")
+    local function shieldGreyed(want)
+        local seen = 0
+        for _, page in pairs(state.categories) do
+            for _, initializer in ipairs(page.initializers) do
+                local variable = initializer.setting and initializer.setting.variable or ""
+                if variable:find("^WTF_SHIELD_") then
+                    seen = seen + 1
+                    equal(initializer.modifyPredicates[1](), not want, variable .. (want and " is greyed out" or " is not greyed"))
+                end
+            end
+        end
+        equal(seen, 5, "the switch, number, sound, its choice, and the size")
+    end
+    shieldGreyed(false)
     local other = state.copies.ShieldForever.ShieldDisplay
     other.Initialize({settings = function() return other.Sanitize({}) end, report = function() end})
     equal(state.wtf.ShieldDisplay.frame, nil, "WTF stood down")
+    shieldGreyed(true)
     equal(other.frame ~= nil, true, "the newer copy draws")
     contains(state.last(), "The shield display is shown by ShieldForever")
 end)

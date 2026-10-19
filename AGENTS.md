@@ -290,6 +290,16 @@ module only after the author agrees its behavior.
   the saved key is kept as it is. Without the library, or with an older
   contract, chimes still time, play nothing, and the settings show the
   switches without sound menus.
+- A settings page whose feature a stand-alone Dyre's AddOn runs is listed as
+  "<Page> (<AddOn>)" and starts with a heading "<Feature> are now managed by
+  <AddOn>" with a tooltip naming its slash command (author-approved; Options.lua
+  ManagedTitle and ManagedHeading).
+- The stand-alone Dyre's AddOn wins when installed (author's rule for every
+  shared feature until the class AddOns drop their copies). Dyre's Shields Up:
+  while `C_AddOns.IsAddOnLoaded("DyresShieldsUp")` is true (WTF.ShieldStandAside),
+  WTF never calls ShieldDisplay.Initialize, so its copy draws nothing and is
+  no candidate in the election; every shield setting is greyed out with a
+  tooltip pointing to `/dsu`; saved shield settings stay as they are.
 - Dyre's Buff Reminders (DBR, `src/DyresBuffReminders`) shows buff reminders for
   every class (author-approved two-step move). While
   `C_AddOns.IsAddOnLoaded("DyresBuffReminders")` is true, WTF's own reminder
