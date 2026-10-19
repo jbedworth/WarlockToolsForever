@@ -55,7 +55,7 @@ local addonName, ns = ...
 -- other copy says which AddOn shows it. Version 1 copies elect among every
 -- registered copy, so a version 1 copy stands down for any newer one.
 
-local VERSION = 7
+local VERSION = 8
 local REGISTRY_NAME = "ShieldForeverRegistry"
 
 local ARC_TEXTURE = "Interface\\AddOns\\" .. addonName .. "\\Textures\\ShieldArc"
@@ -102,23 +102,14 @@ local OTHER_SECONDS = 30
 -- An absorb change this soon after a known shield ended is that shield going.
 local ENDING_GRACE = 2
 local OTHER_COLOR = {1, 0.85, 0.45}
--- The break sounds you can choose from (author-approved), shipped with the
--- AddOn: the client plays no game sound by path (found in client:
--- RaidWarning.ogg stayed silent, an AddOn's file played).
-local SOUND_FOLDER = "Interface\\AddOns\\" .. addonName .. "\\Sounds\\"
-local BREAK_SOUNDS = {
-    {key = "fadingslow", label = "Fading slow disappear", file = "FadingSlowDisappear.mp3"},
-    {key = "blowswoosh", label = "Disappear blow swoosh", file = "DisappearBlowSwoosh.mp3"},
-    {key = "cartoonvanish", label = "Cartoon vanish", file = "CartoonVanish.mp3"},
-    {key = "disappear", label = "Disappear", file = "Disappear.mp3"},
-    {key = "magical", label = "Magical disappear", file = "MagicalDisappear.mp3"},
-    {key = "disappearshort", label = "Disappear (short)", file = "DisappearShort.wav"},
-    {key = "disappearingswoosh", label = "Disappearing swoosh", file = "DisappearingSwoosh.wav"},
-    {key = "teleportvanish", label = "Teleport warp vanish", file = "TeleportWarpVanish.wav"},
-    {key = "slowswoosh", label = "Slow swoosh", file = "SlowSwoosh.wav"},
-}
+-- The break sound comes from Dyre's Sounds (author-approved: one copy of the
+-- sound files for all of Dyre's AddOns, listed as OptionalDeps), as an aura
+-- sound: a file (Dyre's Picks) or a game file ID. The client plays no game
+-- sound by path (found in client: RaidWarning.ogg stayed silent).
+local SOUNDS_CONTRACT = 1
+local SOUNDS_FUNCTIONS = {"Resolve", "AuraSound", "Play", "Choices", "SetupMenu"}
 local DEFAULT_BREAK_SOUND = "fadingslow"
-local BREAK_CHANNEL = "Master"
+local SOUNDS_MISSING = "Install Dyre's Sounds to hear the sound when a shield ends. Get it from CurseForge."
 -- At most one break sound per this many seconds (the API allows 0 to 5).
 local BREAK_THROTTLE = 1
 -- Seconds /mtf debug_shield shows the absorb total on screen.
@@ -210,8 +201,7 @@ ShieldDisplay.SCALE_MIN = 50
 ShieldDisplay.SCALE_MAX = 150
 ShieldDisplay.SCALE_STEP = 5
 ShieldDisplay.DEFAULT_SCALE = 100
--- The break sounds, for the settings page's choice.
-ShieldDisplay.BREAK_SOUNDS = BREAK_SOUNDS
+-- The break sound a player starts with, a Dyre's Sounds key.
 ShieldDisplay.DEFAULT_BREAK_SOUND = DEFAULT_BREAK_SOUND
 
 function ShieldDisplay.SanitizeScale(value)
@@ -222,17 +212,52 @@ function ShieldDisplay.SanitizeScale(value)
     return math.max(ShieldDisplay.SCALE_MIN, math.min(ShieldDisplay.SCALE_MAX, stepped))
 end
 
-local function BreakSound(key)
-    for _, sound in ipairs(ShieldDisplay.BREAK_SOUNDS) do
-        if sound.key == key then
-            return sound
+-- Dyre's Sounds with the contract and functions the display uses, else nil.
+local function SoundLibrary()
+    local library = rawget(_G, "DyresSounds")
+    if type(library) ~= "table" or type(library.RequireContract) ~= "function" then
+        return nil
+    end
+    library = library.RequireContract(SOUNDS_CONTRACT)
+    if type(library) ~= "table" then
+        return nil
+    end
+    for _, name in ipairs(SOUNDS_FUNCTIONS) do
+        if type(library[name]) ~= "function" then
+            return nil
         end
     end
+    return library
 end
 
--- A known sound's key, else the default.
+-- A saved sound in the library's spelling when it can be an aura sound (the
+-- library maps the keys v6 and v7 saved), else the default. Without the
+-- library a saved key is kept, so a missing library never resets a choice.
 function ShieldDisplay.SanitizeBreakSound(key)
-    return BreakSound(key) and key or ShieldDisplay.DEFAULT_BREAK_SOUND
+    if type(key) ~= "string" then
+        return DEFAULT_BREAK_SOUND
+    end
+    local library = SoundLibrary()
+    if not library then
+        return key
+    end
+    local resolved = library.Resolve(key)
+    return resolved and library.AuraSound(resolved) and resolved or DEFAULT_BREAK_SOUND
+end
+
+-- The settings dropdown's plain list (Dyre's Sounds' aura sounds), empty
+-- without the library.
+function ShieldDisplay.SoundChoices()
+    local library = SoundLibrary()
+    return library and library.Choices("aura")() or {}
+end
+
+-- Gives a settings dropdown Dyre's Sounds' nested menu, when it is installed.
+function ShieldDisplay.SetupSoundMenu(initializer)
+    local library = SoundLibrary()
+    if library then
+        library.SetupMenu(initializer, "aura")
+    end
 end
 
 -- Settings with defaults, repaired so a damaged or older table cannot break it.
@@ -478,15 +503,11 @@ local function HasAuraSounds()
         and type(C_UnitAuras.RemoveAuraSound) == "function"
 end
 
-local function BreakSoundFile()
-    local sound = BreakSound(Config().breakSoundKey) or BreakSound(ShieldDisplay.DEFAULT_BREAK_SOUND)
-    return SOUND_FOLDER .. sound.file
-end
-
 -- Plays the chosen sound once, so the settings page can preview it.
 function ShieldDisplay.PreviewBreakSound()
-    if host and type(PlaySoundFile) == "function" then
-        PlaySoundFile(BreakSoundFile(), BREAK_CHANNEL)
+    local library = host and SoundLibrary()
+    if library then
+        library.Play(Config().breakSoundKey)
     end
 end
 
@@ -512,13 +533,29 @@ function ShieldDisplay.ApplyBreakSound()
     if not Config().enabled or not wanted then
         return
     end
-    local file = BreakSoundFile()
+    local library = SoundLibrary()
+    if not library then
+        -- Once per session, so a player who wants the sound knows why it is silent.
+        -- A host with other sounds says it in its own single line instead.
+        if type(host.missingSounds) == "function" then
+            host.missingSounds()
+        elseif not shield.soundsReported then
+            shield.soundsReported = true
+            host.report(SOUNDS_MISSING)
+        end
+        return
+    end
+    local sound = library.AuraSound(Config().breakSoundKey) or library.AuraSound(DEFAULT_BREAK_SOUND)
+    if not sound then
+        return
+    end
     local trigger = Enum.UnitAuraSoundTrigger and Enum.UnitAuraSoundTrigger.Removed or 2
     for _, entry in ipairs(SHIELDS) do
         for _, spellID in ipairs(shield.spots[entry.key] and entry.ranks or {}) do
             shield.soundIDs[#shield.soundIDs + 1] = C_UnitAuras.AddAuraSound(trigger, {
                 spellID = spellID, unitToken = "player", outputChannel = "master",
-                throttleSeconds = BREAK_THROTTLE, soundFileName = file})
+                throttleSeconds = BREAK_THROTTLE, soundFileName = sound.soundFileName,
+                soundFileID = sound.soundFileID})
         end
     end
 end
@@ -865,7 +902,10 @@ end
 
 -- options: settings = function returning the host's saved settings table
 -- (from ShieldDisplay.Sanitize); report = function(message) for chat;
--- unlockHint = optional text shown above the ring while it is unlocked.
+-- unlockHint = optional text shown above the ring while it is unlocked;
+-- missingSounds = optional function the display calls instead of its own
+-- chat line when Dyre's Sounds is missing, so a host says it once for all its
+-- sounds (author-approved: one line per AddOn).
 -- An AddOn calls this only when it runs, so only running AddOns take part.
 function ShieldDisplay.Initialize(options)
     host = options

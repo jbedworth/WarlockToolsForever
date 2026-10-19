@@ -201,7 +201,7 @@ the automated test method, and the in-client checklist.
    (`/wtf debug_tracker`), whether Fear and control show, and whether `UnitIsDead` and
    `UNIT_HEALTH` stay readable for nameplate units in combat.
 3. Forever's Soulstone duration (30 minutes in Classic) and Shadow Trance spell
-    ID (17941 in Classic); whether the three interface sound files exist.
+    ID (17941 in Classic).
 4. Whether `DeleteCursorItem` from a key press or world click works in combat
    (RestedXP's users report deletion in and out of combat).
 5. Whether shards stack.
@@ -331,8 +331,24 @@ and printing.
 - [ ] Demon Armor reminder: pulses while neither armor is on, a click casts
       your armor, hides as combat starts and returns after; no taint.
 - [ ] Cooldown chimes: Death Coil chimes half a second before it is ready,
-      also in combat; the sound menus match the Cooldown Manager's; the
-      Nightfall sound menu has Dyre's Picks, Imp, and Hellish imp groups.
+      also in combat; each spell's sound menu is Dyre's Sounds' nested menu
+      (Dyre's Picks first, Text to Speech last); a sound saved by 0.2.x
+      (for example a Dyre's Picks one) is still selected; Text to Speech says
+      "Death Coil ready". The Nightfall sound menu has only file sounds
+      (Dyre's Picks, Imp, Hellish imp), and the shield's sound menu the same.
+- [ ] Sounds from Dyre's Sounds: with it installed, no "Install Dyre's
+      Sounds" line at login; every sound plays (chimes, Nightfall, shield
+      break). The installed WarlockToolsForever folder has no Sounds folder.
+- [ ] Without Dyre's Sounds (disable it in the AddOn list): one chat line at
+      login says to install it, and no second one later; WTF otherwise works;
+      chimes, Nightfall, and the shield break play nothing; the chime and
+      Nightfall switches show without sound menus. Enable it again: the
+      sounds you chose before are still selected.
+- [ ] With Dyre's Cooldown Chimes enabled: WTF plays no chimes (you hear
+      each chime once, from DCC); the main page's Cooldown chimes switch and
+      the Cooldown Chimes page say, greyed out, that DCC plays them; DCC's
+      first run copied WTF's chime choices; the Nightfall sound still plays
+      from WTF. Disable DCC: WTF's chimes and their saved choices are back.
 - [ ] Shield display: Shadow Ward and Sacrifice fill the crescent, each icon
       in its own spot; with MTF installed too, the display shows on both a
       Warlock and a Mage. A Blessing of Protection from a Paladin, also in

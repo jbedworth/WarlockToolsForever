@@ -149,6 +149,8 @@ local function fixture(options)
     env.C_XMLUtil = {GetTemplateInfo = function(name)
         if name == "CustomAuraContainerTemplate" and not options.noAuraContainer then return {} end
     end}
+    -- options.loadedAddOns: other AddOns already loaded, as {DyresCooldownChimes = true}.
+    state.loadedAddOns = options.loadedAddOns
     env.C_AddOns.IsAddOnLoaded = function(name) return state.loadedAddOns and state.loadedAddOns[name] end
     env.C_AddOns.LoadAddOn = function(name)
         state.loadedAddOns = state.loadedAddOns or {}
@@ -283,6 +285,93 @@ local function fixture(options)
     state.sounds = {}
     env.SOUNDKIT = {UI_ORDERHALL_TALENT_READY_TOAST = 73281, RAID_WARNING = 8959, READY_CHECK = 8960}
     env.PlaySound = function(kit, channel) state.sounds[#state.sounds + 1] = {kit = kit, channel = channel} end
+    -- Dyre's Sounds, faked with a few sounds of each kind (the library has its
+    -- own suite): files, file IDs, sound kits, and Text to Speech. Every Play is
+    -- recorded in state.soundsPlayed as {key, speech}. options.noSounds leaves
+    -- it out, options.oldSounds offers only an older contract.
+    state.soundsPlayed = {}
+    if not options.noSounds then
+        local FOLDER = "Interface\\AddOns\\DyresSounds\\Sounds\\"
+        local catalog = {
+            fadingslow = {label = "Dyre's Picks: Fading slow disappear", file = "FadingSlowDisappear.mp3"},
+            blowswoosh = {label = "Dyre's Picks: Disappear blow swoosh", file = "DisappearBlowSwoosh.mp3"},
+            cartoonvanish = {label = "Dyre's Picks: Cartoon vanish", file = "CartoonVanish.mp3"},
+            magical = {label = "Dyre's Picks: Magical disappear", file = "MagicalDisappear.mp3"},
+            slowswoosh = {label = "Dyre's Picks: Slow swoosh", file = "SlowSwoosh.wav"},
+            talent = {label = "Interface: Talent ready", kit = 73281},
+            impactspopclick = {label = "Impacts: Pop Click", kit = 316434},
+            implaugh1 = {label = "Imp: Laugh 1", id = 639142},
+            impspell = {label = "Imp: Spell chirp", id = 639156},
+            voice = {label = "Text to Speech", voice = true},
+        }
+        local order = {"fadingslow", "blowswoosh", "cartoonvanish", "magical", "slowswoosh", "talent",
+            "impactspopclick", "implaugh1", "impspell", "voice"}
+        local aliases = {popclick = "impactspopclick", effectcartoonvanish = "cartoonvanish",
+            effectmagical = "magical", pickmagical = "magical", pickslowswoosh = "slowswoosh"}
+        local library = {}
+        function library.RequireContract(minimum)
+            if minimum <= (options.oldSounds and 0 or 1) then return library end
+        end
+        function library.Resolve(key)
+            key = aliases[key] or key
+            return catalog[key] and key or nil
+        end
+        function library.Label(key)
+            local sound = catalog[library.Resolve(key) or ""]
+            return sound and sound.label
+        end
+        function library.AuraSound(key)
+            local sound = catalog[library.Resolve(key) or ""]
+            if sound and sound.file then
+                return {soundFileName = FOLDER .. sound.file}
+            elseif sound and sound.id then
+                return {soundFileID = sound.id}
+            end
+        end
+        function library.List(filter)
+            local list = {}
+            for _, key in ipairs(order) do
+                if filter ~= "aura" or library.AuraSound(key) then
+                    list[#list + 1] = {key = key, label = catalog[key].label}
+                end
+            end
+            return list
+        end
+        function library.Groups(filter)
+            local groups, byName = {}, {}
+            for _, sound in ipairs(library.List(filter)) do
+                local name = sound.label:match("^(.-): ") or sound.label
+                if not byName[name] then
+                    byName[name] = {name = name, sounds = {}}
+                    groups[#groups + 1] = byName[name]
+                end
+                byName[name].sounds[#byName[name].sounds + 1] = sound
+            end
+            return groups
+        end
+        -- As the library does: false when Text to Speech has no voice or text.
+        function library.Play(key, speech)
+            local sound = catalog[library.Resolve(key) or ""]
+            if not sound or (sound.voice and (state.noVoice or type(speech) ~= "string")) then
+                return false
+            end
+            state.soundsPlayed[#state.soundsPlayed + 1] = {key = library.Resolve(key), speech = speech}
+            return true
+        end
+        function library.Choices(filter)
+            return function()
+                local list = {}
+                for _, sound in ipairs(library.List(filter)) do
+                    list[#list + 1] = {value = sound.key, label = sound.label}
+                end
+                return list
+            end
+        end
+        function library.SetupMenu(initializer, filter) initializer.soundMenu = filter or "all" end
+        env.DyresSounds = library
+    end
+    -- The last sound played through Dyre's Sounds.
+    function state.lastSound() return state.soundsPlayed[#state.soundsPlayed] end
     -- Cooldowns: readable out of combat, secret in it, as on Forever.
     state.cooldowns = {}
     env.C_Spell.GetSpellCooldown = function(id)
@@ -2106,6 +2195,16 @@ end)
 
 local DEMON_SKIN, DEMON_ARMOR = 687, 706
 
+test("with Dyre's Buff Reminders loaded, WTF's Demon Armor icon stays hidden and keeps its setting", function()
+    local state = fixture({known = {[DEMON_SKIN] = true, [DEMON_ARMOR] = true},
+        loadedAddOns = {DyresBuffReminders = true}})
+    local icon = state.env.WarlockToolsForeverReminder_armor
+    equal(icon.shown, false, "no second icon beside Dyre's Buff Reminders'")
+    state.slash("unlock")
+    equal(icon.shown, false, "not even to drag")
+    equal(state.wtf.db.reminders.enabled, true, "the saved switch is untouched")
+    equal(state.settings.WTF_REMINDERS_ENABLED.name, "Demon Armor reminder (shown by Dyre's Buff Reminders)")
+end)
 test("the Demon Armor icon pulses while it is missing; a click casts your armor", function()
     local state = fixture({known = {[DEMON_SKIN] = true, [DEMON_ARMOR] = true}})
     local icon = state.env.WarlockToolsForeverReminder_armor
@@ -2207,24 +2306,67 @@ test("WTF ships the shield display: it follows its switch and the lock", functio
     state.slash("debug_shield")
     contains(state.messages[1], "debug_shield UnitGetTotalAbsorbs=function")
 end)
-test("the shield break sound is chosen under its switch, and choosing one plays it", function()
+local function initializerFor(page, variable)
+    for _, initializer in ipairs(page.initializers) do
+        if initializer.setting.variable == variable then return initializer end
+    end
+end
+
+test("the shield break sound comes from Dyre's Sounds, chosen under its switch", function()
     local state = fixture()
     equal(state.wtf.db.shield.breakSoundKey, "fadingslow", "the default")
+    local dropdown = initializerFor(state.categories.Shield, "WTF_SHIELD_BREAK_SOUND_CHOICE")
+    equal(dropdown.parentInitializer.setting.variable, "WTF_SHIELD_BREAK_SOUND", "under the sound switch")
+    equal(dropdown.soundMenu, "aura", "Dyre's Sounds' nested menu of aura sounds")
+    local labels = {}
+    for _, choice in ipairs(dropdown.choices()) do labels[#labels + 1] = choice.label end
+    equal(table.concat(labels, ", "), "Dyre's Picks: Fading slow disappear, Dyre's Picks: Disappear blow swoosh, "
+        .. "Dyre's Picks: Cartoon vanish, Dyre's Picks: Magical disappear, Dyre's Picks: Slow swoosh, "
+        .. "Imp: Laugh 1, Imp: Spell chirp", "no sound kits or Text to Speech")
     state.settings.WTF_SHIELD_BREAK_SOUND:SetValue(true)
-    equal(state.played.file, "Interface\\AddOns\\WarlockToolsForever\\Sounds\\FadingSlowDisappear.mp3",
-        "turning it on plays it once")
+    equal(state.lastSound().key, "fadingslow", "turning it on plays it once")
+    local live
+    for _, sound in pairs(state.auraSounds) do live = sound end
+    equal(live.info.soundFileName, "Interface\\AddOns\\DyresSounds\\Sounds\\FadingSlowDisappear.mp3",
+        "Dyre's Sounds' file: WTF ships no sounds")
     state.settings.WTF_SHIELD_BREAK_SOUND_CHOICE:SetValue("blowswoosh")
-    equal(state.played.file, "Interface\\AddOns\\WarlockToolsForever\\Sounds\\DisappearBlowSwoosh.mp3")
+    equal(state.lastSound().key, "blowswoosh", "previewed")
     equal(state.wtf.db.shield.breakSoundKey, "blowswoosh")
+    state.settings.WTF_SHIELD_BREAK_SOUND_CHOICE:SetValue("talent")
+    equal(state.wtf.db.shield.breakSoundKey, "fadingslow", "a sound kit cannot be an aura sound")
+end)
+test("without Dyre's Sounds the shield display keeps its sound choice and says what to install", function()
+    local state = fixture({noSounds = true, db = {shield = {breakSoundKey = "magical", breakSound = true}}})
+    equal(state.wtf.db.shield.breakSoundKey, "magical", "a missing library never resets a choice")
+    equal(state.auraSoundCount, nil, "no sound to register")
+    local found = 0
+    for _, message in ipairs(state.messages) do
+        if message:find("Install Dyre's Sounds", 1, true) then
+            found = found + 1
+            contains(message, "the shield sound", "WTF's one line covers the shield sound")
+        end
+    end
+    equal(found, 1, "one line for all of WTF's sounds")
+    equal(#initializerFor(state.categories.Shield, "WTF_SHIELD_BREAK_SOUND_CHOICE").choices(), 0, "an empty list")
 end)
 
 -- Cooldown chimes ----------------------------------------------------------------
 
 local DEATH_COIL = 6789
+local SHADOW_TRANCE = 17941
 
 local function wait(state, seconds)
     state.now = state.now + seconds
     state.runTimers()
+end
+
+-- The registered Nightfall aura sounds.
+local function liveNightfall(state)
+    local list = {}
+    for _, sound in pairs(state.auraSounds or {}) do
+        if sound.info.spellID == SHADOW_TRANCE then list[#list + 1] = sound end
+    end
+    return list
 end
 
 test("a chime plays just before Death Coil is ready again, also in combat", function()
@@ -2235,24 +2377,113 @@ test("a chime plays just before Death Coil is ready again, also in combat", func
     wait(state, 119)
     equal(#state.sounds, 0, "not yet")
     wait(state, 0.5)
-    equal(#state.sounds, 1, "half a second early")
-    equal(state.sounds[1].kit, 73281, "Talent ready by default")
-    equal(state.sounds[1].channel, "Master")
+    equal(#state.soundsPlayed, 1, "half a second early")
+    equal(state.soundsPlayed[1].key, "talent", "Talent ready by default, through Dyre's Sounds")
+    equal(state.soundsPlayed[1].speech, "Death Coil ready", "the text Text to Speech would say")
+    equal(state.played, nil, "WTF plays no file of its own")
+    equal(#state.sounds, 0, "and no sound kit of its own")
 end)
-test("a chime can use one of WTF's own effect sounds, played by file", function()
+test("a chime can use one of Dyre's Picks; an old WTF key is mapped by Dyre's Sounds", function()
     local state = fixture()
     state.settings.WTF_CHIME_SOUND_DEATHCOIL:SetValue("effectcartoonvanish")
-    equal(state.wtf.db.chimes.sounds.deathcoil, "effectcartoonvanish")
-    local file = "Interface\\AddOns\\WarlockToolsForever\\Sounds\\CartoonVanish.mp3"
-    equal(state.played.file, file, "previewed")
-    state.played = nil
+    equal(state.wtf.db.chimes.sounds.deathcoil, "cartoonvanish", "saved in the library's spelling")
+    equal(state.lastSound().key, "cartoonvanish", "previewed")
     state.combat = true
     state.emit("UNIT_SPELLCAST_SUCCEEDED", "player", "cast-1", DEATH_COIL)
     wait(state, 0.1)
     wait(state, 120)
-    equal(state.played.file, file, "the chime plays the file, also in combat")
-    equal(state.played.channel, "Master")
-    equal(#state.sounds, 0, "no sound kit as well")
+    equal(#state.soundsPlayed, 2, "the chime plays, also in combat")
+    equal(state.lastSound().key, "cartoonvanish")
+end)
+test("Text to Speech says the spell; without a voice the chime falls back to the default", function()
+    local state = fixture()
+    state.settings.WTF_CHIME_SOUND_HOWL:SetValue("voice")
+    equal(state.lastSound().key, "voice")
+    equal(state.lastSound().speech, "Howl of Terror ready", "the preview says it too")
+    state.noVoice = true
+    state.wtf.PreviewChime("howl")
+    equal(state.lastSound().key, "talent", "no voice: the default plays instead")
+    equal(state.lastSound().speech, "Howl of Terror ready")
+    equal(state.wtf.db.chimes.sounds.howl, "voice", "the choice stays")
+end)
+test("saved chime and Nightfall keys: mapped with Dyre's Sounds, kept without it", function()
+    local db = {chimes = {sounds = {deathcoil = "effectmagical", howl = "popclick", shadowward = "bogus",
+        soulstone = 5}}, alerts = {nightfall = false, nightfallSound = "pickslowswoosh"}}
+    local mapped = fixture({db = db})
+    equal(mapped.wtf.db.chimes.sounds.deathcoil, "magical")
+    equal(mapped.wtf.db.chimes.sounds.howl, "impactspopclick")
+    equal(mapped.wtf.db.chimes.sounds.shadowward, "talent", "an unknown key: the default")
+    equal(mapped.wtf.db.chimes.sounds.soulstone, "talent", "a damaged value: the default")
+    equal(mapped.wtf.db.alerts.nightfallSound, "slowswoosh")
+    db = {chimes = {sounds = {deathcoil = "effectmagical", howl = "bogus", soulstone = 5}},
+        alerts = {nightfallSound = "pickslowswoosh"}}
+    local kept = fixture({noSounds = true, db = db})
+    equal(kept.wtf.db.chimes.sounds.deathcoil, "effectmagical", "kept as saved")
+    equal(kept.wtf.db.chimes.sounds.howl, "bogus", "the library decides later what it means")
+    equal(kept.wtf.db.chimes.sounds.soulstone, "talent", "a damaged value still is repaired")
+    equal(kept.wtf.db.alerts.nightfallSound, "pickslowswoosh")
+    local old = fixture({oldSounds = true, db = {chimes = {sounds = {deathcoil = "effectmagical"}}}})
+    equal(old.wtf.db.chimes.sounds.deathcoil, "effectmagical", "an older library counts as missing")
+end)
+test("without Dyre's Sounds chimes still time, play nothing, and WTF says once what to install", function()
+    local state = fixture({noSounds = true})
+    local function count()
+        local found = 0
+        for _, message in ipairs(state.messages) do
+            if message == "WTF: Install Dyre's Sounds to hear WTF's sounds (the chimes, the Nightfall sound, and "
+                .. "the shield sound). Get it from CurseForge." then
+                found = found + 1
+            end
+        end
+        return found
+    end
+    equal(count(), 1, "said at login, since the chimes are on")
+    state.emit("UNIT_SPELLCAST_SUCCEEDED", "player", "cast-1", DEATH_COIL)
+    wait(state, 0.1)
+    equal(state.wtf.db.chimes.learned.deathcoil, nil)
+    wait(state, 120)
+    equal(#state.sounds, 0, "nothing plays")
+    equal(state.played, nil)
+    state.settings.WTF_ALERTS_NIGHTFALL:SetValue(true)
+    equal(count(), 1, "once per session")
+    equal(state.settings.WTF_CHIME_SOUND_DEATHCOIL, nil, "no sound menus without sounds")
+    equal(state.settings.WTF_ALERTS_NIGHTFALL_SOUND, nil)
+    contains(initializerFor(state.categories["Cooldown Chimes"], "WTF_CHIME_DEATHCOIL").tooltip,
+        "Install Dyre's Sounds")
+    local old = fixture({oldSounds = true})
+    contains(table.concat(old.messages, "|"), "Update Dyre's Sounds")
+    local quiet = fixture({noSounds = true, db = {chimes = {enabled = false}}})
+    equal(table.concat(quiet.messages, "|"):find("Dyre's Sounds", 1, true), nil, "nothing wants a sound")
+end)
+test("with Dyre's Cooldown Chimes installed WTF plays no chimes and keeps its settings", function()
+    local saved = {chimes = {enabled = true, lead = 1, spells = {inferno = true}, sounds = {howl = "voice"},
+        learned = {deathcoil = 90}}}
+    local state = fixture({loadedAddOns = {DyresCooldownChimes = true}, db = saved})
+    state.emit("UNIT_SPELLCAST_SUCCEEDED", "player", "cast-1", DEATH_COIL)
+    wait(state, 200)
+    equal(#state.soundsPlayed, 0, "no chime")
+    state.wtf.PreviewChime("deathcoil")
+    equal(#state.soundsPlayed, 0, "not even a preview")
+    local db = state.wtf.db.chimes
+    equal(db.enabled, true)
+    equal(db.lead, 1)
+    equal(db.spells.inferno, true)
+    equal(db.sounds.howl, "voice")
+    equal(db.learned.deathcoil, 90, "kept for Dyre's Cooldown Chimes to copy")
+    local page = state.categories["Cooldown Chimes"]
+    equal(#page.initializers, 1, "the page only says who plays them")
+    equal(page.initializers[1].setting.name, "Played by Dyre's Cooldown Chimes")
+    contains(page.initializers[1].tooltip, "/dcc")
+    equal(page.initializers[1].modifyPredicates[1](), false, "greyed out")
+    local main = initializerFor(state.categories["Warlock Tools Forever"], "WTF_CHIMES_ENABLED")
+    contains(main.tooltip, "Dyre's Cooldown Chimes plays your cooldown chimes")
+    main.setting:SetValue(false)
+    equal(state.wtf.db.chimes.enabled, true, "the main page's switch changes nothing")
+    state.settings.WTF_ALERTS_NIGHTFALL:SetValue(true)
+    equal(#liveNightfall(state), 1, "the Nightfall sound stays in WTF")
+    state.clear()
+    state.slash("debug_chimes")
+    contains(table.concat(state.messages, "|"), "dyresCooldownChimes=true")
 end)
 test("out of combat the real cooldown is read and learned; switches turn chimes off", function()
     local state = fixture()
@@ -2261,24 +2492,24 @@ test("out of combat the real cooldown is read and learned; switches turn chimes 
     wait(state, 0.1)
     equal(state.wtf.db.chimes.learned.deathcoil, 90, "Forever's own cooldown")
     wait(state, 89.5)
-    equal(#state.sounds, 1)
+    equal(#state.soundsPlayed, 1)
     state.settings.WTF_CHIME_DEATHCOIL:SetValue(false)
     state.emit("UNIT_SPELLCAST_SUCCEEDED", "player", "cast-2", DEATH_COIL)
     wait(state, 100)
-    equal(#state.sounds, 1, "its switch")
+    equal(#state.soundsPlayed, 1, "its switch")
     state.settings.WTF_CHIME_DEATHCOIL:SetValue(true)
     state.settings.WTF_CHIMES_ENABLED:SetValue(false)
     state.emit("UNIT_SPELLCAST_SUCCEEDED", "player", "cast-3", DEATH_COIL)
     wait(state, 100)
-    equal(#state.sounds, 1, "the module switch")
+    equal(#state.soundsPlayed, 1, "the module switch")
 end)
-test("each chime has its own sound from the Cooldown Manager's catalog, and choosing one plays it", function()
+test("each chime has its own sound from Dyre's Sounds, and choosing one plays it", function()
     local state = fixture()
     local sound = state.settings.WTF_CHIME_SOUND_HOWL
     equal(sound:GetValue(), "talent")
     sound:SetValue("impactspopclick")
     equal(state.wtf.db.chimes.sounds.howl, "impactspopclick")
-    equal(state.sounds[#state.sounds].kit, 316434, "previewed: the Cooldown Manager's Pop click")
+    equal(state.lastSound().key, "impactspopclick", "previewed: the Cooldown Manager's Pop click")
     equal(state.wtf.db.chimes.sounds.deathcoil, "talent", "Death Coil keeps its own")
     sound:SetValue("nonsense")
     equal(state.wtf.db.chimes.sounds.howl, "impactspopclick", "unknown keys are ignored")
@@ -2293,17 +2524,17 @@ end)
 
 test("a copy registered first whose AddOn stays off does not keep WTF's display away", function()
     -- MTF loads first (folder order) but stays off on a Warlock.
-    local state = fixture({shieldCopies = {{addon = "MageToolsForever", version = 7, before = true}}})
+    local state = fixture({shieldCopies = {{addon = "MageToolsForever", version = 8, before = true}}})
     equal(state.wtf.ShieldDisplay.IsOwner(), true, "only running copies take part")
     equal(state.wtf.ShieldDisplay.frame ~= nil, true, "WTF draws the ring")
     state.clear()
     state.slash("debug_shield")
     contains(table.concat(state.messages, "|"),
-        "owner=WarlockToolsForever copies=MageToolsForever v7, WarlockToolsForever v7 (running)")
+        "owner=WarlockToolsForever copies=MageToolsForever v8, WarlockToolsForever v8 (running)")
     equal(table.concat(state.messages, "|"):find("failed", 1, true), nil, "every debug step ran")
 end)
 test("a newer running copy takes over, and WTF says which AddOn shows the display", function()
-    local state = fixture({shieldCopies = {{addon = "ShieldForever", version = 8}}})
+    local state = fixture({shieldCopies = {{addon = "ShieldForever", version = 9}}})
     equal(state.wtf.ShieldDisplay.frame ~= nil, true, "drawing while it is the only one running")
     local other = state.copies.ShieldForever.ShieldDisplay
     other.Initialize({settings = function() return other.Sanitize({}) end, report = function() end})
@@ -2724,7 +2955,7 @@ test("the Nightfall sound is off by default", function()
     equal(state.wtf.db.alerts.nightfall, false)
     equal(#liveSounds(state), 0)
 end)
-test("turned on, the game plays the chosen sound when Shadow Trance appears", function()
+test("turned on, the game plays the chosen sound from Dyre's Sounds when Shadow Trance appears", function()
     local state = fixture()
     state.settings.WTF_ALERTS_NIGHTFALL:SetValue(true)
     local sounds = liveSounds(state)
@@ -2732,15 +2963,19 @@ test("turned on, the game plays the chosen sound when Shadow Trance appears", fu
     equal(sounds[1].trigger, 0, "on the buff appearing")
     equal(sounds[1].info.spellID, 17941)
     equal(sounds[1].info.unitToken, "player")
+    equal(sounds[1].info.outputChannel, "master")
     equal(sounds[1].info.soundFileID, 639156, "the Imp spell chirp by file ID")
     equal(sounds[1].info.soundFileName, nil)
-    state.settings.WTF_ALERTS_NIGHTFALL_SOUND:SetValue("pickmagical")
+    state.settings.WTF_ALERTS_NIGHTFALL_SOUND:SetValue("magical")
     sounds = liveSounds(state)
     equal(#sounds, 1, "the old sound is replaced")
-    local file = "Interface\\AddOns\\WarlockToolsForever\\Sounds\\MagicalDisappear.mp3"
-    equal(sounds[1].info.soundFileName, file, "one of Dyre's Picks, by its path")
+    equal(sounds[1].info.soundFileName, "Interface\\AddOns\\DyresSounds\\Sounds\\MagicalDisappear.mp3",
+        "one of Dyre's Picks, Dyre's Sounds' file")
     equal(sounds[1].info.soundFileID, nil)
-    equal(state.played.file, file, "choosing a sound previews it")
+    equal(state.lastSound().key, "magical", "choosing a sound previews it")
+    equal(state.played, nil, "WTF plays no file of its own")
+    state.settings.WTF_ALERTS_NIGHTFALL_SOUND:SetValue("talent")
+    equal(state.wtf.db.alerts.nightfallSound, "magical", "a sound kit cannot be an aura sound")
     state.settings.WTF_ALERTS_NIGHTFALL:SetValue(false)
     equal(#liveSounds(state), 0)
 end)
@@ -2755,93 +2990,51 @@ test("a sound change during an encounter waits until it ends", function()
 end)
 test("the Nightfall setting survives a reload and bad saved values are repaired", function()
     local state = fixture({db = {alerts = {nightfall = true, nightfallSound = "pickslowswoosh"}}})
-    equal(liveSounds(state)[1].info.soundFileName, "Interface\\AddOns\\WarlockToolsForever\\Sounds\\SlowSwoosh.wav")
-    local former = fixture({db = {alerts = {nightfall = true, nightfallSound = "alarm"}}})
-    equal(former.wtf.db.alerts.nightfallSound, "impspell", "a removed interface sound falls back to the default")
+    equal(state.wtf.db.alerts.nightfallSound, "slowswoosh", "an old WTF key, mapped by Dyre's Sounds")
+    equal(liveSounds(state)[1].info.soundFileName, "Interface\\AddOns\\DyresSounds\\Sounds\\SlowSwoosh.wav")
+    local former = fixture({db = {alerts = {nightfall = true, nightfallSound = "talent"}}})
+    equal(former.wtf.db.alerts.nightfallSound, "impspell", "a sound kit falls back to the default")
     local repaired = fixture({db = {alerts = {nightfall = "yes", nightfallSound = "kazoo"}}})
     equal(repaired.wtf.db.alerts.nightfall, false)
     equal(repaired.wtf.db.alerts.nightfallSound, "impspell")
 end)
-test("the Alerts page has the switch and a sound dropdown under it", function()
+test("without Dyre's Sounds the Nightfall sound registers nothing and keeps its choice", function()
+    local state = fixture({noSounds = true, db = {chimes = {enabled = false},
+        alerts = {nightfall = true, nightfallSound = "implaugh1"}}})
+    equal(#liveSounds(state), 0)
+    equal(state.wtf.db.alerts.nightfallSound, "implaugh1")
+    contains(table.concat(state.messages, "|"), "Install Dyre's Sounds to hear WTF's sounds")
+    local page = state.categories.Alerts
+    equal(#page.initializers, 1, "the switch, without a sound menu")
+    contains(page.initializers[1].tooltip, "Install Dyre's Sounds")
+    state.wtf.PreviewNightfallSound()
+    equal(state.played, nil)
+end)
+test("the Alerts page has the switch and Dyre's Sounds' aura sounds under it", function()
     local state = fixture()
     local page = state.categories.Alerts
     equal(page.initializers[1].setting.variable, "WTF_ALERTS_NIGHTFALL")
     local dropdown = page.initializers[2]
     equal(dropdown.parentInitializer, page.initializers[1])
-    local choices = dropdown.choices()
-    equal(#choices, 9 + 13, "Dyre's Picks, then the imp sounds")
-    equal(choices[1].label, "Dyre's Picks: Fading slow disappear")
-    equal(choices[10].label, "Imp: Laugh 1")
-    equal(choices[22].label, "Hellish imp: Cackle 2", "no interface sounds by path")
+    equal(dropdown.soundMenu, "aura", "Dyre's Sounds' nested menu, aura sounds only")
+    local labels = {}
+    for _, choice in ipairs(dropdown.choices()) do labels[#labels + 1] = choice.label end
+    equal(table.concat(labels, ", "), "Dyre's Picks: Fading slow disappear, Dyre's Picks: Disappear blow swoosh, "
+        .. "Dyre's Picks: Cartoon vanish, Dyre's Picks: Magical disappear, Dyre's Picks: Slow swoosh, "
+        .. "Imp: Laugh 1, Imp: Spell chirp", "no sound kits or Text to Speech")
 end)
-
--- A menu description as the client's menu API builds it: buttons open submenus.
-local function menuDescription()
-    local description = {entries = {}}
-    function description:CreateButton(text)
-        local submenu = menuDescription()
-        submenu.text = text
-        self.entries[#self.entries + 1] = submenu
-        return submenu
-    end
-    function description:CreateRadio(text, isSelected, setSelected, data)
-        local radio = {text = text, data = data, isSelected = isSelected, setSelected = setSelected}
-        self.entries[#self.entries + 1] = radio
-        return radio
-    end
-    return description
-end
-
--- Opens a dropdown as the client would: a pooled control, with Blizzard's
--- own builder, is initialized for it.
-local function openMenu(dropdown, setting)
-    dropdown.GetSetting = function() return setting end
-    local control = {Dropdown = {}}
-    function control:SetupDropdownMenu() self.blizzardMenu = true end
-    function control:Init(initializer)
-        self:SetupDropdownMenu(self.Dropdown, initializer.setting, nil, nil, initializer)
-    end
-    dropdown:InitFrame(control)
-    control:Init(dropdown)
-    local root = menuDescription()
-    control.Dropdown.inserter(control.Dropdown.setting, root)
-    return root, control
-end
-
-local function groupNames(root)
-    local names = {}
-    for _, entry in ipairs(root.entries) do names[#names + 1] = entry.text end
-    return table.concat(names, ",")
-end
-
-test("the Nightfall sound is picked from a menu of submenus", function()
-    local state = fixture()
-    local page = state.categories.Alerts
-    local dropdown, setting = page.initializers[2], state.settings.WTF_ALERTS_NIGHTFALL_SOUND
-    equal(dropdown.data.forceSteppersHidden, true)
-    local root = openMenu(dropdown, setting)
-    equal(groupNames(root), "Dyre's Picks,Imp,Hellish imp")
-    local imp = root.entries[2]
-    equal(imp.entries[1].text, "Laugh 1", "names inside their group")
-    imp.entries[1].setSelected(imp.entries[1].data)
-    equal(state.wtf.db.alerts.nightfallSound, "implaugh1")
-    equal(state.played.file, 639142, "choosing one plays it")
-    equal(dropdown.getSelectionTextFunc(), "Imp: Laugh 1")
-end)
-test("each chime's sound menu has the Cooldown Manager's groups; other dropdowns keep Blizzard's", function()
+test("each chime's sound dropdown uses Dyre's Sounds' full menu; WTF builds no menu of its own", function()
     local state = fixture()
     local page = state.categories["Cooldown Chimes"]
-    local setting = state.settings.WTF_CHIME_SOUND_DEATHCOIL
-    local dropdown
-    for _, initializer in ipairs(page.initializers) do
-        if initializer.setting == setting then dropdown = initializer end
-    end
-    local root, control = openMenu(dropdown, setting)
-    equal(groupNames(root), "Dyre's Picks,Interface,Animals,Devices,Impacts,Instruments,Short,Warcraft 2,Warcraft 3")
-    equal(control.blizzardMenu, nil, "WTF's own menu")
-    control.Dropdown.inserter = nil
-    control:Init({setting = {}})
-    equal(control.blizzardMenu, true, "another dropdown gets Blizzard's menu")
+    local dropdown = initializerFor(page, "WTF_CHIME_SOUND_DEATHCOIL")
+    equal(dropdown.soundMenu, "all", "every sound, also sound kits and Text to Speech")
+    equal(dropdown.parentInitializer.setting.variable, "WTF_CHIME_DEATHCOIL", "under its switch")
+    local values = {}
+    for _, choice in ipairs(dropdown.choices()) do values[#values + 1] = choice.value end
+    contains(table.concat(values, ","), "talent,impactspopclick")
+    contains(table.concat(values, ","), "voice")
+    equal(initializerFor(state.categories["DoT Tracker"], "WTF_TRACKER_THEME").soundMenu, nil,
+        "other dropdowns are left alone")
 end)
 
 -- Announce ---------------------------------------------------------------------

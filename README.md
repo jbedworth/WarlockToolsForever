@@ -14,6 +14,16 @@ change several times a week. At login it checks for the APIs it needs and
 disables itself with one message if any are missing. It runs on Warlocks only;
 on other classes it prints one message and stays off.
 
+## Sounds: Dyre's Sounds
+
+WTF's sounds (the cooldown chimes, the Nightfall sound, and the sound when a
+shield ends) come from **Dyre's Sounds**, a small AddOn that holds the sounds
+for all of Dyre's AddOns, so your computer keeps one copy of them. The
+CurseForge app installs it with WTF. Otherwise get it from CurseForge or
+[github.com/jbedworth/DyresSounds](https://github.com/jbedworth/DyresSounds).
+Without it, WTF works as usual but plays no sounds, and says so once in chat.
+The sounds you chose are kept.
+
 ## Soul Shards
 
 Drain Soul fills your bags with shards. WTF deletes each shard that Drain Soul
@@ -154,10 +164,10 @@ above nameplates** if it overlaps your nameplate AddOn.
 
 **Nightfall sound** (off by default, on the Alerts settings page): a sound
 when Nightfall procs Shadow Trance, so your next Shadow Bolt is instant. Choose
-from Dyre's Picks (sounds that ship with WTF) or imp laughs and chirps (the
-default is the Imp spell chirp), in a menu grouped like the Cooldown Manager's;
-choosing one plays it once, so you can audition them. The game
-plays the sound itself, also in combat.
+from Dyre's Sounds' Dyre's Picks or imp laughs and chirps (the default is the
+Imp spell chirp), in a menu grouped like the Cooldown Manager's; choosing one
+plays it once, so you can audition them. The game plays the sound itself, also
+in combat.
 
 ## Control bar
 
@@ -196,10 +206,19 @@ breaks early, and goes when the mob dies.
 A sound just before **Death Coil**, **Howl of Terror**, **Shadow Ward**, your
 **Soulstone**, and **Fel Domination** are ready again (Shadowburn,
 Conflagrate, Amplify Curse, Bane of Doom, and Inferno are off by default), also
-in combat. Each spell has its own sound, picked from a menu like the Cooldown
-Manager's: the game's interface sounds, the Cooldown Manager's 93 alert
-sounds, or a voice that says the spell's name. Pick how early it plays on the
-Cooldown Chimes page.
+in combat. Each spell has its own sound from Dyre's Sounds, picked from a menu
+like the Cooldown Manager's: Dyre's Picks, the game's interface sounds, the
+Cooldown Manager's alert sounds, or a voice that says the spell's name. Pick
+how early it plays on the Cooldown Chimes page.
+
+**Dyre's Buff Reminders** shows buff reminders for every class. With it
+installed, WTF hides its own reminder icons, so you never see two for one
+buff, and keeps its own reminder settings as they are. Use `/dbr` for them.
+
+If you install **Dyre's Cooldown Chimes**, which plays chimes for any class,
+WTF plays no chimes of its own, so you do not hear each one twice. Dyre's
+Cooldown Chimes takes over your WTF chime choices the first time it runs; set
+them with `/dcc`.
 
 ## Shield display
 
@@ -208,7 +227,8 @@ your Voidwalker's **Sacrifice**, or any absorb on you, like Power Word: Shield,
 and drains as it absorbs, also in combat. A Paladin's **Blessing of
 Protection** on you, which has no absorb, shows as a gold innermost arc that
 drains with its time left. If you also use Mage
-Tools Forever, you still see one crescent.
+Tools Forever or Dyre's Shields Up, you still see one crescent. An optional
+sound, from Dyre's Sounds, plays when a shield ends.
 
 ## Demon Armor reminder
 

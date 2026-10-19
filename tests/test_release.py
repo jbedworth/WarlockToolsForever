@@ -258,33 +258,18 @@ class ReleaseTests(unittest.TestCase):
             with self.subTest(header=data[:18]), self.assertRaises(ValueError):
                 builder._validate_tga("icon.tga", data)
 
-    def test_sounds_must_be_small_mp3_or_wav(self):
-        for name in builder.MEDIA_FILES:
-            if name.startswith("Sounds/"):
-                builder._validate_media(name, (ROOT / name).read_bytes())
-        builder._validate_wav("ok.wav", b"RIFF" + bytes(4) + b"WAVEfmt " + bytes(4) + b"\x01\x00")
-        for data in (b"", b"RIFF" + bytes(4) + b"WAVEfmt " + bytes(4) + b"\x03\x00",
-                     b"ID3" + bytes(20), b"RIFF" + bytes(builder.WAV_MAX_BYTES)):
-            with self.subTest(wav=data[:4]), self.assertRaises(ValueError):
-                builder._validate_wav("bad.wav", data)
-        builder._validate_mp3("tagged.mp3", b"ID3" + bytes(16))
-        for data in (b"", b"RIFF" + bytes(16), b"\xff\xfet\x00", b"\xff" + bytes(builder.MP3_MAX_BYTES)):
-            with self.subTest(head=data[:4]), self.assertRaises(ValueError):
-                builder._validate_mp3("bad.mp3", data)
-
-    def test_package_ships_the_shield_arc(self):
+    def test_package_ships_the_shield_arc_and_no_sounds(self):
+        # Sounds come from Dyre's Sounds, so only it ships sound files.
         self.assertEqual(builder.MEDIA_FILES, ("Textures/ShieldArc.tga", "Textures/ShieldArcInner.tga",
-                                               "Textures/ShieldArcInnermost.tga")
-                         + tuple("Sounds/" + n for n in (
-                             "FadingSlowDisappear.mp3", "DisappearBlowSwoosh.mp3", "CartoonVanish.mp3",
-                             "Disappear.mp3", "MagicalDisappear.mp3", "DisappearShort.wav",
-                             "DisappearingSwoosh.wav", "TeleportWarpVanish.wav", "SlowSwoosh.wav")))
+                                               "Textures/ShieldArcInnermost.tga"))
+        self.assertFalse((ROOT / "Sounds").exists())
         path, _ = self.build()
         with zipfile.ZipFile(path) as archive:
             self.assertIn("WarlockToolsForever/Textures/ShieldArc.tga", archive.namelist())
             self.assertIn("WarlockToolsForever/Textures/ShieldArcInner.tga", archive.namelist())
             self.assertIn("WarlockToolsForever/Textures/ShieldArcInnermost.tga", archive.namelist())
-            self.assertIn("WarlockToolsForever/Sounds/FadingSlowDisappear.mp3", archive.namelist())
+            self.assertFalse([name for name in archive.namelist()
+                              if name.lower().endswith((".mp3", ".wav", ".ogg"))])
             self.assertEqual(len(archive.namelist()), len(builder.PACKAGE_FILES))
 
     def test_committed_shield_arc_matches_the_build(self):

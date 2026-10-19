@@ -4,6 +4,15 @@ Player-facing changes for each Warlock Tools Forever release, newest first. The
 release builder copies the section for the TOC version into the GitHub release
 notes and the CurseForge changelog, and fails if that section is missing.
 
+## 0.3.0-beta
+
+- With **Dyre's Buff Reminders** installed, WTF hides its own Demon Armor reminder, so you never see two icons. Your setting in WTF stays as it is.
+- Sounds now come from Dyre's Sounds, a small AddOn that holds the sounds for all of Dyre's AddOns, so your computer keeps one copy of them. The CurseForge app installs it with WTF; otherwise get it from CurseForge or github.com/jbedworth/DyresSounds.
+- Without Dyre's Sounds, WTF plays no sounds (cooldown chimes, the Nightfall sound, and the sound when a shield ends) and says once in chat what to install. Everything else works as before.
+- The sounds you chose are kept, also while Dyre's Sounds is missing.
+- With Dyre's Cooldown Chimes installed, WTF plays no cooldown chimes of its own, so you do not hear each chime twice. Dyre's Cooldown Chimes takes over your WTF chime choices the first time it runs. The Nightfall sound stays in WTF.
+- The shield display's sound menu now has the same groups as the other sound menus.
+
 ## 0.2.2-beta
 
 - Shield display: the outer crescent is centered with the inner ones again; since the last update it was drawn lower and taller than them.

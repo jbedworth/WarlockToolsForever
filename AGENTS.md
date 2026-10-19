@@ -7,6 +7,25 @@ small, independent quality-of-life modules for Warlocks. Each module has an
 enable switch on the main settings page and its own settings subpage. Add a
 module only after the author agrees its behavior.
 
+### Sounds come from Dyre's Sounds (author-approved, mandatory)
+
+- Only the library AddOn Dyre's Sounds (`src/DyresSounds`, CurseForge project
+  1753581, unlisted, slug `dyres-sounds`) ships sound files; MTF, WTF, and
+  Dyre's Shields Up depend on it, so players keep one copy. WTF ships no
+  sounds; add none.
+- The TOC lists it as `## OptionalDeps: DyresSounds` (never
+  `## Dependencies`, which stops WTF loading when it is missing), and
+  CurseForge as a required dependency (`RELATIONS` in
+  scripts/publish_curseforge.py), so the CurseForge app installs it.
+- Core's `WTF.SoundLibrary()` returns the library from
+  `DyresSounds.RequireContract(1)` when every function WTF uses (`Resolve`,
+  `Label`, `List`, `Groups`, `Play`, `AuraSound`, `Choices`, `SetupMenu`) is
+  there, else nil and "missing" or "old". Without it WTF still works and plays
+  no sounds, keeps saved sound keys as they are, and says once per session
+  in chat what to install or update (at login when chimes or the Nightfall
+  sound are on, or when one would play). The shield display says so for its
+  own sound.
+
 ### Soul Shards (built)
 
 - Shard counter (author-approved, inspired by Pentacle): an unnamed plain
@@ -238,19 +257,20 @@ module only after the author agrees its behavior.
 
 ### Alerts (built)
 
-- Nightfall sound (author-approved, off by default; picked from nested menus
-  like the chimes', grouped Dyre's Picks, Imp, and Hellish imp by the labels'
-  "Group: Name"): `C_UnitAuras.AddAuraSound`
-  on the player's Shadow Trance (spell 17941) with the chosen sound, as BigWigs
-  registers its aura sounds: imp laughs and chirps by file ID (`soundFileID`;
-  default the Imp spell chirp, the author's pick), found in Leatrix Sounds'
-  file list for this client, or Dyre's Picks, WTF's own files in Sounds/ by
-  path (`soundFileName`). The interface sounds by game path are gone: the
-  client plays no game sound by path (found in client). The game plays it, also in combat. Registration waits out an
-  Encounter restriction (`ADDON_RESTRICTION_STATE_CHANGED`). Choosing a sound
-  previews it with `PlaySoundFile`. `UnitAuraSoundInfo` (pinned
-  UnitConstantsDocumentation) takes only `soundFileName` or `soundFileID`,
-  not sound kits, so the Cooldown Manager's catalog cannot be Nightfall sounds.
+- Nightfall sound (author-approved, off by default): `C_UnitAuras.AddAuraSound`
+  (trigger Added) on the player's Shadow Trance (spell 17941), as BigWigs
+  registers its aura sounds, with the fields of Dyre's Sounds'
+  `AuraSound(key)` (`soundFileName` for Dyre's Picks, `soundFileID` for the
+  imp laughs and chirps). Default `impspell`, Imp: Spell chirp (the author's
+  pick). The dropdown is `Choices("aura")` with `SetupMenu(dropdown,
+  "aura")`; choosing a sound previews it with `Play(key)`. Saved keys are
+  mapped with `Resolve` (the old "pick..." keys are aliases) and must be aura
+  sounds, else the default; without the library the saved key is kept. The
+  game plays it, also in combat. Registration waits out an Encounter
+  restriction (`ADDON_RESTRICTION_STATE_CHANGED`). `UnitAuraSoundInfo`
+  (pinned UnitConstantsDocumentation) takes only `soundFileName` or
+  `soundFileID`, not sound kits. The Nightfall sound stays in WTF also with
+  Dyre's Cooldown Chimes installed.
 
 ### Cooldown chimes (built, ported from MTF)
 
@@ -261,14 +281,28 @@ module only after the author agrees its behavior.
   default: Death Coil, Howl of Terror, Shadow Ward, Soulstone Resurrection
   (the Soulstone's use), Fel Domination; off: Shadowburn, Conflagrate,
   Amplify Curse, Bane of Doom (Classic's Curse of Doom, 603), Inferno.
-- Each spell's sound comes from MTF's catalog (Interface SOUNDKIT names, the
-  Cooldown Manager's 93 alert kits by ID, the nine Dyre's Picks sounds (first in the menu) shipped in
-  Sounds/ with the shield display and played with `PlaySoundFile`
-  (author-approved), and Text to Speech), in the same
-  nested menu: Options.lua wraps the pooled settings dropdown control's
-  `SetupDropdownMenu` only for an initializer carrying `wtfSoundMenu` and
-  hands every other dropdown on (MTF wraps the same pooled controls with its
-  own flag, so both chain). Default Interface: Talent ready.
+- Each spell's sound comes from Dyre's Sounds: the dropdown under its switch
+  is `Choices()` with `SetupMenu(dropdown)` (the library's nested menu), and a
+  chime plays with `Play(key, "<Spell> ready")`, the text Text to Speech
+  says; a sound that cannot play (no voice) falls back to the default,
+  Interface: Talent ready (`talent`). Saved keys are mapped with `Resolve`
+  (the old "effect..." keys and "popclick" are aliases); without the library
+  the saved key is kept as it is. Without the library, or with an older
+  contract, chimes still time, play nothing, and the settings show the
+  switches without sound menus.
+- Dyre's Buff Reminders (DBR, `src/DyresBuffReminders`) shows buff reminders for
+  every class (author-approved two-step move). While
+  `C_AddOns.IsAddOnLoaded("DyresBuffReminders")` is true, WTF's own reminder
+  icons stay hidden, also unlocked (WTF.RemindersStandAside), and the settings say DBR
+  shows them; WTF's saved reminder settings stay as they are. Later WTF drops
+  its reminders.
+- Stand aside for Dyre's Cooldown Chimes (DCC, `src/DyresCooldownChimes`; the
+  second step of the move to shared AddOns, author-approved): when
+  `C_AddOns.IsAddOnLoaded("DyresCooldownChimes")` is true, WTF registers no
+  cast event and plays no chime or preview; the Cooldown Chimes page and the
+  main page's switch only say, greyed out, that DCC plays them (`/dcc`). WTF's
+  saved chime settings stay untouched: DCC copies them on its first run.
+  Later WTF drops its chimes, with a CHANGELOG note and a chat message.
 
 ### Shield display (built, MTF's shared component)
 
@@ -317,6 +351,15 @@ module only after the author agrees its behavior.
   parent, the minimum-absorb clipping frame, which reaches 40 px below the
   display for the number, so it was drawn lower and taller than the inner
   crescents (seen on a Mage with Fire Ward and Mana Shield).
+- Version 8 (with MTF, WTF, and DSU): no AddOn ships sound files
+  (author-approved: one copy for all of Dyre's AddOns). The break sound comes
+  from Dyre's Sounds' aura sounds (Dyre's Picks and game file IDs). Interface:
+  `SoundChoices()` and `SetupSoundMenu(initializer)` replace `BREAK_SOUNDS`;
+  the Shield page builds the dropdown as DSU's Options.lua does. Without the
+  library the display works, a saved choice is kept, and turning the sound on
+  says once in chat to install Dyre's Sounds.
+  WTF passes `missingSounds = WTF.ReportMissingSounds` to `Initialize`, so the
+  shield sound and the chimes and Nightfall share one line (author-approved: one per AddOn).
 
 ### Demon Armor reminder (built)
 
@@ -467,8 +510,8 @@ general frameworks, or speculative modules without agreement.
   Bedworth, and the release builder requires that exact notice.
 - The TOC uses `## Category: Warlock`; keep it identical to the CurseForge main
   category, because the in-game AddOn list groups by exact text.
-- WTF ships no texture files. Use built-in client textures only; add no runtime
-  assets without agreement.
+- WTF ships no runtime assets beyond the shield display's three crescent
+  textures, and no sound files; add none without agreement.
 - Git origin: git@github.com:jbedworth/WarlockToolsForever.git. Inspect Git
   state before acting and preserve user work. Text is LF under .gitattributes.
 
@@ -546,7 +589,7 @@ general frameworks, or speculative modules without agreement.
   changes; the builder puts it at the top of release-notes.md (GitHub release
   notes and CurseForge changelog) and fails without it.
 - Package only WarlockToolsForever.toc, Commands.lua, Core.lua, Layout.lua, Shards.lua, Stones.lua, Announce.lua, Tracker.lua, Dots.lua, Control.lua, Alerts.lua, Shield.lua, Chimes.lua, Reminders.lua, Probe.lua, Options.lua, LICENSE,
-  Textures/ShieldArc.tga, Textures/ShieldArcInner.tga, Textures/ShieldArcInnermost.tga, and the break sounds in Sounds/
+  and Textures/ShieldArc.tga, Textures/ShieldArcInner.tga, Textures/ShieldArcInnermost.tga (no sound files)
   under the top-level
   `WarlockToolsForever/` folder, named
   `WarlockToolsForever-<version>-forever.zip`, with the builder's

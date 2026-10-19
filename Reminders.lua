@@ -152,13 +152,14 @@ function WTF.RefreshReminders()
     local settings = WTF.db.reminders
     local unlocked = not WTF.db.locked
     local alive = UnitIsDeadOrGhost("player") ~= true
+    local aside = WTF.RemindersStandAside()
     for _, reminder in ipairs(WTF.REMINDERS) do
         local icon = reminders.icons[reminder.key]
         icon:SetScale(settings.icons[reminder.key].scale / 100)
         icon.texture:SetTexture(BestTexture(reminder))
         icon.mover:SetShown(unlocked)
         icon:EnableMouseWheel(unlocked)
-        local wanted = settings.enabled and settings.spells[reminder.key]
+        local wanted = settings.enabled and settings.spells[reminder.key] and not aside
         if unlocked then
             -- Dragging must not cast.
             ApplyClick(icon, nil)

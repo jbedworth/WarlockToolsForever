@@ -17,6 +17,7 @@ tested.
 | Logo | artwork/warlock-tools-forever-logo.png (1024 x 1024) |
 | Source | https://github.com/jbedworth/WarlockToolsForever |
 | Issues | https://github.com/jbedworth/WarlockToolsForever/issues |
+| Relations | Dyre's Sounds (`dyres-sounds`), Required Dependency. Each CI upload sends it (`RELATIONS` in scripts/publish_curseforge.py); set it on the project too if the form asks. |
 
 ## Summary
 
@@ -66,6 +67,9 @@ Per-file changelogs need no manual text: each CI upload uses the version's
 - **Shield display:** a crescent that drains as your Shadow Ward, Sacrifice, or any absorb takes damage.
 - **Demon Armor reminder** you can click to cast.
 - **Announcements with flavor:** summons, Soulstones, and Healthstone trades tell your group or whisper the target. Every message can be edited or turned off.
+
+### Sounds: Dyre's Sounds (required)
+WTF's sounds come from **Dyre's Sounds**, which holds the sounds for all of Dyre's AddOns, so your computer keeps one copy. The CurseForge app installs it with WTF. Without it, WTF works but plays no sounds, and says so once in chat. With **Dyre's Cooldown Chimes** installed, WTF leaves the cooldown chimes to it, so you never hear one twice.
 
 ### Commands
 - `/wtf` opens the settings. `/wtf shards` shows your shards and limit.

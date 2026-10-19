@@ -55,17 +55,13 @@ WarlockToolsForever/
         ShieldArc.tga
         ShieldArcInner.tga
         ShieldArcInnermost.tga
-    Sounds/
-        FadingSlowDisappear.mp3
-        DisappearBlowSwoosh.mp3
-        CartoonVanish.mp3
-        Disappear.mp3
-        MagicalDisappear.mp3
-        DisappearShort.wav
-        DisappearingSwoosh.wav
-        TeleportWarpVanish.wav
-        SlowSwoosh.wav
 ```
+
+No sound files: every sound comes from the library AddOn Dyre's Sounds
+(author-approved, so players keep one copy). The TOC lists it as
+`## OptionalDeps: DyresSounds`, and the CurseForge upload names it a required
+dependency (`RELATIONS` in `scripts/publish_curseforge.py`, slug
+`dyres-sounds`), so the CurseForge app installs it with WTF.
 
 The validator permits one optional empty root directory entry. Additional files
 or directories are not permitted. Exclude
@@ -74,8 +70,8 @@ agent guidance, generated logs, and all credentials/player data.
 
 Use an explicit file allowlist. Do not ZIP the checkout and maintain a growing
 list of exclusions. Keep `LICENSE` in the package, but do not load it in the TOC.
-WTF ships no texture files: its controls use built-in client textures only. The builder keeps its TGA validator, unused, in case a
-texture is approved later.
+The only media are the shield display's three crescent TGAs, which the
+builder validates (uncompressed 32-bit, square, power-of-two).
 
 Validate the actual archive, not only the staging folder:
 

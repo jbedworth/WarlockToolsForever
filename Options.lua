@@ -25,7 +25,11 @@ local REQUIRED_SETTINGS = {
 }
 
 local category
-local NestSoundMenu
+local SOUNDS_MISSING_TIP = " Install Dyre's Sounds to hear it and to choose its sound."
+local REMINDERS_ELSEWHERE_TIP = "Dyre's Buff Reminders shows your buff reminders now, so WTF's "
+    .. "Demon Armor icon stays hidden. Type /dbr to change it. WTF keeps its own setting as it is."
+local CHIMES_ELSEWHERE_TIP = "Dyre's Cooldown Chimes plays your cooldown chimes now, so WTF plays none. "
+    .. "Type /dcc to change them. WTF keeps its own chime settings as they are."
 
 local function HasSettingsAPI()
     if type(Settings) ~= "table" or type(Settings.VarType) ~= "table" then
@@ -110,15 +114,10 @@ local function AddShieldPage(parent)
             RefreshShield()
             display.PreviewBreakSound()
         end)
-    local function SoundChoices()
-        local container = Settings.CreateControlTextContainer()
-        for _, choice in ipairs(display.BREAK_SOUNDS) do
-            container:Add(choice.key, choice.label)
-        end
-        return container:GetData()
-    end
-    local dropdown = Settings.CreateDropdown(page, sound, SoundChoices,
-        "The sound when a shield ends. Choosing one plays it once.")
+    -- The sounds come from Dyre's Sounds; without it the list is empty.
+    local dropdown = Settings.CreateDropdown(page, sound, display.SoundChoices,
+        "The sound when a shield ends. Choosing one plays it once. The sounds come from Dyre's Sounds.")
+    display.SetupSoundMenu(dropdown)
     dropdown:SetParentInitializer(soundSwitch, function() return WTF.db.shield.breakSound end)
     local scale = Proxy(page, "WTF_SHIELD_SCALE", Settings.VarType.Number, "Display size (%)", display.DEFAULT_SCALE,
         function() return WTF.db.shield.scale end,
@@ -130,115 +129,27 @@ local function AddShieldPage(parent)
         "How big the shield display is, in percent.")
 end
 
--- The sound menu (author-approved, as MTF's): a submenu per group and a
--- top-level entry for a sound with no group, as the Cooldown Manager's sound
--- picker (CooldownViewerUtil.BuildSoundMenus) builds it with the same menu
--- API. Blizzard's settings dropdown builds its menu in its control's
--- SetupDropdownMenu; the control frames are pooled and shared with other
--- settings and AddOns (MTF wraps them too), so the replacement builds the
--- nested menu only for a WTF sound dropdown and hands every other one on.
--- source: {groups = function() -> {{name, sounds}}, parts = function(sound)
--- -> group, name, label = function(key) -> full label}.
-local function SoundMenuInserter(source)
-    return function(setting, rootDescription)
-        local function IsSelected(key)
-            return setting:GetValue() == key
-        end
-        local function SetSelected(key)
-            setting:SetValue(key)
-        end
-        for _, group in ipairs(source.groups()) do
-            if #group.sounds == 1 and not source.parts(group.sounds[1]) then
-                rootDescription:CreateRadio(group.sounds[1].label, IsSelected, SetSelected, group.sounds[1].key)
-            else
-                local submenu = rootDescription:CreateButton(group.name)
-                for _, choice in ipairs(group.sounds) do
-                    local _, name = source.parts(choice)
-                    submenu:CreateRadio(name, IsSelected, SetSelected, choice.key)
-                end
-            end
-        end
+-- A greyed-out checkbox that only says something; never saved.
+local function Notice(page, variable, name, tooltip)
+    local setting = Proxy(page, variable, Settings.VarType.Boolean, name, true,
+        function() return true end, function() end)
+    local initializer = Settings.CreateCheckbox(page, setting, tooltip)
+    if type(initializer.AddModifyPredicate) == "function" then
+        initializer:AddModifyPredicate(function() return false end)
     end
+    return initializer
 end
 
-local function NestedSetupDropdownMenu(original)
-    return function(control, button, setting, options, initTooltip, initializer)
-        local source = initializer and initializer.wtfSoundMenu
-        if not source then
-            return original(control, button, setting, options, initTooltip, initializer)
-        end
-        Settings.InitDropdown(button, setting, SoundMenuInserter(source), initTooltip)
-    end
-end
-
-function NestSoundMenu(initializer, source)
-    if type(initializer.InitFrame) ~= "function" or type(Settings.InitDropdown) ~= "function" then
-        return
-    end
-    initializer.wtfSoundMenu = source
-    initializer.data = initializer.data or {}
-    -- A menu of submenus has no single list to step through.
-    initializer.data.forceSteppersHidden = true
-    -- The dropdown shows the full label, "Short: Bell Strike".
-    initializer.getSelectionTextFunc = function()
-        return source.label(initializer:GetSetting():GetValue()) or ""
-    end
-    local initFrame = initializer.InitFrame
-    function initializer:InitFrame(frame)
-        if type(frame.SetupDropdownMenu) == "function" and not frame.wtfNestedSoundMenu then
-            frame.wtfNestedSoundMenu = true
-            frame.SetupDropdownMenu = NestedSetupDropdownMenu(frame.SetupDropdownMenu)
-        end
-        return initFrame(self, frame)
-    end
-end
-
-local CHIME_SOUND_SOURCE = {
-    groups = function() return WTF.ChimeSoundGroups() end,
-    parts = function(sound) return WTF.ChimeSoundParts(sound) end,
-    label = function(key) return WTF.ChimeSoundLabel(key) end,
-}
-
--- Nightfall's sounds in the same nested menu, grouped by their labels.
-local function SoundParts(sound)
-    local group, name = sound.label:match("^(.-): (.+)$")
-    return group, name or sound.label
-end
-
-local NIGHTFALL_SOUND_SOURCE = {
-    groups = function()
-        local groups, byName = {}, {}
-        for _, sound in ipairs(WTF.NIGHTFALL_SOUNDS) do
-            local group = SoundParts(sound) or sound.label
-            if not byName[group] then
-                byName[group] = {name = group, sounds = {}}
-                groups[#groups + 1] = byName[group]
-            end
-            byName[group].sounds[#byName[group].sounds + 1] = sound
-        end
-        return groups
-    end,
-    parts = SoundParts,
-    label = function(key)
-        for _, sound in ipairs(WTF.NIGHTFALL_SOUNDS) do
-            if sound.key == key then
-                return sound.label
-            end
-        end
-    end,
-}
-
+-- Each spell's switch, and under it its sound from Dyre's Sounds (the nested
+-- menu, author-approved as in MTF). With Dyre's Cooldown Chimes installed the
+-- page only says that it plays the chimes.
 local function AddChimesPage(parent)
     local page = Settings.RegisterVerticalLayoutSubcategory(parent, CHIMES_TITLE)
-    -- Every sound by its full label: the dropdown's plain list, used when the
-    -- nested menu is not set up.
-    local function Choices()
-        local container = Settings.CreateControlTextContainer()
-        for _, sound in ipairs(WTF.AvailableChimeSounds()) do
-            container:Add(sound.key, sound.label)
-        end
-        return container:GetData()
+    if WTF.ChimesStandAside() then
+        Notice(page, "WTF_CHIMES_ELSEWHERE", "Played by Dyre's Cooldown Chimes", CHIMES_ELSEWHERE_TIP)
+        return
     end
+    local library = WTF.SoundLibrary()
     local lead = Proxy(page, "WTF_CHIMES_LEAD", Settings.VarType.Number, "Chime early (seconds)",
         WTF.DEFAULT_CHIME_LEAD,
         function() return WTF.db.chimes.lead end,
@@ -252,22 +163,25 @@ local function AddChimesPage(parent)
             chime.on,
             function() return WTF.db.chimes.spells[chime.key] end,
             function(value) WTF.db.chimes.spells[chime.key] = value == true end)
-        local switch = Settings.CreateCheckbox(page, setting, "Chime when " .. chime.label .. " is ready again.")
-        local sound = Proxy(page, "WTF_CHIME_SOUND_" .. chime.key:upper(), Settings.VarType.String, "Sound",
-            WTF.DEFAULT_CHIME_SOUND,
-            function() return WTF.db.chimes.sounds[chime.key] end,
-            function(value)
-                for _, choice in ipairs(WTF.CHIME_SOUNDS) do
-                    if choice.key == value then
-                        WTF.db.chimes.sounds[chime.key] = value
+        local switch = Settings.CreateCheckbox(page, setting, "Chime when " .. chime.label .. " is ready again."
+            .. (library and "" or SOUNDS_MISSING_TIP))
+        -- Without the library there are no sounds to choose; saved choices stay.
+        if library then
+            local sound = Proxy(page, "WTF_CHIME_SOUND_" .. chime.key:upper(), Settings.VarType.String, "Sound",
+                WTF.DEFAULT_CHIME_SOUND,
+                function() return WTF.db.chimes.sounds[chime.key] end,
+                function(value)
+                    local key = library.Resolve(value)
+                    if key then
+                        WTF.db.chimes.sounds[chime.key] = key
                         WTF.PreviewChime(chime.key)
                     end
-                end
-            end)
-        local dropdown = Settings.CreateDropdown(page, sound, Choices,
-            "The sound for " .. chime.label .. ". Choosing one plays it once.")
-        NestSoundMenu(dropdown, CHIME_SOUND_SOURCE)
-        dropdown:SetParentInitializer(switch, function() return WTF.db.chimes.spells[chime.key] end)
+                end)
+            local dropdown = Settings.CreateDropdown(page, sound, library.Choices(),
+                "The sound for " .. chime.label .. ". Choosing one plays it once. The sounds come from Dyre's Sounds.")
+            library.SetupMenu(dropdown)
+            dropdown:SetParentInitializer(switch, function() return WTF.db.chimes.spells[chime.key] end)
+        end
     end
 end
 
@@ -542,34 +456,33 @@ end
 
 local function AddAlertsPage(parent)
     local page = Settings.RegisterVerticalLayoutSubcategory(parent, ALERTS_TITLE)
+    local library = WTF.SoundLibrary()
     local nightfall = Flag(page, "WTF_ALERTS_NIGHTFALL", "Nightfall sound", "alerts", "nightfall", false,
-        "Play a sound when Nightfall procs (Shadow Trance: your next Shadow Bolt is instant), also in combat.",
+        "Play a sound when Nightfall procs (Shadow Trance: your next Shadow Bolt is instant), also in combat."
+            .. (library and "" or SOUNDS_MISSING_TIP),
         WTF.ApplyNightfallSound)
     if type(nightfall.AddModifyPredicate) == "function" then
         nightfall:AddModifyPredicate(function() return WTF.HasNightfallSound() end)
+    end
+    -- Without the library there are no sounds to choose; the saved choice stays.
+    if not library then
+        return
     end
     local sound = Proxy(page, "WTF_ALERTS_NIGHTFALL_SOUND", Settings.VarType.String, "Sound",
         WTF.DEFAULT_NIGHTFALL_SOUND,
         function() return WTF.db.alerts.nightfallSound end,
         function(value)
-            for _, choice in ipairs(WTF.NIGHTFALL_SOUNDS) do
-                if choice.key == value then
-                    WTF.db.alerts.nightfallSound = value
-                    WTF.ApplyNightfallSound()
-                    WTF.PreviewNightfallSound()
-                end
+            -- Only aura sounds: the game plays a sound file on a buff, not a sound kit.
+            local key = library.Resolve(value)
+            if key and library.AuraSound(key) then
+                WTF.db.alerts.nightfallSound = key
+                WTF.ApplyNightfallSound()
+                WTF.PreviewNightfallSound()
             end
         end)
-    local function Choices()
-        local container = Settings.CreateControlTextContainer()
-        for _, choice in ipairs(WTF.NIGHTFALL_SOUNDS) do
-            container:Add(choice.key, choice.label)
-        end
-        return container:GetData()
-    end
-    local soundInitializer = Settings.CreateDropdown(page, sound, Choices,
-        "The sound to play. Choosing one plays it once.")
-    NestSoundMenu(soundInitializer, NIGHTFALL_SOUND_SOURCE)
+    local soundInitializer = Settings.CreateDropdown(page, sound, library.Choices("aura"),
+        "The sound to play. Choosing one plays it once. The sounds come from Dyre's Sounds.")
+    library.SetupMenu(soundInitializer, "aura")
     soundInitializer:SetParentInitializer(nightfall, function()
         return WTF.db.alerts.nightfall and WTF.HasNightfallSound()
     end)
@@ -762,11 +675,24 @@ function WTF.InitializeOptions()
         RefreshShield)
     Flag(category, "WTF_CONTROL_ENABLED", "Control bar", "control", "enabled", true,
         "A bar per mob you Fear or Banish with its time left; click one to cast it again.", RefreshControl)
-    Flag(category, "WTF_REMINDERS_ENABLED", "Demon Armor reminder", "reminders", "enabled", true,
-        "An icon with a pulsing border while you lack Demon Armor (or Demon Skin), out of combat. Click it "
-            .. "to cast your armor.", function() WTF.RefreshReminders() end)
-    Flag(category, "WTF_CHIMES_ENABLED", "Cooldown chimes", "chimes", "enabled", true,
-        "A sound just before Death Coil, Howl of Terror, and your other chosen spells are ready again.")
+    if WTF.RemindersStandAside() then
+        -- Dyre's Buff Reminders shows it; the saved switch stays as it is.
+        Notice(category, "WTF_REMINDERS_ENABLED", "Demon Armor reminder (shown by Dyre's Buff Reminders)",
+            REMINDERS_ELSEWHERE_TIP)
+    else
+        Flag(category, "WTF_REMINDERS_ENABLED", "Demon Armor reminder", "reminders", "enabled", true,
+            "An icon with a pulsing border while you lack Demon Armor (or Demon Skin), out of combat. Click it "
+                .. "to cast your armor.", function() WTF.RefreshReminders() end)
+    end
+    if WTF.ChimesStandAside() then
+        -- Dyre's Cooldown Chimes plays them; the saved switch stays as it is.
+        Notice(category, "WTF_CHIMES_ENABLED", "Cooldown chimes (played by Dyre's Cooldown Chimes)",
+            CHIMES_ELSEWHERE_TIP)
+    else
+        Flag(category, "WTF_CHIMES_ENABLED", "Cooldown chimes", "chimes", "enabled", true,
+            "A sound just before Death Coil, Howl of Terror, and your other chosen spells are ready again."
+                .. (WTF.SoundLibrary() and "" or " Install Dyre's Sounds to hear them."))
+    end
     local unlocked = Proxy(category, "WTF_UNLOCKED", Settings.VarType.Boolean, "Unlock frames to move them", false,
         function() return not WTF.db.locked end,
         function(value) WTF.SetFramesLocked(value ~= true) end)

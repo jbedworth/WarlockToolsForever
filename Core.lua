@@ -37,6 +37,72 @@ function WTF.Describe(value)
     return tostring(value)
 end
 
+-- Sounds come from the library AddOn Dyre's Sounds (author-approved: one copy
+-- of the sound files for all of Dyre's AddOns). The TOC lists it as
+-- OptionalDeps, so it loads first when installed, and WTF still loads and
+-- works without it, playing no sounds.
+local SOUNDS_CONTRACT = 1
+local SOUNDS_FUNCTIONS = {"Resolve", "Label", "List", "Groups", "Play", "AuraSound", "Choices", "SetupMenu"}
+-- Dyre's Sounds is unlisted on CurseForge, so the message says where to get it.
+local SOUNDS_WHERE = " Get it from CurseForge."
+local SOUNDS_MESSAGES = {
+    missing = "Install Dyre's Sounds to hear WTF's sounds (the chimes, the Nightfall sound, and the shield "
+        .. "sound)." .. SOUNDS_WHERE,
+    old = "Update Dyre's Sounds to hear WTF's sounds. This version is too old for WTF."
+        .. SOUNDS_WHERE,
+}
+
+-- Dyre's Sounds with the contract and functions WTF uses, else nil and why.
+function WTF.SoundLibrary()
+    local library = rawget(_G, "DyresSounds")
+    if type(library) ~= "table" or type(library.RequireContract) ~= "function" then
+        return nil, "missing"
+    end
+    library = library.RequireContract(SOUNDS_CONTRACT)
+    if type(library) ~= "table" then
+        return nil, "old"
+    end
+    for _, name in ipairs(SOUNDS_FUNCTIONS) do
+        if type(library[name]) ~= "function" then
+            return nil, "old"
+        end
+    end
+    return library, "ok"
+end
+
+-- Says once per session what to install when a sound is wanted but missing.
+local soundsReported = false
+
+function WTF.ReportMissingSounds()
+    local library, state = WTF.SoundLibrary()
+    if library or soundsReported then
+        return
+    end
+    soundsReported = true
+    WTF.Report(SOUNDS_MESSAGES[state])
+end
+
+-- Dyre's Cooldown Chimes plays the chimes when it is installed (author-
+-- approved), so WTF plays none; WTF's chime settings stay as they are, since
+-- Dyre's Cooldown Chimes copies them on its first run.
+WTF.CHIMES_ADDON = "DyresCooldownChimes"
+
+-- Dyre's Buff Reminders shows buff reminders for every class (author-approved
+-- two-step move): while it is loaded, WTF's own reminder icons stay hidden and
+-- WTF's saved reminder settings stay as they are.
+function WTF.RemindersStandAside()
+    if type(C_AddOns) ~= "table" or type(C_AddOns.IsAddOnLoaded) ~= "function" then
+        return false
+    end
+    local loaded = C_AddOns.IsAddOnLoaded("DyresBuffReminders")
+    return loaded == true
+end
+
+function WTF.ChimesStandAside()
+    return type(C_AddOns) == "table" and type(C_AddOns.IsAddOnLoaded) == "function"
+        and C_AddOns.IsAddOnLoaded(WTF.CHIMES_ADDON) == true
+end
+
 -- Reads TOC fields so the banner follows the packaged version; never gates operations.
 local function Metadata(field)
     if type(C_AddOns) ~= "table" or type(C_AddOns.GetAddOnMetadata) ~= "function" then
@@ -81,8 +147,7 @@ local REQUIRED_NAMESPACE = {
     "ReportTrackerDebug", "TrackerCandidateFilters", "TrackerKnowsSlot", "SetTrackerTheme",
     "InitializePlateDots", "RefreshPlateDots", "HasTrackableDots", "ApplyTrackerColors", "ApplyDotColors",
     "InitializeAlerts", "ApplyNightfallSound", "PreviewNightfallSound", "HasNightfallSound",
-    "InitializeChimes", "PreviewChime", "ReportChimesDebug", "SanitizeChimes", "AvailableChimeSounds",
-    "ChimeSoundGroups", "ChimeSoundParts", "ChimeSoundLabel",
+    "InitializeChimes", "PreviewChime", "ReportChimesDebug", "SanitizeChimes", "SanitizeChimeSound",
     "ReportRestrictions", "InitializeShield", "RefreshShield", "ResetShieldPosition", "ReportShieldDebug",
     "InitializeOptions", "OpenSettings",
 }
@@ -243,40 +308,27 @@ function WTF.SanitizePlateDotsOffset(value)
     return math.max(WTF.PLATE_DOTS_OFFSET_MIN, math.min(WTF.PLATE_DOTS_OFFSET_MAX, value))
 end
 
--- Nightfall sound choices (Alerts): demon chirps and laughs by file ID, from
--- the game's sound files as Leatrix Sounds lists them for this client
--- (sound/creature/demonfelimp and hellish_imp), after Dyre's Picks, WTF's own
--- sounds in Sounds/ (author-approved, first, as in the chimes). The client
--- plays no game sound by path, so the interface sounds by path are gone.
--- file is a file ID, pick a file in Sounds/. Labels are "Group: Name"
--- for the nested menu. The game's aura sounds take only sound files, not the
--- Cooldown Manager's sound kits, so the cooldown chimes' catalog is not here.
-WTF.NIGHTFALL_SOUNDS = {
-    {key = "pickfadingslow", label = "Dyre's Picks: Fading slow disappear", pick = "FadingSlowDisappear.mp3"},
-    {key = "pickblowswoosh", label = "Dyre's Picks: Disappear blow swoosh", pick = "DisappearBlowSwoosh.mp3"},
-    {key = "pickcartoonvanish", label = "Dyre's Picks: Cartoon vanish", pick = "CartoonVanish.mp3"},
-    {key = "pickdisappear", label = "Dyre's Picks: Disappear", pick = "Disappear.mp3"},
-    {key = "pickmagical", label = "Dyre's Picks: Magical disappear", pick = "MagicalDisappear.mp3"},
-    {key = "pickdisappearshort", label = "Dyre's Picks: Disappear (short)", pick = "DisappearShort.wav"},
-    {key = "pickdisappearingswoosh", label = "Dyre's Picks: Disappearing swoosh", pick = "DisappearingSwoosh.wav"},
-    {key = "pickteleportvanish", label = "Dyre's Picks: Teleport warp vanish", pick = "TeleportWarpVanish.wav"},
-    {key = "pickslowswoosh", label = "Dyre's Picks: Slow swoosh", pick = "SlowSwoosh.wav"},
-    {key = "implaugh1", label = "Imp: Laugh 1", file = 639142},
-    {key = "implaugh2", label = "Imp: Laugh 2", file = 639144},
-    {key = "implaugh3", label = "Imp: Laugh 3", file = 639146},
-    {key = "implaugh4", label = "Imp: Laugh 4", file = 639148},
-    {key = "implaugh5", label = "Imp: Laugh 5", file = 639150},
-    {key = "implaugh6", label = "Imp: Laugh 6", file = 639152},
-    {key = "implaugh7", label = "Imp: Laugh 7", file = 639154},
-    {key = "impfunny", label = "Imp: Chuckle", file = 639140},
-    {key = "impattack1", label = "Imp: Attack chirp 1", file = 639100},
-    {key = "impattack2", label = "Imp: Attack chirp 2", file = 639104},
-    {key = "impspell", label = "Imp: Spell chirp", file = 639156},
-    {key = "hellishimp1", label = "Hellish imp: Cackle 1", file = 1281685},
-    {key = "hellishimp2", label = "Hellish imp: Cackle 2", file = 1281691},
-}
--- The author's pick after auditioning; players audition the rest.
+-- The Nightfall sound (Alerts) is one of Dyre's Sounds' aura sounds: a file
+-- (Dyre's Picks) or a game sound by file ID (the imp chirps). The game's aura
+-- sounds take only sound files, not sound kits. The default is the author's
+-- pick after auditioning, Imp: Spell chirp.
 WTF.DEFAULT_NIGHTFALL_SOUND = "impspell"
+
+-- A saved Nightfall sound in the library's spelling when it can be an aura
+-- sound (the library maps the "pick..." keys WTF saved), else the default.
+-- Without the library a saved key is kept, so a missing library never resets
+-- a choice.
+function WTF.SanitizeNightfallSound(key)
+    if type(key) ~= "string" then
+        return WTF.DEFAULT_NIGHTFALL_SOUND
+    end
+    local library = WTF.SoundLibrary()
+    if not library then
+        return key
+    end
+    local resolved = library.Resolve(key)
+    return resolved and library.AuraSound(resolved) and resolved or WTF.DEFAULT_NIGHTFALL_SOUND
+end
 
 local ANNOUNCE_SWITCHES = {"summonGroup", "summonWhisper", "soulstoneGroup", "soulstoneWhisper",
     "healthstoneWhisper", "healthstoneEmote", "soulstoneEmote", "fearGroup", "banishGroup", "enslaveGroup",
@@ -338,13 +390,8 @@ function WTF.SanitizeDB(db)
         end
     end
     local alerts = type(db.alerts) == "table" and db.alerts or {}
-    local sound = WTF.DEFAULT_NIGHTFALL_SOUND
-    for _, choice in ipairs(WTF.NIGHTFALL_SOUNDS) do
-        if choice.key == alerts.nightfallSound then
-            sound = choice.key
-        end
-    end
-    db.alerts = {nightfall = alerts.nightfall == true, nightfallSound = sound}
+    db.alerts = {nightfall = alerts.nightfall == true,
+        nightfallSound = WTF.SanitizeNightfallSound(alerts.nightfallSound)}
     local announce = type(db.announce) == "table" and db.announce or {}
     local cleanAnnounce = {
         enabled = announce.enabled ~= false,
@@ -533,7 +580,7 @@ end
 -- AddOns installed, one display shows, from the newest copy.
 function WTF.InitializeShield()
     WTF.ShieldDisplay.Initialize({settings = function() return WTF.db.shield end, report = WTF.Report,
-        unlockHint = "Drag to move · /wtf lock when done"})
+        unlockHint = "Drag to move · /wtf lock when done", missingSounds = WTF.ReportMissingSounds})
 end
 
 function WTF.RefreshShield()
@@ -633,6 +680,9 @@ events:SetScript("OnEvent", function(self, event, loadedName)
     if not available then
         WTF.Report(message)
         return
+    end
+    if (WTF.db.chimes.enabled and not WTF.ChimesStandAside()) or WTF.db.alerts.nightfall then
+        WTF.ReportMissingSounds()
     end
     -- Called directly rather than from each file's own PLAYER_LOGIN handler,
     -- so startup never depends on event handler order.
