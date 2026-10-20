@@ -17,6 +17,7 @@ tested.
 | Logo | artwork/warlock-tools-forever-logo.png (1024 x 1024) |
 | Source | https://github.com/jbedworth/WarlockToolsForever |
 | Issues | https://github.com/jbedworth/WarlockToolsForever/issues |
+| Donation | Ko-fi, https://ko-fi.com/dyre_janelle (the project's Donation field) |
 | Relations | Dyre's Sounds (`dyres-sounds`) and Dyre's Toolkit (`dyres-toolkit`), Required Dependency; Weapon Skills Forever (`weapon-skills-forever`), Optional Dependency. Each CI upload sends them (`RELATIONS` in scripts/publish_curseforge.py); set them on the project too if the form asks. |
 
 ## Summary
