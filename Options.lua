@@ -447,8 +447,48 @@ local function AddDefaultTick(initializer, minValue, maxValue, default)
     end
 end
 
+-- The tracker's sizes for one theme (Core's TRACKER_SIZE_SPECS), shown only
+-- while that theme is chosen: the settings list checks shown predicates again
+-- on each setting change (pinned Blizzard_SettingsPanel.lua:788,
+-- Blizzard_Settings.lua:96). A change rebuilds the rows, out of combat.
+local function AddTrackerSizes(page, theme)
+    local function ShowFor(initializer)
+        if type(initializer.AddShownPredicate) == "function" then
+            initializer:AddShownPredicate(function() return WTF.db.tracker.theme == theme end)
+        end
+    end
+    local prefix = "WTF_TRACKER_" .. theme:upper() .. "_"
+    for _, spec in ipairs(WTF.TRACKER_SIZE_SPECS[theme]) do
+        local setting = Proxy(page, prefix .. spec.key:upper(), Settings.VarType.Number, spec.label, spec.default,
+            function() return WTF.db.tracker.sizes[theme][spec.key] end,
+            function(value) WTF.SetTrackerSize(theme, spec.key, value) end)
+        local options = Settings.CreateSliderOptions(spec.min, spec.max, spec.step)
+        if type(MinimalSliderWithSteppersMixin) == "table" and type(options.SetLabelFormatter) == "function" then
+            options:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right, spec.percent
+                and function(value) return string.format("%d%%", value) end or nil)
+        end
+        local initializer = Settings.CreateSlider(page, setting, options,
+            (spec.tooltip or ("The DoT tracker's " .. spec.label:lower() .. " in the "
+                .. (theme == "bars" and "Bars" or "Compact") .. " theme."))
+                .. " A change in combat applies when combat ends.")
+        AddDefaultTick(initializer, spec.min, spec.max, spec.default)
+        ShowFor(initializer)
+    end
+    local position = Proxy(page, prefix .. "NAMEPOSITION", Settings.VarType.String, "Name position",
+        WTF.TRACKER_NAME_POSITIONS[theme][1].key,
+        function() return WTF.db.tracker.sizes[theme].namePosition end,
+        function(value) WTF.SetTrackerSize(theme, "namePosition", value) end)
+    ShowFor(Settings.CreateDropdown(page, position, function()
+        local container = Settings.CreateControlTextContainer()
+        for _, choice in ipairs(WTF.TRACKER_NAME_POSITIONS[theme]) do
+            container:Add(choice.key, choice.label)
+        end
+        return container:GetData()
+    end, "Where the mob's name sits in each row."))
+end
+
 local function AddTrackerPage(parent)
-    local page = Settings.RegisterVerticalLayoutSubcategory(parent, TRACKER_TITLE)
+    local page, layout = Settings.RegisterVerticalLayoutSubcategory(parent, TRACKER_TITLE)
     local theme = Proxy(page, "WTF_TRACKER_THEME", Settings.VarType.String, "Theme", "bars",
         function() return WTF.db.tracker.theme end,
         function(value) WTF.SetTrackerTheme(value) end)
@@ -485,6 +525,63 @@ local function AddTrackerPage(parent)
     end)
     AddDefaultTick(offsetInitializer, WTF.PLATE_DOTS_OFFSET_MIN, WTF.PLATE_DOTS_OFFSET_MAX,
         WTF.DEFAULT_PLATE_DOTS_OFFSET)
+    local opacity = Proxy(page, "WTF_TRACKER_PLATE_DOTS_OPACITY", Settings.VarType.Number, "Nameplate dot opacity",
+        WTF.DEFAULT_PLATE_DOTS_OPACITY,
+        function() return WTF.db.tracker.plateDotsOpacity end,
+        function(value) WTF.SetPlateDotsOpacity(value) end)
+    local opacityOptions = Settings.CreateSliderOptions(WTF.PLATE_DOTS_OPACITY_MIN, WTF.PLATE_DOTS_OPACITY_MAX, 5)
+    if type(MinimalSliderWithSteppersMixin) == "table" and type(opacityOptions.SetLabelFormatter) == "function" then
+        opacityOptions:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right,
+            function(value) return string.format("%d%%", value) end)
+    end
+    local opacityInitializer = Settings.CreateSlider(page, opacity, opacityOptions,
+        "How solid the bubble of DoT dots above each nameplate is, in percent. It changes at once, also in combat.")
+    opacityInitializer:SetParentInitializer(dotsInitializer, function()
+        return WTF.db.tracker.plateDots and WTF.HasTrackableDots()
+    end)
+    AddDefaultTick(opacityInitializer, WTF.PLATE_DOTS_OPACITY_MIN, WTF.PLATE_DOTS_OPACITY_MAX,
+        WTF.DEFAULT_PLATE_DOTS_OPACITY)
+    for _, panel in ipairs(WTF.TRACKER_PANELS) do
+        local setting = Proxy(page, "WTF_TRACKER_OPACITY_" .. panel.key:upper(), Settings.VarType.Number,
+            panel.label, WTF.DEFAULT_PANEL_OPACITY,
+            function() return WTF.db.tracker.panelOpacity[panel.key] end,
+            function(value) WTF.SetTrackerPanelOpacity(panel.key, value) end)
+        local options = Settings.CreateSliderOptions(WTF.PANEL_OPACITY_MIN, WTF.PANEL_OPACITY_MAX, 5)
+        if type(MinimalSliderWithSteppersMixin) == "table" and type(options.SetLabelFormatter) == "function" then
+            options:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right,
+                function(value) return string.format("%d%%", value) end)
+        end
+        local initializer = Settings.CreateSlider(page, setting, options, "How solid the DoT tracker's "
+            .. panel.label:lower():gsub(" opacity", "") .. " is, rows and all, in percent. It changes at once, "
+            .. "also in combat.")
+        AddDefaultTick(initializer, WTF.PANEL_OPACITY_MIN, WTF.PANEL_OPACITY_MAX, WTF.DEFAULT_PANEL_OPACITY)
+    end
+    local health = Proxy(page, "WTF_TRACKER_HEALTH", Settings.VarType.Boolean, "Show mob health", false,
+        function() return WTF.db.tracker.health end,
+        function(value) WTF.SetTrackerHealth("health", value) end)
+    local healthInitializer = Settings.CreateCheckbox(page, health,
+        "A thin health bar under each mob's name in the DoT tracker, also in combat. A change in combat applies "
+            .. "when combat ends.")
+    local healthText = Proxy(page, "WTF_TRACKER_HEALTH_TEXT", Settings.VarType.String, "Health text", "none",
+        function() return WTF.db.tracker.healthText end,
+        function(value) WTF.SetTrackerHealth("healthText", value) end)
+    local textInitializer = Settings.CreateDropdown(page, healthText, function()
+        local container = Settings.CreateControlTextContainer()
+        for _, choice in ipairs(WTF.TRACKER_HEALTH_TEXTS) do
+            container:Add(choice.key, choice.label)
+        end
+        return container:GetData()
+    end, "The mob's health as text after its name: its number, its percent, or both.")
+    textInitializer:SetParentInitializer(healthInitializer, function() return WTF.db.tracker.health end)
+    AddTrackerSizes(page, "compact")
+    AddTrackerSizes(page, "bars")
+    -- Pinned Blizzard_SettingControls.lua:1014.
+    if type(CreateSettingsButtonInitializer) == "function" and type(layout) == "table"
+            and type(layout.AddInitializer) == "function" then
+        layout:AddInitializer(CreateSettingsButtonInitializer("Tracker size", "Reset size", function()
+            WTF.SetTrackerSize(WTF.db.tracker.theme, nil)
+        end, "Back to the theme's own sizes and name position.", true))
+    end
 end
 
 -- One color per slot, shared by the tracker's bars and the nameplate dots, and

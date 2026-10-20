@@ -81,7 +81,45 @@ local function fixture(options)
     state.absorb = secret()
     state.secrets[state.absorb] = true
     env.UnitGetTotalAbsorbs = function(unit) equal(unit, "player") return state.absorb end
-    env.UnitHealthMax = function(unit) equal(unit, "player") return 1500 end
+    -- Health: the player's is readable; a mob's (state.units[unit].health and
+    -- maxHealth) is secret in combat, as on Forever.
+    local function mobHealth(unit, field, default)
+        local data = state.units[unit]
+        local value = data and data[field] or default
+        if state.combat and unit ~= "player" then
+            local hidden = secret()
+            state.secrets[hidden] = true
+            state.hiddenValues = state.hiddenValues or {}
+            state.hiddenValues[hidden] = value
+            return hidden
+        end
+        return value
+    end
+    env.UnitHealthMax = function(unit)
+        if unit == "player" then return 1500 end
+        return mobHealth(unit, "maxHealth", 1000)
+    end
+    env.UnitHealth = function(unit) return mobHealth(unit, "health", 1000) end
+    if not options.noHealthPercent then
+        env.CurveConstants = {ScaleTo100 = {}}
+        env.UnitHealthPercent = function(unit, predicted, curve)
+            equal(curve, env.CurveConstants.ScaleTo100, "scaled to 0-100")
+            local data = state.units[unit] or {}
+            return mobHealth(unit, "percent", math.floor(100 * (data.health or 1000) / (data.maxHealth or 1000)))
+        end
+    end
+    -- As in client, string.format takes a secret and gives a secret back.
+    env.string = setmetatable({format = function(pattern, ...)
+        for index = 1, select("#", ...) do
+            if state.secrets[select(index, ...)] then
+                local text = secret()
+                state.secrets[text] = true
+                state.formatted = {pattern = pattern}
+                return text
+            end
+        end
+        return string.format(pattern, ...)
+    end}, {__index = string})
     env.AbbreviateNumbers = function(value) return {abbreviated = value} end
     -- The red text at the top of the screen.
     state.errors = {}
@@ -103,6 +141,9 @@ local function fixture(options)
     end}
     env.CreateSettingsListSectionHeaderInitializer = function(name, tooltip)
         return {heading = name, tooltip = tooltip}
+    end
+    env.CreateSettingsButtonInitializer = function(name, buttonText, buttonClick, tooltip, addSearchTags)
+        return {name = name, buttonText = buttonText, buttonClick = buttonClick, tooltip = tooltip}
     end
     env.UnitClass = function(unit)
         equal(unit, "player")
@@ -688,6 +729,10 @@ local function fixture(options)
             function object:AddModifyPredicate(predicate)
                 self.modifyPredicates[#self.modifyPredicates + 1] = predicate
             end
+            object.shownPredicates = {}
+            function object:AddShownPredicate(predicate)
+                self.shownPredicates[#self.shownPredicates + 1] = predicate
+            end
             category.initializers[#category.initializers + 1] = object
             return object
         end
@@ -865,6 +910,7 @@ local function fixture(options)
             self.shown = false
         end
         function object:SetAlpha(value) self.alpha = value end
+        function object:SetIgnoreParentAlpha(value) self.ignoreParentAlpha = value == true end
         function object:IsShown() return self.shown end
         function object:IsVisible()
             if not self.shown then return false end
@@ -896,6 +942,7 @@ local function fixture(options)
         function object:SetChecked(value) self.checked = value == true end
         function object:GetChecked() return self.checked end
         function object:CreateTexture() return widget("Texture", nil, self) end
+        function object:SetDesaturated(value) self.desaturated = value == true end
         function object:CreateAnimationGroup()
             local group = {playing = false}
             function group:SetLooping(looping) self.looping = looping end
@@ -917,8 +964,22 @@ local function fixture(options)
             function button:SetDurationCooldown(region) self.display.cooldown = region end
             function button:SetDurationBar(region, barOptions) self.display.bar, self.display.barOptions = region, barOptions end
             function button:SetDurationText(region) self.display.text = region end
+            function button:SetSpellName(region) self.display.spellName = region end
             function button:SetMouseClickEnabled(value) self.clicks = value end
             slotOptions.initializeFrame(button)
+            -- As in client (13x: "Attempt to access forbidden object from code
+            -- tainted by an AddOn"), what WTF hands the engine is the engine's
+            -- once the initializer returns: every call on it from WTF raises.
+            for _, handed in pairs({button.display.bar, button.display.text, button.display.spellName}) do
+                handed.forbidden = true
+                for _, method in ipairs({"SetStatusBarColor", "SetAlpha", "SetIgnoreParentAlpha", "SetValue",
+                    "SetMinMaxValues", "SetText", "SetPoint", "SetSize", "ClearAllPoints", "Show", "Hide"}) do
+                    handed[method] = function()
+                        error("calling '" .. method .. "' on bad self (Attempt to access forbidden object from "
+                            .. "code tainted by an AddOn)")
+                    end
+                end
+            end
             self.slots[#self.slots + 1] = {key = key, filter = filter, button = button,
                 ids = slotOptions.candidateFilters.includeSpellIDs, candidates = slotOptions.candidateFilters}
             return button
@@ -936,7 +997,16 @@ local function fixture(options)
         end
         function object:SetUnit(unit) self.unit = unit end
         function object:UpdateAllAuras() self.updates = (self.updates or 0) + 1 end
-        function object:CreateFontString() return widget("FontString", nil, self) end
+        -- Font strings start at a 10-point font, as the small game fonts are.
+        function object:CreateFontString()
+            local text = widget("FontString", nil, self)
+            text.font, text.fontSize = "Fonts\\FRIZQT__.TTF", 10
+            function text:GetFont() return self.font, self.fontSize, self.fontFlags end
+            function text:SetFont(font, size, flags) self.font, self.fontSize, self.fontFlags = font, size, flags end
+            function text:SetWordWrap(value) self.wordWrap = value end
+            function text:SetMaxLines(value) self.maxLines = value end
+            return text
+        end
         -- Unknown methods (layout, colors, and so on) do nothing here.
         return setmetatable(object, {__index = function(_, key)
             if type(key) == "string" and key:match("^%u") then return function() end end
@@ -4099,9 +4169,10 @@ local function trackerFixture(extra)
     options.db.tracker.theme = options.db.tracker.theme or "compact"
     local state = fixture(options)
     state.anchor = state.env.WarlockToolsForeverTracker
+    state.focusAnchor = state.env.WarlockToolsForeverTrackerFocus
     state.list = state.env.WarlockToolsForeverTrackerList
     for _, frame in ipairs(state.frames) do
-        if frame.parent == state.anchor and frame.container then
+        if (frame.parent == state.anchor or frame.parent == state.focusAnchor) and frame.container then
             if frame.unit == "target" then state.targetRow = frame else state.focusRow = frame end
         end
     end
@@ -4136,7 +4207,8 @@ end
 local function pinnedRow(state, unit)
     local found
     for _, frame in ipairs(state.frames) do
-        if frame.parent == state.anchor and frame.container and frame.unit == unit then found = frame end
+        if (frame.parent == state.anchor or frame.parent == state.focusAnchor) and frame.container
+            and frame.unit == unit then found = frame end
     end
     return found
 end
@@ -4171,7 +4243,9 @@ test("the tracker has pinned target and focus rows and eight list rows of engine
     equal(outline.backdrop.edgeFile, "Interface\\Buttons\\WHITE8X8")
     equal(outline.backdropBorder[1], 0.53)
     equal(outline.points[1][2], -5, "drawn outside the row")
-    equal(state.focusRow.points[1][5], -(ROW_STEP + TARGET_SPACING), "the focus row sits clear of it")
+    equal(state.focusRow.points[1][5], nil, "the focus row tops its own section")
+    equal(state.focusAnchor.points[#state.focusAnchor.points][5], -(ROW_STEP + TARGET_SPACING),
+        "which stacks clear of the target row")
     local rows = listRows(state)
     equal(#rows, 8)
     local container = rows[1].container
@@ -4242,7 +4316,7 @@ test("spellbook ranks with a tracked name join the slot, Banes by name", functio
     equal(slotByKey(state.targetRow.container, "corruption").ids[990002], true)
     state.clear()
     state.slash("debug_tracker")
-    contains(state.messages[4], "slot=corruption recast=Corruption matches=ids ids=172,6222,6223,7648,11671,11672,25311,990002")
+    contains(state.messages[5], "slot=corruption recast=Corruption matches=ids ids=172,6222,6223,7648,11671,11672,25311,990002")
     state.emit("UNIT_SPELLCAST_SENT", "player", "Boar", "c1", 702)
     state.emit("UNIT_SPELLCAST_SENT", "player", "Boar", "c2", 990009)
     state.clear()
@@ -4259,7 +4333,7 @@ test("your target has the pinned row; other DoTed mobs are listed below it", fun
     equal(rows[1].name.text, "Wolf")
     equal(rows[1].container.unit, "nameplate4")
     equal(state.list.shown, true)
-    equal(listOffset(state), -(ROW_STEP + TARGET_SPACING), "below the target row and its outline")
+    equal(listOffset(state), -2 * (ROW_STEP + TARGET_SPACING), "the list keeps its place below both pinned rows")
     equal(state.targetRow.name.text, "Boar")
 end)
 test("tabbing moves the pinned row; the old target joins the list", function()
@@ -4274,7 +4348,7 @@ test("tabbing moves the pinned row; the old target joins the list", function()
     equal(state.targetRow.name.text, "Wolf")
     equal(state.targetRow.container.updates > 1, true, "the target row refreshes")
 end)
-test("a focus gets its pinned row and the list moves below both", function()
+test("a focus gets its pinned row; the list stays where it is", function()
     local state = trackerFixture({units = {
         target = {name = "Boar", guid = "Creature-1"},
         nameplate3 = {name = "Boar", guid = "Creature-1"},
@@ -4294,11 +4368,10 @@ test("a focus gets its pinned row and the list moves below both", function()
     equal(listOffset(state), -2 * (ROW_STEP + TARGET_SPACING))
     state.units.target = nil
     state.emit("PLAYER_TARGET_CHANGED")
-    equal(listOffset(state), -2 * (ROW_STEP + TARGET_SPACING),
-        "the secure focus row cannot move, so the list stays below it")
+    equal(listOffset(state), -2 * (ROW_STEP + TARGET_SPACING), "a section stays where it was placed")
     state.units.focus = nil
     state.emit("PLAYER_FOCUS_CHANGED")
-    equal(listOffset(state), 0, "with no pinned row the list moves to the top")
+    equal(listOffset(state), -2 * (ROW_STEP + TARGET_SPACING), "also with no pinned row")
 end)
 test("list rows follow nameplates and fall back to target or focus", function()
     local state = trackerFixture()
@@ -4395,24 +4468,81 @@ test("placeholders show sample rows for positioning, out of combat", function()
     equal(state.drivers[state.targetRow], "[@target,harm,nodead] show; hide")
     equal(#shownRows(state), 0)
 end)
-test("the tracker drags by its rows unless locked, and /wtf reset moves it back", function()
-    local state = trackerFixture()
+test("each tracker section drags by its rows unless locked, and /wtf reset stacks them again", function()
+    local state = trackerFixture({db = {tracker = {position = {point = "CENTER", relativePoint = "BOTTOMLEFT",
+        x = 200, y = 300}}}})
     state.slash("unlock")
     state.targetRow.scripts.OnDragStart(state.targetRow)
     equal(state.anchor.moving, true)
     state.anchor:ClearAllPoints()
     state.anchor:SetPoint("CENTER", nil, "BOTTOMLEFT", 300, 600)
     state.targetRow.scripts.OnDragStop(state.targetRow)
-    equal(state.wtf.db.tracker.position.x, 300)
+    equal(state.wtf.db.tracker.sections.target.x, 300, "the target section saves its own place")
+    equal(state.wtf.db.tracker.sections.focus, nil, "the others stay stacked")
+    local listRow = shownRows(state)[1]
+    listRow.scripts.OnDragStart(listRow)
+    equal(state.list.moving, true, "a list row drags the list")
+    state.list:ClearAllPoints()
+    state.list:SetPoint("CENTER", nil, "BOTTOMLEFT", 700, 200)
+    listRow.scripts.OnDragStop(listRow)
+    equal(state.wtf.db.tracker.sections.list.x, 700)
+    state.focusRow.scripts.OnDragStart(state.focusRow)
+    equal(state.focusAnchor.moving, true, "the focus row drags the focus section")
+    state.focusRow.scripts.OnDragStop(state.focusRow)
     state.slash("lock")
     state.targetRow.scripts.OnDragStart(state.targetRow)
     equal(state.anchor.moving, false)
     state.slash("reset")
     equal(state.wtf.db.tracker.position, nil)
-    equal(state.anchor.points[1][1], "CENTER")
+    equal(next(state.wtf.db.tracker.sections), nil, "every section stacked again")
+    equal(state.anchor.points[#state.anchor.points][1], "TOPLEFT")
+    equal(state.anchor.points[#state.anchor.points][3], "TOPLEFT", "hanging from the stack")
     state.combat = true
     state.slash("reset")
     equal(state.last(), "WTF: WTF frames move back to their default places after combat.")
+end)
+test("the three sections stack where the one tracker frame was, so nothing moves", function()
+    -- Today's layout: the target row at the frame's top, the focus row one row
+    -- and outline below, the list below both.
+    for _, saved in ipairs({false, true}) do
+        local position = saved and {point = "CENTER", relativePoint = "BOTTOMLEFT", x = 640, y = 420} or nil
+        local state = trackerFixture({db = {tracker = {position = position}}})
+        local stack = state.anchor.points[#state.anchor.points][2]
+        equal(state.anchor.points[#state.anchor.points][5], 0, "the target on top")
+        equal(state.focusAnchor.points[#state.focusAnchor.points][2], stack, "the same stack")
+        equal(listOffset(state), -2 * (ROW_STEP + TARGET_SPACING))
+        local x, y = state.absCenter(stack)
+        if saved then
+            equal(x, 640, "an old saved tracker place becomes the stack")
+            equal(y, 420)
+        else
+            equal(x, 500 - 260, "the default place")
+            equal(y, 400 + 120)
+        end
+        equal(stack.height, 2 * (ROW_STEP + TARGET_SPACING), "the old frame's height")
+    end
+end)
+test("with Dyre's Toolkit each tracker section is its own movable frame", function()
+    local state = trackerFixture({toolkit = true})
+    for _, frame in ipairs({state.anchor, state.focusAnchor, state.list}) do
+        local found = false
+        for _, movable in ipairs(state.toolkit.movables) do
+            if movable == frame then found = true end
+        end
+        equal(found, true, tostring(frame.name))
+    end
+    state.slash("unlock")
+    state.focusRow.scripts.OnDragStart(state.focusRow)
+    equal(state.toolkit.calls[#state.toolkit.calls][1], "BeginDrag")
+    equal(state.toolkit.calls[#state.toolkit.calls][2], state.focusAnchor)
+end)
+test("saved section places are repaired on load", function()
+    local state = fixture({db = {tracker = {sections = {target = {point = "CENTER", relativePoint = "BOTTOMLEFT",
+        x = 1, y = 2}, focus = "broken", list = {x = 3}}}}})
+    equal(state.wtf.db.tracker.sections.target.x, 1)
+    equal(state.wtf.db.tracker.sections.focus, nil)
+    equal(state.wtf.db.tracker.sections.list, nil)
+    equal(fixture({db = {tracker = {sections = "x"}}}).wtf.db.tracker.sections.target, nil)
 end)
 test("the tracker module switch hides it", function()
     local state = trackerFixture()
@@ -4463,7 +4593,7 @@ test("the Curse slot matches your Curse-type debuffs, not by ID and never your B
     end
     state.clear()
     state.slash("debug_tracker")
-    contains(state.messages[2], "slot=curse recast=nil matches=Curse debuffs except bane")
+    contains(state.messages[3], "slot=curse recast=nil matches=Curse debuffs except bane")
     dot(state, 702, "Wolf")
     equal(#shownRows(state), 1, "casting a curse still adds the mob")
 end)
@@ -4519,10 +4649,14 @@ end)
 test("a new color applies at once to bars and nameplate dots", function()
     local state = trackerFixture({db = {tracker = {plateDots = true}},
         units = {nameplate1 = {name = "Boar", guid = "Creature-1"}}})
+    state.combat = true
     state.settings.WTF_COLOR_CORRUPTION:SetValue("ff00ff00")
     equal(state.wtf.db.tracker.colors.corruption, "ff00ff00")
-    near3(barColor(state.focusRow, 3), 0, 1, 0)
-    near3(barColor(listRows(state)[8], 3), 0, 1, 0)
+    near3(barColor(pinnedRow(state, "focus"), 3), 1, 1, 1, "the engine's bars change only as the rows are built")
+    state.combat = false
+    state.emit("PLAYER_REGEN_ENABLED")
+    near3(barColor(pinnedRow(state, "focus"), 3), 0, 1, 0, "rebuilt after combat")
+    near3(barColor(currentRows(state)[8], 3), 0, 1, 0)
     local bubble
     for _, frame in ipairs(state.frames) do
         if frame.colored and frame.colored.corruption then bubble = frame end
@@ -4599,9 +4733,10 @@ end)
 test("pinned rows and the list are spaced by the taller bar blocks", function()
     local state = barsFixture()
     local step = 18 + 5 * 18 + 6 + 2
-    equal(state.focusRow.points[1][5], -(step + TARGET_SPACING))
+    local focusPoint = state.focusAnchor.points[#state.focusAnchor.points]
+    equal(focusPoint[5], -(step + TARGET_SPACING))
     dot(state, 172, "Wolf")
-    equal(listOffset(state), -(step + TARGET_SPACING))
+    equal(listOffset(state), -2 * (step + TARGET_SPACING))
 end)
 test("switching the theme rebuilds the rows and keeps the tracked mobs", function()
     local state = trackerFixture()
@@ -4651,6 +4786,371 @@ test("a Warlock without Siphon Life and other optional DoTs can learn ranks with
         equal(slotByKey(pinnedRow(state, "target").container, "siphon"), nil)
     end
 end)
+-- The dim icons behind a row's slots: its desaturated textures.
+local function placeholders(row)
+    local found = {}
+    for _, child in ipairs(row.children) do
+        if child.kind == "Texture" and child.desaturated then found[#found + 1] = child end
+    end
+    return found
+end
+test("each DoT tracker panel has its own opacity, applied at once, also in combat", function()
+    local state = trackerFixture()
+    for _, frame in ipairs({state.anchor, state.focusAnchor, state.list}) do
+        equal(frame.alpha, 1, tostring(frame.name) .. ": solid by default")
+    end
+    state.settings.WTF_TRACKER_OPACITY_TARGET:SetValue(60)
+    equal(state.anchor.alpha, 0.6, "the target panel")
+    equal(state.focusAnchor.alpha, 1, "the others stay")
+    state.combat = true
+    state.settings.WTF_TRACKER_OPACITY_LIST:SetValue(30)
+    equal(state.list.alpha, 0.3, "also in combat")
+    state.settings.WTF_TRACKER_OPACITY_FOCUS:SetValue(45)
+    equal(state.focusAnchor.alpha, 0.45)
+    state.combat = false
+    state.settings.WTF_TRACKER_THEME:SetValue("bars")
+    equal(state.anchor.alpha, 0.6, "a rebuild keeps it")
+    equal(slotByKey(pinnedRow(state, "target").container, "corruption").button.alpha, nil,
+        "the engine's buttons are never touched for it")
+    local saved = fixture({db = {tracker = {panelOpacity = {target = 5, focus = "x", list = 70}}}})
+    equal(saved.wtf.db.tracker.panelOpacity.target, 10)
+    equal(saved.wtf.db.tracker.panelOpacity.focus, 100)
+    equal(saved.wtf.db.tracker.panelOpacity.list, 70)
+    equal(fixture({db = {tracker = {panelOpacity = "broken"}}}).wtf.db.tracker.panelOpacity.target, 100)
+end)
+test("a panel's opacity reaches its DoT bars as they are built, never touching the engine's objects", function()
+    -- Found in client: the engine-driven duration bars did not fade with the
+    -- panel's frame, and touching them after they were handed to the engine
+    -- raised "Attempt to access forbidden object" (the mock raises too).
+    for _, theme in ipairs({"compact", "bars"}) do
+        local state = trackerFixture({db = {tracker = {theme = theme}}})
+        dot(state, 6222, "Wolf")
+        local bar = barColor(pinnedRow(state, "target"), 3)
+        equal(bar[4], 1, theme .. ": solid by default")
+        equal(pinnedRow(state, "target").container.slots[3].button.display.bar.ignoreParentAlpha, true,
+            theme .. ": a bar ignores its parent's opacity")
+        for _, case in ipairs({{"TARGET", "target"}, {"FOCUS", "focus"}, {"LIST", "list"}}) do
+            local function row()
+                return case[2] == "list" and shownRows(state)[1] or pinnedRow(state, case[2])
+            end
+            local section = case[2] == "target" and state.anchor or case[2] == "focus" and state.focusAnchor
+                or state.list
+            state.settings["WTF_TRACKER_OPACITY_" .. case[1]]:SetValue(40)
+            equal(section.alpha, 0.4, theme .. " " .. case[2] .. ": the panel at once")
+            equal(barColor(row(), 3)[4], 0.4, theme .. " " .. case[2] .. ": its DoT bars, rebuilt")
+            if theme == "bars" then
+                equal(row().container.slots[3].button.display.spellName.alpha, 0.4, "the spell name on a bar")
+                equal(row().container.slots[3].button.display.text.alpha, 0.4, "and its time left")
+            end
+            state.combat = true
+            state.settings["WTF_TRACKER_OPACITY_" .. case[1]]:SetValue(70)
+            equal(section.alpha, 0.7, theme .. " " .. case[2] .. ": the panel at once, in combat")
+            equal(barColor(row(), 3)[4], 0.4, theme .. " " .. case[2] .. ": its bars wait for combat to end")
+            state.combat = false
+            state.emit("PLAYER_REGEN_ENABLED")
+            dot(state, 6222, "Wolf")
+            equal(barColor(row(), 3)[4], 0.7, theme .. " " .. case[2] .. ": then follow")
+        end
+        equal(barColor(pinnedRow(state, "focus"), 1)[4], 0.7, theme .. ": each panel keeps its own")
+    end
+end)
+test("the DoT tracker rows stay fully solid: the opacity is the nameplate dots'", function()
+    local state = trackerFixture()
+    local row = pinnedRow(state, "target")
+    equal(slotByKey(row.container, "corruption").button.alpha, nil, "the engine's buttons are left alone")
+    equal(placeholders(row)[1].alpha, 0.3, "the dim icons as before")
+    equal(state.settings.WTF_TRACKER_OPACITY, nil, "no tracker opacity setting")
+end)
+-- The tracker's size settings ---------------------------------------------------
+
+local function settingsPage(state, name)
+    return state.categories[name]
+end
+test("tracker sizes default to today's look, per theme", function()
+    local compact = trackerFixture()
+    local row = pinnedRow(compact, "target")
+    local slots = #row.container.slots
+    equal(row.width, 6 * 2 + 110 + slots * (22 + 6), "compact width as before")
+    equal(row.height, 30, "compact height as before")
+    equal(slotByKey(row.container, "corruption").button.width, 22)
+    local bars = trackerFixture({db = {tracker = {theme = "bars"}}})
+    equal(pinnedRow(bars, "target").width, 290, "bars width as before")
+    equal(slotByKey(pinnedRow(bars, "target").container, "corruption").button.height, 16)
+    equal(compact.wtf.db.tracker.sizes.compact.namePosition, "left")
+    equal(compact.wtf.db.tracker.sizes.bars.namePosition, "above")
+end)
+test("compact sizes: icon size, name width, and the name beside, above, or below", function()
+    local state = trackerFixture()
+    local slots = #pinnedRow(state, "target").container.slots
+    state.settings.WTF_TRACKER_COMPACT_ICONSIZE:SetValue(30)
+    state.settings.WTF_TRACKER_COMPACT_NAMEWIDTH:SetValue(150)
+    local row = pinnedRow(state, "target")
+    equal(row.height, 30 + 8)
+    equal(row.width, 12 + 150 + slots * (30 + 6))
+    local button = slotByKey(row.container, "corruption").button
+    equal(button.width, 30)
+    local firstSlot = row.container.slots[1].button
+    equal(firstSlot.points[#firstSlot.points][4], 6 + 150, "the first icon after the name")
+    state.settings.WTF_TRACKER_COMPACT_NAMEPOSITION:SetValue("above")
+    row = pinnedRow(state, "target")
+    equal(row.height, 30 + 8 + 14, "a name line above the icons")
+    equal(row.width, 12 + math.max(150, slots * 36))
+    equal(row.name.points[#row.name.points][1], "TOPLEFT")
+    local first = row.container.slots[1].button
+    equal(first.points[#first.points][4], 6, "icons start at the left edge")
+    equal(first.points[#first.points][5], -(4 + 14), "below the name line")
+    state.settings.WTF_TRACKER_COMPACT_NAMEPOSITION:SetValue("right")
+    row = pinnedRow(state, "target")
+    equal(row.name.points[#row.name.points][2], 6 + slots * 36, "the name after the icons")
+    state.settings.WTF_TRACKER_COMPACT_NAMEPOSITION:SetValue("below")
+    row = pinnedRow(state, "target")
+    equal(row.name.points[#row.name.points][1], "BOTTOMLEFT")
+    equal(state.focusAnchor.points[#state.focusAnchor.points][5], -(row.height + 2 + 7),
+        "the stacked focus section follows the new size")
+end)
+test("bars sizes: width, line height, and the name above or below", function()
+    local state = trackerFixture({db = {tracker = {theme = "bars"}}})
+    state.settings.WTF_TRACKER_BARS_BARWIDTH:SetValue(400)
+    state.settings.WTF_TRACKER_BARS_LINEHEIGHT:SetValue(20)
+    local row = pinnedRow(state, "target")
+    local lines = #row.container.slots
+    equal(row.width, 400)
+    equal(row.height, 18 + lines * (20 + 2) + 6)
+    local button = slotByKey(row.container, "corruption").button
+    equal(button.height, 20)
+    equal(button.width, 400 - 12)
+    state.settings.WTF_TRACKER_BARS_NAMEPOSITION:SetValue("below")
+    row = pinnedRow(state, "target")
+    local first = row.container.slots[1].button
+    equal(first.points[#first.points][5], -4, "the lines start at the top")
+    equal(row.name.points[#row.name.points][1], "BOTTOMLEFT")
+    equal(state.wtf.db.tracker.sizes.compact.iconSize, 22, "the other theme keeps its own sizes")
+end)
+test("text size scales every tracker font", function()
+    local state = trackerFixture()
+    state.settings.WTF_TRACKER_COMPACT_TEXTSCALE:SetValue(150)
+    local row = pinnedRow(state, "target")
+    equal(row.name.fontSize, 15, "the name")
+    local bars = trackerFixture({db = {tracker = {theme = "bars", sizes = {bars = {textScale = 50}}}}})
+    equal(pinnedRow(bars, "target").name.fontSize, 5)
+    equal(pinnedRow(bars, "target").height, 9 + #pinnedRow(bars, "target").container.slots * 18 + 6,
+        "a smaller name line")
+end)
+test("a size change in combat waits; Reset size restores the theme's own sizes", function()
+    local state = trackerFixture()
+    state.combat = true
+    state.settings.WTF_TRACKER_COMPACT_ICONSIZE:SetValue(36)
+    equal(pinnedRow(state, "target").height, 30, "the rows rebuild only out of combat")
+    state.combat = false
+    state.emit("PLAYER_REGEN_ENABLED")
+    equal(pinnedRow(state, "target").height, 44)
+    local page = settingsPage(state, "DoT Tracker")
+    local reset
+    for _, heading in ipairs(page.headings) do
+        if heading.buttonText == "Reset size" then reset = heading end
+    end
+    reset.buttonClick()
+    equal(pinnedRow(state, "target").height, 30)
+    equal(state.wtf.db.tracker.sizes.compact.iconSize, 22)
+end)
+test("tracker names stay on one line in their room, and rows never grow from a long name", function()
+    -- Found in client: long Compact names wrapped onto 2-3 lines and spilled out of the row.
+    local long = "Sleepless Soulgorger Champion of Nightfal"
+    equal(#long, 41)
+    local layouts = {{"compact", "left"}, {"compact", "right"}, {"compact", "above"}, {"compact", "below"},
+        {"bars", "above"}, {"bars", "below"}}
+    for _, layout in ipairs(layouts) do
+        for _, scale in ipairs({50, 100, 200}) do
+            for _, healthText in ipairs({"none", "both"}) do
+                local theme, where = layout[1], layout[2]
+                local label = theme .. " " .. where .. " " .. scale .. "% " .. healthText
+                local sizes = {textScale = scale, namePosition = where}
+                local state = trackerFixture({units = {
+                    target = {name = long, guid = "Creature-1"},
+                    nameplate3 = {name = long, guid = "Creature-1"},
+                    nameplate4 = {name = "Wolf", guid = "Creature-2"},
+                }, db = {tracker = {theme = theme, sizes = {[theme] = sizes}, health = healthText ~= "none",
+                    healthText = healthText}}})
+                state.slash("unlock")
+                local rows = {pinnedRow(state, "target")}
+                for _, row in ipairs(shownRows(state)) do rows[#rows + 1] = row end
+                local width, height = rows[1].width, rows[1].height
+                for _, row in ipairs(rows) do
+                    equal(row.name.wordWrap, false, label .. ": one line")
+                    equal(row.name.maxLines, 1, label)
+                    equal(row.width, width, label .. ": every row the same width, whatever its name")
+                    equal(row.height, height, label .. ": and height")
+                    for _, text in ipairs({row.healthPercent, row.healthNumber}) do
+                        equal(text.wordWrap, false, label .. ": the health text is one line too")
+                    end
+                end
+                local name = rows[1].name
+                local reserve = healthText == "both" and math.floor(70 * scale / 100 + 0.5) or 0
+                if theme == "compact" and (where == "left" or where == "right") then
+                    equal(name.width, 110 - 4 - reserve, label .. ": the column beside the icons")
+                else
+                    equal(name.width, width - 12 - reserve, label .. ": the row's whole width")
+                end
+                state.slash("lock")
+                state.applyDrivers()
+                equal(pinnedRow(state, "target").name.text, long, label .. ": a long target name")
+                equal(pinnedRow(state, "target").width, width, label .. ": the row does not grow for it")
+            end
+        end
+    end
+end)
+test("only the chosen theme's size settings show", function()
+    local state = trackerFixture()
+    local page = settingsPage(state, "DoT Tracker")
+    local function shown(variable)
+        for _, initializer in ipairs(page.initializers) do
+            if initializer.setting.variable == variable then
+                for _, predicate in ipairs(initializer.shownPredicates) do
+                    if not predicate() then return false end
+                end
+                return true
+            end
+        end
+    end
+    equal(shown("WTF_TRACKER_COMPACT_ICONSIZE"), true)
+    equal(shown("WTF_TRACKER_BARS_BARWIDTH"), false)
+    state.settings.WTF_TRACKER_THEME:SetValue("bars")
+    equal(shown("WTF_TRACKER_COMPACT_ICONSIZE"), false)
+    equal(shown("WTF_TRACKER_BARS_LINEHEIGHT"), true)
+    equal(shown("WTF_TRACKER_BARS_NAMEPOSITION"), true)
+end)
+test("saved tracker sizes are repaired on load", function()
+    local state = fixture({db = {tracker = {sizes = {compact = {iconSize = 99, nameWidth = "x", namePosition = "middle"},
+        bars = "broken"}}}})
+    local sizes = state.wtf.db.tracker.sizes
+    equal(sizes.compact.iconSize, 40)
+    equal(sizes.compact.nameWidth, 110)
+    equal(sizes.compact.namePosition, "left")
+    equal(sizes.bars.barWidth, 290)
+    equal(sizes.bars.namePosition, "above")
+    state.settings.WTF_TRACKER_BARS_NAMEPOSITION:SetValue("left")
+    equal(sizes.bars.namePosition, "above", "Bars has no name beside the lines")
+end)
+-- Mob health in the tracker --------------------------------------------------------
+
+local function healthFixture(text, extra)
+    local options = {db = {tracker = {health = true, healthText = text}}}
+    for key, value in pairs(extra or {}) do options[key] = value end
+    local state = trackerFixture(options)
+    state.units.target.health, state.units.target.maxHealth = 500, 2000
+    state.emit("UNIT_HEALTH", "target")
+    return state
+end
+test("mob health is off by default", function()
+    local state = trackerFixture()
+    equal(state.wtf.db.tracker.health, false)
+    equal(state.wtf.db.tracker.healthText, "none")
+    equal(pinnedRow(state, "target").health, nil)
+end)
+test("mob health: the name line is the health bar, with the number, percent, or both after the name", function()
+    local state = healthFixture("none")
+    local row = pinnedRow(state, "target")
+    equal(row.health.shown, true)
+    equal(row.health.points[1][1], "TOPLEFT", "a Compact name beside the icons: the whole row is the name line")
+    equal(row.health.points[2][1], "BOTTOMRIGHT")
+    equal(row.health.points[2][4], -3, "inside the border")
+    equal(row.height, 30, "the row keeps its size")
+    equal(row.name.parent, row.layer, "the name draws above the bar")
+    equal(row.layer.level, row.health.level + 1)
+    equal(row.container.level, row.health.level + 2, "the DoT icons above both")
+    equal(row.health.barColor[1], 0.53, "purple for your target")
+    equal(row.health.barColor[4], 0.8)
+    equal(pinnedRow(state, "focus").health.barColor[1], 0.9, "red for your focus")
+    dot(state, 6222, "Wolf")
+    equal(shownRows(state)[1].health.barColor[1], 0.33, "dark grey for the others")
+    state.settings.WTF_TRACKER_COMPACT_NAMEPOSITION:SetValue("above")
+    row = pinnedRow(state, "target")
+    equal(row.health.points[1][1], "TOPLEFT", "a name above the icons: its own line")
+    equal(row.health.height, 14 + 2)
+    equal(row.health.points[2][1], "TOPRIGHT")
+    equal(row.health.points[2][4], -6)
+    state.settings.WTF_TRACKER_COMPACT_NAMEPOSITION:SetValue("left")
+    row = pinnedRow(state, "target")
+    equal(row.health.maxValue, 2000)
+    equal(row.health.value, 500)
+    equal(row.healthPercent, nil, "no text")
+    equal(row.name.width, 110 - 4, "the name keeps its room")
+    local percent = pinnedRow(healthFixture("percent"), "target")
+    equal(percent.healthPercent.text, "25%")
+    equal(percent.healthNumber, nil)
+    equal(percent.name.width, 110 - 4 - 30, "the text takes the end of the name's room")
+    local number = pinnedRow(healthFixture("number"), "target")
+    equal(number.healthNumber.text.abbreviated, 500)
+    local both = healthFixture("both")
+    local row2 = pinnedRow(both, "target")
+    equal(row2.healthPercent.text, "25% |")
+    equal(row2.healthNumber.text.abbreviated, 500)
+    equal(row2.healthNumber.points[1][2], row2.healthPercent, "the number after the percent")
+    both.units.target.health = 1500
+    both.emit("UNIT_HEALTH", "target")
+    equal(row2.health.value, 1500, "follows the mob's health")
+    equal(row2.healthPercent.text, "75% |")
+end)
+test("in Bars the name line is the health bar, as wide as the DoT bars", function()
+    local state = healthFixture("none", {db = {tracker = {theme = "bars", health = true, healthText = "none"}}})
+    local row = pinnedRow(state, "target")
+    local line = slotByKey(row.container, "corruption").button
+    equal(line.width, row.width - 12, "a DoT bar's width")
+    equal(row.health.points[1][1], "TOPLEFT", "the name line at the top")
+    equal(row.health.points[1][4], 6, "the same left inset")
+    equal(row.health.points[2][4], -6, "and right inset")
+    equal(row.health.height, 18 - 2)
+    equal(row.height, 18 + #row.container.slots * 18 + 6, "the row keeps its size")
+    state.settings.WTF_TRACKER_BARS_NAMEPOSITION:SetValue("below")
+    row = pinnedRow(state, "target")
+    equal(row.health.points[1][1], "BOTTOMLEFT", "below: the name line at the bottom")
+end)
+test("in combat mob health is secret: WTF hands it on and never reads it", function()
+    local state = healthFixture("both")
+    state.combat = true
+    state.emit("UNIT_HEALTH", "target")
+    local row = pinnedRow(state, "target")
+    equal(state.secrets[row.health.value], true, "the bar got the secret health")
+    equal(state.secrets[row.health.maxValue], true)
+    equal(state.secrets[row.healthPercent.text], true, "the percent text is the client's secret string")
+    equal(state.formatted.pattern, "%d%% |")
+    equal(state.secrets[row.healthNumber.text.abbreviated], true)
+end)
+test("list rows show their mob's health while bound, and hide it without a unit", function()
+    local state = healthFixture("percent")
+    state.units.nameplate4.health, state.units.nameplate4.maxHealth = 300, 600
+    dot(state, 6222, "Wolf")
+    local row = shownRows(state)[1]
+    equal(row.health.shown, true)
+    equal(row.health.value, 300)
+    equal(row.healthPercent.text, "50%")
+    state.units.nameplate4.health = 150
+    state.emit("UNIT_HEALTH", "nameplate4")
+    equal(row.healthPercent.text, "25%")
+    state.units.nameplate4 = nil
+    state.emit("NAME_PLATE_UNIT_REMOVED", "nameplate4")
+    equal(row.health.shown, false, "no unit: no health")
+    equal(row.healthPercent.text, "")
+end)
+test("without UnitHealthPercent the percent text stays empty", function()
+    local state = healthFixture("percent", {noHealthPercent = true})
+    equal(pinnedRow(state, "target").healthPercent.text, "")
+    equal(pinnedRow(state, "target").health.value, 500, "the bar still works")
+end)
+test("health settings rebuild the rows out of combat and are repaired on load", function()
+    local state = trackerFixture()
+    state.combat = true
+    state.settings.WTF_TRACKER_HEALTH:SetValue(true)
+    equal(pinnedRow(state, "target").health, nil, "waits for combat to end")
+    state.combat = false
+    state.emit("PLAYER_REGEN_ENABLED")
+    equal(pinnedRow(state, "target").health ~= nil, true)
+    state.settings.WTF_TRACKER_HEALTH_TEXT:SetValue("both")
+    equal(pinnedRow(state, "target").healthNumber ~= nil, true)
+    local repaired = fixture({db = {tracker = {health = "yes", healthText = "all"}}})
+    equal(repaired.wtf.db.tracker.health, false)
+    equal(repaired.wtf.db.tracker.healthText, "none")
+end)
 test("learning a spell adds its bar line, after combat", function()
     local state = barsFixture()
     state.spellbook[#state.spellbook + 1] = {spellID = 18265, name = "Siphon Life"}
@@ -4681,6 +5181,24 @@ local function bubbleOn(state, unit)
         if frame.parent == plate and frame.backdropBorder then return frame end
     end
 end
+
+test("nameplate dot opacity: solid by default, applied at once, also in combat, repaired on load", function()
+    local state = dotsFixture()
+    state.emit("NAME_PLATE_UNIT_ADDED", "nameplate1")
+    local bubble = bubbleOn(state, "nameplate1")
+    equal(state.wtf.db.tracker.plateDotsOpacity, 100)
+    equal(bubble.alpha, 1, "solid by default")
+    state.combat = true
+    state.settings.WTF_TRACKER_PLATE_DOTS_OPACITY:SetValue(40)
+    equal(bubble.alpha, 0.4, "the whole bubble, at once, also in combat")
+    state.combat = false
+    state.emit("NAME_PLATE_UNIT_ADDED", "nameplate2")
+    equal(bubbleOn(state, "nameplate2").alpha, 0.4, "a new bubble takes it too")
+    for _, case in ipairs({{5, 10}, {300, 100}, {"x", 100}, {65, 65}}) do
+        local saved = fixture({db = {tracker = {plateDotsOpacity = case[1]}}})
+        equal(saved.wtf.db.tracker.plateDotsOpacity, case[2], "saved " .. tostring(case[1]))
+    end
+end)
 
 local function containerIn(bubble)
     for _, frame in ipairs(bubble.children) do

@@ -4,6 +4,23 @@ Player-facing changes for each Warlock Tools Forever release, newest first. The
 release builder copies the section for the TOC version into the GitHub release
 notes and the CurseForge changelog, and fails if that section is missing.
 
+## 1.1.0
+
+### Features
+- DoT tracker: your target's row, your focus's row, and the list of other mobs are now three panels that move separately. Unlock frames and drag each one by its rows; each snaps to other frames and to the grid. They start where your tracker was, and `/wtf reset` stacks them again.
+- DoT tracker: **Show mob health** (off by default) turns the line with each mob's name into its health bar, also in combat, in the panel's color: purple for your target, red for your focus, dark grey for the others. **Health text** adds its number, its percent, or both, such as "31% | 294".
+- DoT tracker: sizes for each theme on the DoT Tracker page. Compact: icon size, name width, text size, and the name left, right, above, or below the icons. Bars: bar width, line height, text size, and the name above or below the bars. **Reset size** puts the theme back as it was, and the defaults keep the look you know.
+- DoT tracker: **Target panel opacity**, **Focus panel opacity**, and **Other mobs panel opacity** (10% to 100%, 100% by default) make each panel see-through on its own, with its DoT bars.
+- Nameplate DoT dots: **Nameplate dot opacity** (10% to 100%, 100% by default) makes the bubble above each nameplate see-through.
+- DoT tracker: mob names stay on one line and use all the room they have. A name that does not fit is cut with "..." instead of wrapping out of its row.
+
+### Fixes
+- DoT Colors: changing a color could raise a "forbidden object" error (also in 1.0.0). It no longer does.
+
+### Other changes
+- DoT tracker: the list of other mobs now stays where you put it when your target or focus row hides, instead of moving up.
+- DoT tracker: a new DoT color or panel opacity reaches the DoT bars at once out of combat; changed in combat, the bars follow when combat ends.
+
 ## 1.0.0
 
 The first full release for WoW: Forever, no longer marked beta: it was play tested on the Forever beta client 1.60.1, build 70450. CurseForge now offers it as a release, so the app updates it and installs what it needs for every player.

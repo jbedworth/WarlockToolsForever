@@ -113,6 +113,20 @@ local function IsLiveHostile(unit)
     return not WTF.IsSecret(canAttack) and canAttack == true and not (not WTF.IsSecret(dead) and dead == true)
 end
 
+-- The whole bubble's opacity (a setting): its background and both kinds of
+-- dot. The bubble is WTF's own frame, so it changes at once, also in combat.
+local function Opacity()
+    return WTF.db.tracker.plateDotsOpacity / 100
+end
+
+function WTF.SetPlateDotsOpacity(percent)
+    WTF.db.tracker.plateDotsOpacity = WTF.SanitizeWhole(percent, WTF.PLATE_DOTS_OPACITY_MIN,
+        WTF.PLATE_DOTS_OPACITY_MAX, WTF.DEFAULT_PLATE_DOTS_OPACITY)
+    for _, bubble in ipairs(dots.all) do
+        bubble:SetAlpha(Opacity())
+    end
+end
+
 local function UpdateShown(bubble)
     bubble:SetShown(dots.inCombat and IsLiveHostile(bubble.unit))
 end
@@ -146,6 +160,7 @@ local function Attach(unit)
     bubble:ClearAllPoints()
     bubble:SetPoint("BOTTOM", plate, "TOP", 0, WTF.db.tracker.plateDotsOffset)
     bubble.unit = unit
+    bubble:SetAlpha(Opacity())
     dots.byUnit[unit] = bubble
     bubble.container:SetUnit(unit)
     bubble.container:UpdateAllAuras()

@@ -429,6 +429,80 @@ function WTF.SanitizePlateDotsOffset(value)
     return math.max(WTF.PLATE_DOTS_OFFSET_MIN, math.min(WTF.PLATE_DOTS_OFFSET_MAX, value))
 end
 
+-- A whole number within min and max, else the default.
+function WTF.SanitizeWhole(value, minValue, maxValue, default)
+    if not IsWholeNumber(value) then
+        return default
+    end
+    return math.max(minValue, math.min(maxValue, value))
+end
+
+-- DoT tracker panel opacity, per panel (author-approved: its own setting for
+-- the target, focus, and other-mobs panels), in percent; 100 is today's look.
+WTF.TRACKER_PANELS = {{key = "target", label = "Target panel opacity"},
+    {key = "focus", label = "Focus panel opacity"}, {key = "list", label = "Other mobs panel opacity"}}
+WTF.PANEL_OPACITY_MIN = 10
+WTF.PANEL_OPACITY_MAX = 100
+WTF.DEFAULT_PANEL_OPACITY = 100
+
+-- Nameplate DoT dot opacity, in percent (author-approved: 100, today's look).
+WTF.PLATE_DOTS_OPACITY_MIN = 10
+WTF.PLATE_DOTS_OPACITY_MAX = 100
+WTF.DEFAULT_PLATE_DOTS_OPACITY = 100
+
+-- DoT tracker sizes per theme (author-approved, player request), saved per
+-- theme; the defaults are the sizes the themes always had. Text size is a
+-- percent of each font's own size. No free offsets: the name sits in one of a
+-- few places, so every layout is a tested one.
+WTF.TRACKER_SIZE_SPECS = {
+    compact = {
+        {key = "iconSize", label = "Icon size", min = 16, max = 40, step = 1, default = 22},
+        {key = "nameWidth", label = "Name width", min = 60, max = 200, step = 5, default = 110,
+            tooltip = "The room the name has beside the icons (name Left or Right): the row grows or shrinks with "
+                .. "it. A longer name is cut with \"...\". Above or below the icons, the name spans the row."},
+        {key = "textScale", label = "Text size", min = 50, max = 200, step = 5, default = 100, percent = true},
+    },
+    bars = {
+        {key = "barWidth", label = "Bar width", min = 150, max = 500, step = 10, default = 290},
+        {key = "lineHeight", label = "Line height", min = 12, max = 28, step = 1, default = 16},
+        {key = "textScale", label = "Text size", min = 50, max = 200, step = 5, default = 100, percent = true},
+    },
+}
+WTF.TRACKER_NAME_POSITIONS = {
+    compact = {{key = "left", label = "Left"}, {key = "right", label = "Right"}, {key = "above", label = "Above"},
+        {key = "below", label = "Below"}},
+    bars = {{key = "above", label = "Above"}, {key = "below", label = "Below"}},
+}
+
+-- The tracker's health text choices; None by default.
+WTF.TRACKER_HEALTH_TEXTS = {{key = "none", label = "None"}, {key = "number", label = "Number"},
+    {key = "percent", label = "Percent"}, {key = "both", label = "Number and Percent"}}
+
+function WTF.SanitizeHealthText(value)
+    for _, choice in ipairs(WTF.TRACKER_HEALTH_TEXTS) do
+        if value == choice.key then
+            return value
+        end
+    end
+    return "none"
+end
+
+function WTF.SanitizeTrackerSizes(theme, saved)
+    saved = type(saved) == "table" and saved or {}
+    local sizes = {}
+    for _, spec in ipairs(WTF.TRACKER_SIZE_SPECS[theme]) do
+        sizes[spec.key] = WTF.SanitizeWhole(saved[spec.key], spec.min, spec.max, spec.default)
+    end
+    local positions = WTF.TRACKER_NAME_POSITIONS[theme]
+    sizes.namePosition = positions[1].key
+    for _, position in ipairs(positions) do
+        if saved.namePosition == position.key then
+            sizes.namePosition = position.key
+        end
+    end
+    return sizes
+end
+
 -- The Nightfall sound (Alerts) is one of Dyre's Sounds' aura sounds: a file
 -- (Dyre's Picks) or a game sound by file ID (the imp chirps). The game's aura
 -- sounds take only sound files, not sound kits. The default is the author's
@@ -484,17 +558,39 @@ function WTF.SanitizeDB(db)
     local tracker = type(db.tracker) == "table" and db.tracker or {}
     db.tracker = {
         enabled = tracker.enabled ~= false,
+        -- Where the one tracker frame was: sections not yet dragged stack there.
         position = SanitizePosition(tracker.position),
+        sections = {},
         -- Bars by default (author-approved).
         theme = tracker.theme == "compact" and "compact" or "bars",
         plateDots = tracker.plateDots == true,
         plateDotsOffset = WTF.SanitizePlateDotsOffset(tracker.plateDotsOffset),
+        plateDotsOpacity = WTF.SanitizeWhole(tracker.plateDotsOpacity, WTF.PLATE_DOTS_OPACITY_MIN,
+            WTF.PLATE_DOTS_OPACITY_MAX, WTF.DEFAULT_PLATE_DOTS_OPACITY),
+        sizes = {},
+        panelOpacity = {},
+        -- Mob health (author-approved, player request): off by default.
+        health = tracker.health == true,
+        healthText = WTF.SanitizeHealthText(tracker.healthText),
         colors = {},
         onPlates = {},
         colorsVersion = COLORS_VERSION,
     }
     for _, key in ipairs({"lastBane", "lastCurse", "lastControl"}) do
         db.tracker[key] = type(tracker[key]) == "string" and tracker[key] or nil
+    end
+    local sizes = type(tracker.sizes) == "table" and tracker.sizes or {}
+    for theme in pairs(WTF.TRACKER_SIZE_SPECS) do
+        db.tracker.sizes[theme] = WTF.SanitizeTrackerSizes(theme, sizes[theme])
+    end
+    local panelOpacity = type(tracker.panelOpacity) == "table" and tracker.panelOpacity or {}
+    for _, panel in ipairs(WTF.TRACKER_PANELS) do
+        db.tracker.panelOpacity[panel.key] = WTF.SanitizeWhole(panelOpacity[panel.key], WTF.PANEL_OPACITY_MIN,
+            WTF.PANEL_OPACITY_MAX, WTF.DEFAULT_PANEL_OPACITY)
+    end
+    local sections = type(tracker.sections) == "table" and tracker.sections or {}
+    for _, key in ipairs({"target", "focus", "list"}) do
+        db.tracker.sections[key] = SanitizePosition(sections[key])
     end
     local colors = type(tracker.colors) == "table" and tracker.colors or {}
     local onPlates = type(tracker.onPlates) == "table" and tracker.onPlates or {}

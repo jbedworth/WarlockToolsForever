@@ -171,12 +171,26 @@ spell shows as a dim icon, so you can see what to recast.
     with the spell's icon, name, and time left, draining from right to left
     like the Cooldown Manager's bars. A missing spell shows as a dim line with
     its name. In the pinned rows, click a line to recast it.
+- **Sizes**, also on the DoT Tracker page, for the theme you chose: Compact
+  has icon size, name width, text size, and where the name sits (left, right,
+  above, or below the icons); Bars has bar width, line height, text size, and
+  the name above or below the bars. **Reset size** puts the theme back as it
+  was. A change in combat applies when combat ends.
+- **Mob health** (off by default): **Show mob health** turns the line with each
+  mob's name into its health bar, in the panel's color (purple for your
+  target, red for your focus, dark grey for the others), also in combat, and **Health text** adds its number,
+  its percent, or both after the name.
 - **Colors:** each slot's bar has its own color, the same as its nameplate
   dot: Curse purple, Bane red, Corruption white, Immolate orange, Siphon Life
   green, Fear and control yellow. Change them on the **DoT Colors** settings
   page.
 - To place the tracker, unlock your frames (see
-  [Moving frames](#moving-frames)): it shows sample rows to drag it by.
+  [Moving frames](#moving-frames)): it shows sample rows to drag it by. Your
+  target's row, your focus's row, and the list of other mobs each move on
+  their own: drag each by its rows. They start stacked as before, and
+  `/wtf reset` stacks them again. **Target panel opacity**, **Focus panel
+  opacity**, and **Other mobs panel opacity** on the DoT Tracker page make each
+  one see-through on its own (100%, fully solid, by default).
 - The timers come from Blizzard's own aura display, which reads each mob's
   nameplate. Turn on enemy nameplates so listed mobs keep their timers.
 
@@ -187,7 +201,8 @@ nameplates** on the DoT Tracker settings page. In combat, a small bubble above
 each hostile nameplate holds one dot per DoT you know, in the slot colors. A
 dot is grey while that DoT is missing. The **DoT Colors** page chooses which
 slots appear as dots (Fear and control is off by default). Raise the bubble with **Dot height
-above nameplates** if it overlaps your nameplate AddOn.
+above nameplates** if it overlaps your nameplate AddOn, and make it see-through
+with **Nameplate dot opacity** (100%, fully solid, by default).
 
 ## Alerts
 

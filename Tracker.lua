@@ -25,21 +25,29 @@ local _, WTF = ...
 -- below it, free to change in combat.
 
 local MAX_ROWS = 8
-local ROW_HEIGHT = 30
+-- Compact: the space above and below the icons (a row is the icon size plus
+-- this twice: 30 at the default 22), and a name line above or below them.
+local ROW_PADDING = 4
+local NAME_LINE = 14
 -- Bar theme: the name line, then one line per spell: an icon and a bar with
 -- the spell's name and time left.
 local BAR_HEADER = 18
-local BAR_LINE = 16
 local BAR_LINE_GAP = 2
-local BAR_ICON = 14
+-- Mob health (author-approved): the line with the mob's name is its health
+-- bar, filled in the panel's color (purple target, red focus, dark grey for
+-- the others), at least as wide as the DoTs; the text after the name takes
+-- these widths (at 100% text size) from the name's room.
+local HEALTH_ALPHA = 0.8
+local HEALTH_OTHER = {0.33, 0.33, 0.33}
+-- Inside the row's border, for a health line that is the whole row.
+local HEALTH_INSET = 3
+local HEALTH_TEXT_WIDTH = {number = 34, percent = 30, both = 70}
 local BAR_BACKGROUND = {0.1, 0.1, 0.1, 0.6}
 -- The pinned rows' outline: a solid line this thick, this far outside the
 -- row, and the extra space below each pinned row that keeps it clear of the next.
 local OUTLINE = 3
 local OUTLINE_GAP = 2
 local PINNED_SPACING = OUTLINE + OUTLINE_GAP + 2
-local NAME_WIDTH = 110
-local SLOT_SIZE = 22
 local SLOT_GAP = 6
 local PADDING = 6
 -- Seconds a list row stays without a unit to bind (its nameplate out of sight).
@@ -185,21 +193,34 @@ local function BuildSpellSets()
     tracker.sets = sets
 end
 
--- The bars are WTF's own regions, so they can change color at any time.
-function WTF.ApplyTrackerColors()
-    local function Recolor(row)
-        for index, slot in ipairs(SLOTS) do
-            if row.bars[index] then
-                row.bars[index]:SetStatusBarColor(WTF.SlotColor(slot.key))
-            end
-        end
+-- A row's panel opacity (Target, Focus, or Other mobs panel opacity).
+local function PanelAlpha(row)
+    return WTF.db.tracker.panelOpacity[row.panelKey or "list"] / 100
+end
+
+-- A DoT bar as it is built, inside the engine's initializer: its slot color
+-- with the panel's opacity in it, also on its texts. Found in client: the
+-- engine-driven duration bars did not fade with their panel's frame, so each
+-- bar ignores its parent's opacity and carries the panel's itself, exactly
+-- the panel's look, never faded twice. Only here: once WTF hands a bar or
+-- text to the engine (SetDurationBar, SetSpellName, SetDurationText) it is
+-- the engine's, and touching it later raised "Attempt to access forbidden
+-- object from code tainted by an AddOn" (found in client, 13x, from the
+-- opacity slider). So a new color or panel opacity rebuilds the rows.
+local function PrepareBar(row, index, bar, ...)
+    if type(bar.IsForbidden) == "function" and bar:IsForbidden() then
+        return
     end
-    for _, row in ipairs(tracker.rows) do
-        Recolor(row)
+    if type(bar.SetIgnoreParentAlpha) == "function" then
+        bar:SetIgnoreParentAlpha(true)
     end
-    for _, row in pairs(tracker.pinned) do
-        Recolor(row)
+    local r, g, b = WTF.SlotColor(SLOTS[index].key)
+    local alpha = PanelAlpha(row)
+    bar:SetStatusBarColor(r, g, b, alpha)
+    for index2 = 1, select("#", ...) do
+        select(index2, ...):SetAlpha(alpha)
     end
+    row.bars[index] = bar
 end
 
 -- The engine's candidate filter for a slot: its spell IDs, or for a slot
@@ -254,34 +275,247 @@ local function ShownSlots()
     return shown
 end
 
-local function RowWidth()
-    if IsCompact() then
-        return PADDING * 2 + NAME_WIDTH + #tracker.shown * (SLOT_SIZE + SLOT_GAP)
+-- The current theme's sizes (settings; the defaults are the constants above).
+local function Sizes()
+    return WTF.db.tracker.sizes[IsCompact() and "compact" or "bars"]
+end
+
+local function TextScale()
+    return Sizes().textScale / 100
+end
+
+-- One line, cut with "..." only when it does not fit (found in client: long
+-- names wrapped onto 2-3 lines and spilled out of the row).
+local function OneLine(text)
+    if type(text.SetWordWrap) == "function" then
+        text:SetWordWrap(false)
     end
-    return PADDING * 2 + NAME_WIDTH + #SLOTS * (SLOT_SIZE + SLOT_GAP)
+    if type(text.SetMaxLines) == "function" then
+        text:SetMaxLines(1)
+    end
+    return text
+end
+
+-- A font string at the text size: a share of its font's own size.
+local function ScaleFont(text)
+    local font, size, flags = text:GetFont()
+    if font and type(size) == "number" then
+        text:SetFont(font, size * TextScale(), flags)
+    end
+    return text
+end
+
+local function HealthTextWidth()
+    local settings = WTF.db.tracker
+    if not settings.health or settings.healthText == "none" then
+        return 0
+    end
+    return math.floor(HEALTH_TEXT_WIDTH[settings.healthText] * TextScale() + 0.5)
+end
+
+local function NameAround()
+    local position = Sizes().namePosition
+    return position == "above" or position == "below"
+end
+
+-- Compact: the space a name line takes above or below the icons.
+local function NameLine()
+    return math.floor(NAME_LINE * TextScale() + 0.5)
+end
+
+local function SlotSize()
+    return IsCompact() and Sizes().iconSize or Sizes().lineHeight
+end
+
+-- Bars: the icon in front of each line, and the name line.
+local function BarIcon()
+    return Sizes().lineHeight - 2
+end
+
+local function BarHeader()
+    return math.floor(BAR_HEADER * TextScale() + 0.5)
+end
+
+local function SlotsWidth()
+    return #tracker.shown * (SlotSize() + SLOT_GAP)
+end
+
+local function RowWidth()
+    if not IsCompact() then
+        return Sizes().barWidth
+    end
+    if NameAround() then
+        return PADDING * 2 + math.max(Sizes().nameWidth, SlotsWidth())
+    end
+    return PADDING * 2 + Sizes().nameWidth + SlotsWidth()
 end
 
 local function RowHeight()
     if IsCompact() then
-        return ROW_HEIGHT
+        return SlotSize() + ROW_PADDING * 2 + (NameAround() and NameLine() or 0)
     end
-    return BAR_HEADER + #tracker.shown * (BAR_LINE + BAR_LINE_GAP) + PADDING
+    return BarHeader() + #tracker.shown * (SlotSize() + BAR_LINE_GAP) + PADDING
 end
 
 local function RowStep()
     return RowHeight() + 2
 end
 
--- Places a slot's region at a display position in a row: an icon right of
--- the name (compact), or a line under the name (bars).
+-- Places a slot's region at a display position in a row: an icon beside,
+-- above, or below the name (compact), or a line under or above it (bars).
 local function PlaceSlot(region, row, position)
     region:ClearAllPoints()
+    local size, where = SlotSize(), Sizes().namePosition
     if IsCompact() then
-        region:SetPoint("LEFT", row, "LEFT", PADDING + NAME_WIDTH + (position - 1) * (SLOT_SIZE + SLOT_GAP), 0)
-        region:SetSize(SLOT_SIZE, SLOT_SIZE)
+        local x = PADDING + (position - 1) * (size + SLOT_GAP)
+        if where == "left" then
+            region:SetPoint("LEFT", row, "LEFT", x + Sizes().nameWidth, 0)
+        elseif where == "right" then
+            region:SetPoint("LEFT", row, "LEFT", x, 0)
+        else
+            region:SetPoint("TOPLEFT", row, "TOPLEFT", x, -(ROW_PADDING + (where == "above" and NameLine() or 0)))
+        end
+        region:SetSize(size, size)
     else
-        region:SetPoint("TOPLEFT", row, "TOPLEFT", PADDING, -(BAR_HEADER + (position - 1) * (BAR_LINE + BAR_LINE_GAP)))
-        region:SetSize(RowWidth() - PADDING * 2, BAR_LINE)
+        local top = where == "below" and ROW_PADDING or BarHeader()
+        region:SetPoint("TOPLEFT", row, "TOPLEFT", PADDING, -(top + (position - 1) * (size + BAR_LINE_GAP)))
+        region:SetSize(RowWidth() - PADDING * 2, size)
+    end
+end
+
+-- The mob's name, on one line: beside the icons it has the whole column from
+-- the row's inner edge to the first icon (the name width setting, less a
+-- small gap); above or below them, the row's whole width. The health text,
+-- when shown, takes the end of that room, so the name is cut before it is.
+local function PlaceName(row)
+    local name, where = row.name, Sizes().namePosition
+    OneLine(name)
+    local reserve = HealthTextWidth()
+    name:ClearAllPoints()
+    if IsCompact() and where == "left" then
+        name:SetPoint("LEFT", PADDING, 0)
+        name:SetWidth(Sizes().nameWidth - 4 - reserve)
+    elseif IsCompact() and where == "right" then
+        name:SetPoint("LEFT", PADDING + SlotsWidth(), 0)
+        name:SetWidth(Sizes().nameWidth - 4 - reserve)
+    elseif where == "below" then
+        name:SetPoint("BOTTOMLEFT", PADDING, ROW_PADDING)
+        name:SetWidth(RowWidth() - PADDING * 2 - reserve)
+    else
+        name:SetPoint("TOPLEFT", PADDING, -ROW_PADDING)
+        name:SetWidth(RowWidth() - PADDING * 2 - reserve)
+    end
+end
+
+-- Mob health (author-approved, player request): the name line is the health
+-- bar, and optional text follows the name. Enemy health is secret in combat: WTF never reads
+-- it. A StatusBar and a FontString take secrets (SetMinMaxValues, SetValue,
+-- SetText), as the shield display shows its absorb, and AbbreviateNumbers
+-- gives the number. The percent comes from UnitHealthPercent(unit, true,
+-- CurveConstants.ScaleTo100), formatted with "%d" (the path EllesmereUI's
+-- unit frame text uses on this client, EUI_UnitFrames_Text.lua:421-424).
+-- Number and percent are separate texts, so no secret string is formatted.
+-- The name line: its own line across the row (Bars, or a Compact name above
+-- or below the icons), or the whole row when the name sits beside the icons.
+local function PlaceHealth(row)
+    local bar, where = row.health, Sizes().namePosition
+    bar:ClearAllPoints()
+    if IsCompact() and (where == "left" or where == "right") then
+        bar:SetPoint("TOPLEFT", row, "TOPLEFT", HEALTH_INSET, -HEALTH_INSET)
+        bar:SetPoint("BOTTOMRIGHT", row, "BOTTOMRIGHT", -HEALTH_INSET, HEALTH_INSET)
+        return
+    end
+    local height = IsCompact() and NameLine() + 2 or BarHeader() - 2
+    local edge, y = where == "below" and "BOTTOM" or "TOP", where == "below" and 2 or -2
+    bar:SetPoint(edge .. "LEFT", row, edge .. "LEFT", PADDING, y)
+    bar:SetPoint(edge .. "RIGHT", row, edge .. "RIGHT", -PADDING, y)
+    bar:SetHeight(height)
+end
+
+-- The bar in the panel's color; the name, its text, and the dim icons go on a
+-- layer above it (a child frame draws over its parent's own regions), and the
+-- engine's slots above that. Returns the frame those regions belong to.
+local function CreateHealth(row, unit)
+    if not WTF.db.tracker.health then
+        return row
+    end
+    local level = row:GetFrameLevel()
+    local bar = CreateFrame("StatusBar", nil, row)
+    bar:SetFrameLevel(level)
+    bar:SetStatusBarTexture("Interface\\Buttons\\WHITE8X8")
+    local r, g, b
+    if unit == "target" then
+        r, g, b = ClassColor()
+    elseif unit == "focus" then
+        r, g, b = FOCUS_RED[1], FOCUS_RED[2], FOCUS_RED[3]
+    else
+        r, g, b = HEALTH_OTHER[1], HEALTH_OTHER[2], HEALTH_OTHER[3]
+    end
+    bar:SetStatusBarColor(r, g, b, HEALTH_ALPHA)
+    bar:SetMinMaxValues(0, 1)
+    bar:Hide()
+    row.health = bar
+    PlaceHealth(row)
+    local layer = CreateFrame("Frame", nil, row)
+    layer:SetAllPoints(row)
+    layer:SetFrameLevel(level + 1)
+    row.layer = layer
+    return layer
+end
+
+local function CreateHealthText(row, regions)
+    local mode = WTF.db.tracker.healthText
+    if not row.health or mode == "none" then
+        return
+    end
+    local after = row.name
+    if mode == "percent" or mode == "both" then
+        row.healthPercent = OneLine(ScaleFont(regions:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")))
+        row.healthPercent:SetPoint("LEFT", after, "RIGHT", 2, 0)
+        after = row.healthPercent
+    end
+    if mode == "number" or mode == "both" then
+        row.healthNumber = OneLine(ScaleFont(regions:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")))
+        row.healthNumber:SetPoint("LEFT", after, "RIGHT", 2, 0)
+    end
+end
+
+local function PercentText(unit, both)
+    if type(UnitHealthPercent) ~= "function" or type(CurveConstants) ~= "table" or not CurveConstants.ScaleTo100 then
+        return ""
+    end
+    local percent = UnitHealthPercent(unit, true, CurveConstants.ScaleTo100)
+    if not WTF.IsSecret(percent) and type(percent) ~= "number" then
+        return ""
+    end
+    return string.format(both and "%d%% |" or "%d%%", percent)
+end
+
+local function UpdateHealth(row)
+    local bar = row.health
+    if not bar then
+        return
+    end
+    local unit = row.boundUnit
+    if not unit or unit == "none" or not UnitExists(unit) or type(UnitHealth) ~= "function"
+        or type(UnitHealthMax) ~= "function" then
+        bar:Hide()
+        if row.healthPercent then
+            row.healthPercent:SetText("")
+        end
+        if row.healthNumber then
+            row.healthNumber:SetText("")
+        end
+        return
+    end
+    bar:SetMinMaxValues(0, UnitHealthMax(unit))
+    bar:SetValue(UnitHealth(unit))
+    bar:Show()
+    if row.healthPercent then
+        row.healthPercent:SetText(PercentText(unit, row.healthNumber ~= nil))
+    end
+    if row.healthNumber then
+        row.healthNumber:SetText(type(AbbreviateNumbers) == "function" and AbbreviateNumbers(UnitHealth(unit)) or "")
     end
 end
 
@@ -301,20 +535,19 @@ local function BarInitializer(row, index, position)
         PlaceSlot(button, row, position)
         button:SetMouseClickEnabled(false)
         local icon = button:CreateTexture(nil, "ARTWORK")
-        icon:SetSize(BAR_ICON, BAR_ICON)
+        icon:SetSize(BarIcon(), BarIcon())
         icon:SetPoint("LEFT", 1, 0)
         icon:SetTexCoord(0.07, 0.93, 0.07, 0.93)
         local bar = CreateFrame("StatusBar", nil, button)
-        bar:SetPoint("TOPLEFT", button, "TOPLEFT", BAR_ICON + 4, 0)
+        bar:SetPoint("TOPLEFT", button, "TOPLEFT", BarIcon() + 4, 0)
         bar:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", 0, 0)
         bar:SetStatusBarTexture("Interface\\Buttons\\WHITE8X8")
-        bar:SetStatusBarColor(WTF.SlotColor(SLOTS[index].key))
-        row.bars[index] = bar
-        local spellName = bar:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        local spellName = ScaleFont(bar:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall"))
         spellName:SetPoint("LEFT", 4, 0)
         spellName:SetJustifyH("LEFT")
-        local timeLeft = bar:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        local timeLeft = ScaleFont(bar:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall"))
         timeLeft:SetPoint("RIGHT", -4, 0)
+        PrepareBar(row, index, bar, spellName, timeLeft)
         button:SetIcon(icon)
         local direction = Enum.StatusBarTimerDirection and Enum.StatusBarTimerDirection.RemainingTime
         button:SetDurationBar(bar, {direction = direction})
@@ -341,12 +574,11 @@ local function SlotInitializer(row, index, position)
         bar:SetPoint("TOPRIGHT", button, "BOTTOMRIGHT", 0, -1)
         bar:SetHeight(3)
         bar:SetStatusBarTexture("Interface\\Buttons\\WHITE8X8")
-        bar:SetStatusBarColor(WTF.SlotColor(SLOTS[index].key))
-        row.bars[index] = bar
+        PrepareBar(row, index, bar)
         local textHolder = CreateFrame("Frame", nil, button)
         textHolder:SetAllPoints(button)
         textHolder:SetFrameLevel(cooldown:GetFrameLevel() + 1)
-        local text = textHolder:CreateFontString(nil, "OVERLAY", "NumberFontNormal")
+        local text = ScaleFont(textHolder:CreateFontString(nil, "OVERLAY", "NumberFontNormal"))
         text:SetPoint("CENTER", 0, 0)
         button:SetIcon(icon)
         button:SetDurationCooldown(cooldown)
@@ -358,27 +590,25 @@ end
 
 local function CreateRow(parent, unit)
     local row = CreateFrame("Frame", nil, parent, "BackdropTemplate")
+    -- Which panel's opacity its DoT bars carry.
+    row.panelKey = unit or "list"
     row:SetSize(RowWidth(), RowHeight())
     row:SetBackdrop({bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
         edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border", edgeSize = 10,
         insets = {left = 2, right = 2, top = 2, bottom = 2}})
     row:SetBackdropColor(BROWN[1], BROWN[2], BROWN[3], BROWN[4])
     row:SetBackdropBorderColor(IDLE_BORDER[1], IDLE_BORDER[2], IDLE_BORDER[3])
-    row.name = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    if IsCompact() then
-        row.name:SetPoint("LEFT", PADDING, 0)
-        row.name:SetWidth(NAME_WIDTH - 4)
-    else
-        row.name:SetPoint("TOPLEFT", PADDING, -4)
-        row.name:SetWidth(RowWidth() - PADDING * 2)
-    end
+    local regions = CreateHealth(row, unit)
+    row.name = ScaleFont(regions:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall"))
+    PlaceName(row)
     row.name:SetJustifyH("LEFT")
+    CreateHealthText(row, regions)
     row.bars = {}
     -- Behind each live slot: a dim icon (compact), or a dim line with the
     -- icon and the spell family's name (bars), so a missing spell shows.
     for position, slotIndex in ipairs(tracker.shown) do
         local slot = SLOTS[slotIndex]
-        local placeholder = row:CreateTexture(nil, "BACKGROUND", nil, 1)
+        local placeholder = regions:CreateTexture(nil, "BACKGROUND", nil, 1)
         placeholder:SetTexture(SlotIcon(slot))
         placeholder:SetTexCoord(0.07, 0.93, 0.07, 0.93)
         placeholder:SetDesaturated(true)
@@ -386,17 +616,20 @@ local function CreateRow(parent, unit)
         if IsCompact() then
             PlaceSlot(placeholder, row, position)
         else
-            local line = row:CreateTexture(nil, "BACKGROUND")
+            local line = regions:CreateTexture(nil, "BACKGROUND")
             PlaceSlot(line, row, position)
             line:SetColorTexture(BAR_BACKGROUND[1], BAR_BACKGROUND[2], BAR_BACKGROUND[3], BAR_BACKGROUND[4])
-            placeholder:SetSize(BAR_ICON, BAR_ICON)
+            placeholder:SetSize(BarIcon(), BarIcon())
             placeholder:SetPoint("LEFT", line, "LEFT", 1, 0)
-            local label = row:CreateFontString(nil, "BORDER", "GameFontDisableSmall")
-            label:SetPoint("LEFT", line, "LEFT", BAR_ICON + 8, 0)
+            local label = ScaleFont(regions:CreateFontString(nil, "BORDER", "GameFontDisableSmall"))
+            label:SetPoint("LEFT", line, "LEFT", BarIcon() + 8, 0)
             label:SetText(SlotLabel(slot.key))
         end
     end
     local container = CreateFrame("AuraContainer", nil, row, CONTAINER_TEMPLATE)
+    if row.layer then
+        container:SetFrameLevel(row:GetFrameLevel() + 2)
+    end
     container:SetPoint("TOPLEFT", row, "TOPLEFT")
     container:SetSize(1, 1)
     for position, slotIndex in ipairs(tracker.shown) do
@@ -412,6 +645,7 @@ local function CreateRow(parent, unit)
         container:UpdateAllAuras()
         row.boundUnit = unit
     end
+    UpdateHealth(row)
     return row
 end
 
@@ -457,24 +691,33 @@ local function ShowCastTooltip(button)
     GameTooltip:Show()
 end
 
--- Dragging and snapping: Layout.lua. The rows drag the anchor.
-local function StartDrag()
-    WTF.BeginDrag(tracker.anchor)
+-- Sections (author-approved, player request): the target row, the focus row,
+-- and the list of other mobs are three frames, each dragged, snapped, and
+-- saved on its own. A section not yet dragged hangs from an invisible stack
+-- frame where the one tracker frame was (its saved place, or the default), at
+-- the offsets the rows had there, so nothing moves for players who placed the
+-- tracker before: the target on top, the focus below it past the target's
+-- outline, the list below both. A section stays where it is put; the list no
+-- longer moves up when a pinned row hides.
+local SECTION_KEYS = {"target", "focus", "list"}
+
+local function StackOffset(key)
+    local step = RowStep() + PINNED_SPACING
+    return key == "target" and 0 or key == "focus" and step or step * 2
 end
 
-local function StopDrag()
-    WTF.EndDrag(tracker.anchor)
-end
-
--- Pinned rows: the target on top, the focus below it past the target's outline.
-local function PinnedOffset(key)
-    return key == "target" and 0 or (RowStep() + PINNED_SPACING)
+-- Dragging and snapping (Layout.lua, or Dyre's Toolkit): a row drags its section.
+local function DragScripts(frame, key)
+    frame:RegisterForDrag("LeftButton")
+    frame:SetScript("OnDragStart", function() WTF.BeginDrag(tracker.sections[key]) end)
+    frame:SetScript("OnDragStop", function() WTF.EndDrag(tracker.sections[key]) end)
 end
 
 local function CreatePinnedRow(key)
     local pinned = PINNED[key]
-    local row = CreateRow(tracker.anchor, pinned.unit)
-    row:SetPoint("TOPLEFT", tracker.anchor, "TOPLEFT", 0, -PinnedOffset(key))
+    local section = tracker.sections[key]
+    local row = CreateRow(section, pinned.unit)
+    row:SetPoint("TOPLEFT", section, "TOPLEFT")
     row.unit = pinned.unit
     row.casts = {}
     for position, slotIndex in ipairs(tracker.shown) do
@@ -490,9 +733,7 @@ local function CreatePinnedRow(key)
         row.casts[slotIndex] = button
     end
     row:EnableMouse(true)
-    row:RegisterForDrag("LeftButton")
-    row:SetScript("OnDragStart", StartDrag)
-    row:SetScript("OnDragStop", StopDrag)
+    DragScripts(row, key)
     -- Target: warlock purple; focus: red (author-approved), same outline.
     local r, g, b
     if key == "target" then
@@ -548,10 +789,8 @@ local function ApplyPinnedVisibility()
             RegisterStateDriver(row, "visibility", PINNED[key].driver)
         end
     end
-    if settings.enabled then
-        tracker.anchor:Show()
-    else
-        tracker.anchor:Hide()
+    for _, key in ipairs({"target", "focus"}) do
+        tracker.sections[key]:SetShown(settings.enabled)
     end
 end
 
@@ -588,6 +827,7 @@ local function Bind(row, unit)
     row.boundUnit = wanted
     row.container:SetUnit(wanted)
     row.container:UpdateAllAuras()
+    UpdateHealth(row)
 end
 
 local function IsDead(unit)
@@ -636,18 +876,12 @@ end
 
 -- Layout -----------------------------------------------------------------------
 
--- The list sits below the pinned rows the game shows; its own rows leave out
--- your target and focus, which have pinned rows.
+-- The list leaves out your target and focus, which have pinned rows. Its
+-- frame is one row tall (it snaps by its first row); the other rows hang below.
 function Layout()
     local settings = WTF.db.tracker
     local samples = settings.placeholders
-    -- The list starts below the lowest pinned row the game shows; a hidden
-    -- target row keeps its space, as the secure focus row cannot move in combat.
-    local listTop = 0
     for key, row in pairs(tracker.pinned) do
-        if samples or IsLiveHostile(PINNED[key].unit) then
-            listTop = math.max(listTop, PinnedOffset(key) + RowStep() + PINNED_SPACING)
-        end
         if not samples then
             row.name:SetText(ReadName(PINNED[key].unit))
         end
@@ -689,8 +923,6 @@ function Layout()
             end
         end
     end
-    list:ClearAllPoints()
-    list:SetPoint("TOPLEFT", tracker.anchor, "TOPLEFT", 0, -listTop)
     list:SetShown(settings.enabled and #listed > 0)
 end
 
@@ -809,6 +1041,8 @@ local function ClearAll()
     Layout()
 end
 
+local Place
+
 -- Builds the pinned rows and the list rows for the current theme, replacing
 -- any old ones and keeping the mobs they tracked. Secure rows change only
 -- out of combat, so a rebuild in combat waits.
@@ -830,16 +1064,17 @@ local function BuildRows()
         row.container:SetUnit("none")
         row:Hide()
     end
-    tracker.anchor:SetSize(RowWidth(), (RowStep() + PINNED_SPACING) * 2)
-    tracker.list:SetSize(RowWidth(), RowStep() * MAX_ROWS)
+    for _, frame in pairs(tracker.sections) do
+        frame:SetSize(RowWidth(), RowHeight())
+    end
+    -- The rows' size moves the stacked sections' offsets.
+    Place()
     tracker.pinned = {target = CreatePinnedRow("target"), focus = CreatePinnedRow("focus")}
     tracker.rows = {}
     for index = 1, MAX_ROWS do
         local row = CreateRow(tracker.list)
         row:EnableMouse(true)
-        row:RegisterForDrag("LeftButton")
-        row:SetScript("OnDragStart", StartDrag)
-        row:SetScript("OnDragStop", StopDrag)
+        DragScripts(row, "list")
         row:Hide()
         local old = oldRows[index]
         if old and old.guid then
@@ -866,6 +1101,47 @@ local function KnownSlotsChanged()
         end
     end
     return false
+end
+
+-- New slot colors (DoT Colors page): the bars take a color only as they are
+-- built, so the rows are rebuilt (out of combat; in combat, when it ends).
+function WTF.ApplyTrackerColors()
+    if tracker.available then
+        BuildRows()
+    end
+end
+
+-- Mob health on or off, or its text (Core's TRACKER_HEALTH_TEXTS): the rows
+-- are rebuilt (out of combat), since the name's room changes.
+function WTF.SetTrackerHealth(key, value)
+    local settings = WTF.db.tracker
+    if key == "health" then
+        settings.health = value == true
+    elseif key == "healthText" then
+        settings.healthText = WTF.SanitizeHealthText(value)
+    end
+    if tracker.available then
+        BuildRows()
+    end
+end
+
+-- A size for a theme (Core's TRACKER_SIZE_SPECS) or the name position; nil
+-- value: that theme's defaults. The rows are rebuilt (out of combat).
+function WTF.SetTrackerSize(theme, key, value)
+    local sizes = WTF.db.tracker.sizes
+    if key then
+        local saved = {}
+        for name, current in pairs(sizes[theme]) do
+            saved[name] = current
+        end
+        saved[key] = value
+        sizes[theme] = WTF.SanitizeTrackerSizes(theme, saved)
+    else
+        sizes[theme] = WTF.SanitizeTrackerSizes(theme, nil)
+    end
+    if tracker.available then
+        BuildRows()
+    end
 end
 
 function WTF.SetTrackerTheme(theme)
@@ -912,21 +1188,29 @@ events:SetScript("OnEvent", function(_, event, unit, first, second, third)
                 BuildRows()
             end
         end
-    elseif event == "UNIT_HEALTH" then
+    elseif event == "UNIT_HEALTH" or event == "UNIT_MAXHEALTH" then
         for _, row in ipairs(tracker.rows) do
-            if row.guid and row.boundUnit == unit and IsDead(unit) then
-                RemoveRow(row)
+            if row.guid and row.boundUnit == unit then
+                if event == "UNIT_HEALTH" and IsDead(unit) then
+                    RemoveRow(row)
+                else
+                    UpdateHealth(row)
+                end
             end
         end
-        if unit == "target" or unit == "focus" then
+        local pinned = tracker.pinned[unit]
+        if pinned then
+            UpdateHealth(pinned)
             Layout()
         end
     else
         -- No pinned rows yet after a reload in combat; they come when it ends.
         if event == "PLAYER_TARGET_CHANGED" and tracker.pinned.target then
             tracker.pinned.target.container:UpdateAllAuras()
+            UpdateHealth(tracker.pinned.target)
         elseif event == "PLAYER_FOCUS_CHANGED" and tracker.pinned.focus then
             tracker.pinned.focus.container:UpdateAllAuras()
+            UpdateHealth(tracker.pinned.focus)
         end
         RefreshBindings()
         Layout()
@@ -935,18 +1219,52 @@ end)
 
 -- Placement and settings ----------------------------------------------------
 
-local function Place()
-    local anchor, position = tracker.anchor, WTF.db.tracker.position
-    anchor:ClearAllPoints()
+-- Out of combat only: the sections hold secure rows.
+function Place()
+    local stack, position = tracker.stack, WTF.db.tracker.position
+    stack:SetSize(RowWidth(), (RowStep() + PINNED_SPACING) * 2)
+    stack:ClearAllPoints()
     if position then
-        anchor:SetPoint(position.point, UIParent, position.relativePoint, position.x, position.y)
+        stack:SetPoint(position.point, UIParent, position.relativePoint, position.x, position.y)
     else
-        anchor:SetPoint(DEFAULT_POINT[1], UIParent, DEFAULT_POINT[2], DEFAULT_POINT[3], DEFAULT_POINT[4])
+        stack:SetPoint(DEFAULT_POINT[1], UIParent, DEFAULT_POINT[2], DEFAULT_POINT[3], DEFAULT_POINT[4])
+    end
+    for _, key in ipairs(SECTION_KEYS) do
+        local frame, saved = tracker.sections[key], WTF.db.tracker.sections[key]
+        frame:ClearAllPoints()
+        if saved then
+            frame:SetPoint(saved.point, UIParent, saved.relativePoint, saved.x, saved.y)
+        else
+            frame:SetPoint("TOPLEFT", stack, "TOPLEFT", 0, -StackOffset(key))
+        end
     end
 end
 
+-- A panel's opacity (a setting per panel): the whole section frame, rows and
+-- all. SetAlpha is no protected action, so it applies at once, also in
+-- combat, and WTF never touches the engine's buttons for it.
+local function ApplyPanelOpacity()
+    for key, frame in pairs(tracker.sections) do
+        frame:SetAlpha(WTF.db.tracker.panelOpacity[key] / 100)
+    end
+end
+
+-- The panel fades at once, also in combat; its DoT bars carry the opacity
+-- from when they are built, so they follow with a rebuild (out of combat;
+-- in combat, when it ends).
+function WTF.SetTrackerPanelOpacity(key, percent)
+    WTF.db.tracker.panelOpacity[key] = WTF.SanitizeWhole(percent, WTF.PANEL_OPACITY_MIN, WTF.PANEL_OPACITY_MAX,
+        WTF.DEFAULT_PANEL_OPACITY)
+    if tracker.available then
+        ApplyPanelOpacity()
+        BuildRows()
+    end
+end
+
+-- /wtf reset: the three sections stacked at the default place again.
 function WTF.ResetTrackerPosition()
     WTF.db.tracker.position = nil
+    WTF.db.tracker.sections = {}
     if not tracker.anchor then
         return
     end
@@ -971,22 +1289,29 @@ function WTF.InitializeTracker()
         return
     end
     BuildSpellSets()
-    -- The secure anchor holds the pinned rows; it takes no mouse input itself.
-    local anchor = CreateFrame("Frame", "WarlockToolsForeverTracker", UIParent)
-    anchor:SetMovable(true)
-    anchor:SetClampedToScreen(true)
-    anchor:EnableMouse(false)
-    tracker.anchor = anchor
-    WTF.RegisterMovable(anchor, function(position) WTF.db.tracker.position = position end)
-    local list = CreateFrame("Frame", "WarlockToolsForeverTrackerList", UIParent)
-    list:EnableMouse(false)
-    tracker.list = list
+    -- Where the one tracker frame was: sections not yet dragged hang from it.
+    tracker.stack = CreateFrame("Frame", nil, UIParent)
+    tracker.stack:EnableMouse(false)
+    -- One frame per section, each its own movable; the target and focus ones
+    -- hold the secure pinned rows. They take no mouse input themselves.
+    local names = {target = "WarlockToolsForeverTracker", focus = "WarlockToolsForeverTrackerFocus",
+        list = "WarlockToolsForeverTrackerList"}
+    tracker.sections = {}
+    for _, key in ipairs(SECTION_KEYS) do
+        local frame = CreateFrame("Frame", names[key], UIParent)
+        frame:SetMovable(true)
+        frame:SetClampedToScreen(true)
+        frame:EnableMouse(false)
+        tracker.sections[key] = frame
+        WTF.RegisterMovable(frame, function(position) WTF.db.tracker.sections[key] = position end)
+    end
+    tracker.anchor, tracker.list = tracker.sections.target, tracker.sections.list
+    ApplyPanelOpacity()
     tracker.theme = WTF.db.tracker.theme
     tracker.shown = ShownSlots()
-    Place()
     tracker.available = true
     for _, event in ipairs({"PLAYER_REGEN_ENABLED", "PLAYER_TARGET_CHANGED", "PLAYER_FOCUS_CHANGED",
-        "NAME_PLATE_UNIT_ADDED", "NAME_PLATE_UNIT_REMOVED", "SPELLS_CHANGED", "UNIT_HEALTH"}) do
+        "NAME_PLATE_UNIT_ADDED", "NAME_PLATE_UNIT_REMOVED", "SPELLS_CHANGED", "UNIT_HEALTH", "UNIT_MAXHEALTH"}) do
         events:RegisterEvent(event)
     end
     for _, event in ipairs({"UNIT_SPELLCAST_SENT", "UNIT_SPELLCAST_SUCCEEDED", "UNIT_SPELLCAST_FAILED",
@@ -1015,6 +1340,12 @@ function WTF.ReportTrackerDebug()
     if not tracker.available then
         return
     end
+    local placed = {}
+    for _, key in ipairs(SECTION_KEYS) do
+        placed[#placed + 1] = key .. "=" .. (WTF.db.tracker.sections[key] and "moved" or "stacked")
+    end
+    WTF.Report("debug_tracker sections " .. table.concat(placed, " ")
+        .. (WTF.db.tracker.position and " (stack moved)" or ""))
     for slotIndex, slot in ipairs(SLOTS) do
         local ids = {}
         for id in pairs(tracker.sets[slot.key]) do

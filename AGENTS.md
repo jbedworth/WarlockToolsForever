@@ -212,8 +212,44 @@ module only after the author agrees its behavior.
   color outline) on top, a pinned **focus** row (the same outline in red) below
   it, each shown only while that unit is a live hostile; then a list of up to
   8 other mobs you DoTed. The list leaves out your target and focus, so no mob
-  shows twice, and it moves up when a pinned row hides. Tabbing or a new focus
-  changes what the pinned rows show.
+  shows twice. Tabbing or a new focus changes what the pinned rows show.
+- Sections (author-approved, player request; always, no switch): the target
+  row, the focus row, and the list are three frames
+  (`WarlockToolsForeverTracker`, `WarlockToolsForeverTrackerFocus`,
+  `WarlockToolsForeverTrackerList`), each its own `RegisterMovable` with its
+  own save (`tracker.sections.target/focus/list`), so each drags, snaps
+  across Dyre's AddOns and to the grid, and Shift-drags with frames snapped
+  to it. A section not yet dragged hangs from an invisible stack frame placed
+  where the one tracker frame was (`tracker.position`, kept from older
+  versions, else the default) at the old offsets (target 0, focus one row
+  plus the outline gap, list two), so nothing moves for current players. A
+  section stays where it is put: the list no longer moves up when a pinned
+  row hides. The list frame is one row tall (it snaps by its first row); its
+  other rows hang below it. `/wtf reset` clears every section and the stack
+  place. The target and focus sections hold secure rows, so they move only
+  out of combat (a drop in combat waits); `/wtf debug_tracker` says which are
+  moved or stacked. The default spacing is not the snapping gap, so the
+  stacked sections do not Shift-drag as one group until dropped snapped.
+- Panel opacity (author-approved: its own setting per panel, not one for the
+  rows): "Target panel opacity", "Focus panel opacity", and "Other mobs panel
+  opacity" (`tracker.panelOpacity.target/focus/list`, 10-100 percent, default
+  100, today's look) on the DoT Tracker page. Each sets its section frame's
+  alpha, so the whole panel fades, rows and all; SetAlpha is no protected
+  action (bar AddOns fade secure bars with it in combat), so it applies at
+  once, also in combat, and the engine's buttons are never touched for it.
+  Found in client: the engine-driven DoT duration bars did not fade with the
+  panel (the pinned Lua has no alpha code; the C side drives the bars). So
+  each bar WTF builds ignores its parent's opacity (`SetIgnoreParentAlpha`)
+  and carries its panel's opacity in its fill color and its spell-name and
+  time texts, which gives exactly the panel's opacity whatever the engine
+  does. Only while it is built (`PrepareBar`, inside `initializeFrame`,
+  before `SetDurationBar`/`SetSpellName`/`SetDurationText`): what WTF hands
+  the engine is the engine's afterwards, and touching it raised "calling
+  'SetStatusBarColor' on bad self (Attempt to access forbidden object from
+  code tainted by an AddOn)" (found in client, 13x, from the opacity
+  slider). So a panel opacity change fades the panel frame at once (also in
+  combat) and rebuilds the rows for the bars (out of combat; in combat, when
+  it ends). Separate from the nameplate dot opacity.
 - Each row has slots, in this order (author-approved): Curse (Weakness,
   Recklessness, Elements, Shadow, Tongues, Exhaustion; one at a time), Bane
   (Agony, Doom, Havoc), Corruption, Immolate, Siphon Life, and Fear and
@@ -252,6 +288,57 @@ module only after the author agrees its behavior.
   (author-approved over shrinking blocks). Slot regions are placed at fixed
   positions in `initializeFrame`, so a theme change or a newly learned spell
   rebuilds every row, out of combat, keeping tracked mobs.
+- Sizes per theme (author-approved, player request; no free offsets):
+  `tracker.sizes.compact` (icon size 16-40, default 22; name width 60-200,
+  default 110; text size 50-200%, default 100; name Left, Right, Above, or
+  Below, default Left) and `tracker.sizes.bars` (bar width 150-500, default
+  290; line height 12-28, default 16, the icon 2 less; text size; name Above
+  or Below, default Above), specs in Core's `TRACKER_SIZE_SPECS`. Names and
+  health texts are one line (`SetWordWrap(false)`, `SetMaxLines(1)`), cut
+  with "..." only when they do not fit (found in client: long Compact names
+  wrapped onto 2-3 lines and spilled out of the row). Beside the icons the
+  name has its whole column, from the row's inner edge to the first icon
+  less 4; above or below them, the row's whole width; the health text takes
+  the end of that room, so the name is cut first. Name width stays (author's
+  ask: decide and say why): it is the width of the name's column beside the
+  icons, the only room a Compact name beside them has, so it is the clear way
+  to give long names more room; the tooltip says so. A name never changes a
+  row's size. Defaults are
+  the old constants, so the look is unchanged. Text size scales each font
+  from its own size. Only the chosen theme's settings show
+  (`AddShownPredicate`, pinned Blizzard_Settings.lua:96; the list checks it
+  again on each setting change, Blizzard_SettingsPanel.lua:788-809). "Reset
+  size" (`CreateSettingsButtonInitializer`, pinned
+  Blizzard_SettingControls.lua:1014) restores the chosen theme's defaults. A
+  change rebuilds the rows (engine slots are placed only in
+  `initializeFrame`), out of combat; stacked sections follow the new row
+  size.
+- Mob health (author-approved, player request): "Show mob health"
+  (`tracker.health`, default off) makes the line with the mob's name the
+  health bar (author-approved), filled in the panel's color: the warlock
+  purple for the target, the focus red for the focus, dark grey for the
+  others, at 80% so the text reads. It spans the name line, at least as wide
+  as the DoTs: its own line across the row in Bars and for a Compact name
+  above or below the icons, the whole row inside the border for a Compact
+  name beside them. Rows keep their size. A child frame draws over its
+  parent's regions, so the name, health text, and dim icons go on a layer
+  frame one level above the bar, and the engine's container one above that;
+  and
+  "Health text" (`tracker.healthText`: None default, Number, Percent, Number
+  and Percent) puts text after the name, in room taken from the name's width.
+  Enemy health is secret in combat: WTF never reads, compares, or formats it
+  as a string. The bar takes `UnitHealthMax`/`UnitHealth` through
+  `SetMinMaxValues`/`SetValue` (secret-accepting, as the shield display's
+  absorb, Shield.lua's header); the number is `AbbreviateNumbers(UnitHealth
+  (unit))`; the percent is `UnitHealthPercent(unit, true,
+  CurveConstants.ScaleTo100)` formatted with `string.format("%d%%", ...)`,
+  the API path EllesmereUI's unit frames use on this client
+  (`EllesmereUIUnitFrames/EUI_UnitFrames_Text.lua:421-424`; learned there,
+  written here). Number and percent are separate font strings, so no secret
+  string is formatted. Updated on `UNIT_HEALTH`/`UNIT_MAXHEALTH`, when a
+  row's unit changes, and on target or focus change; hidden while a row has
+  no unit. Without `UnitHealthPercent` the percent text stays empty. A change
+  rebuilds the rows, out of combat.
 - "Known" means learned: the spellbook also lists spells learned later
   (`SpellBookItemType.FutureSpell`), which count as unknown for the tracker's
   slots, the pinned recasts, and the nameplate dots.
@@ -265,10 +352,10 @@ module only after the author agrees its behavior.
   `/use [@target,harm,nodead] <name>` (or `[@focus,exists,harm,nodead]`), by name so the highest
   rank is used. Bane and Curse slots recast the last Bane or Curse cast (saved
   per character). Their attributes change only out of combat. The pinned rows
-  live in a secure anchor (`WarlockToolsForeverTracker`) whose rows the game
-  shows and hides with `RegisterStateDriver(row, "visibility",
-  "[@target,harm,nodead] show; hide")`; the list
-  (`WarlockToolsForeverTrackerList`) is an ordinary frame anchored below it.
+  live in their sections' frames, and the game shows and hides the rows with
+  `RegisterStateDriver(row, "visibility", "[@target,harm,nodead] show; hide")`
+  (focus: `[@focus,exists,harm,nodead]`); the list
+  (`WarlockToolsForeverTrackerList`) is an ordinary frame.
 - Locked, tracker rows let clicks through (`EnableMouse(not db.locked)`; the
   pinned rows' own mouse, a secure frame's, changes only out of combat); their
   slot buttons always take clicks. Unlocked, the rows take the mouse to drag.
@@ -279,6 +366,14 @@ module only after the author agrees its behavior.
   clicking a list row to target or cast.
 
 ### Nameplate DoT dots (built, part of the tracker)
+
+- Nameplate dot opacity (author-approved, player request: "Opacity for dot
+  icons" means the nameplate dots, not the tracker rows): "Nameplate dot
+  opacity", `tracker.plateDotsOpacity`, 10-100 percent, default 100 (today's
+  look), under the dots switch on the DoT Tracker page. It sets each bubble's
+  alpha (WTF's own frame: background, grey dots, and colored dots), at once,
+  also in combat, and on each bubble as it attaches. The tracker rows keep
+  full opacity.
 
 - Author-approved, off by default, and usable only when the player knows at
   least one tracked DoT: in combat, a small bubble above each live hostile
@@ -595,8 +690,10 @@ module only after the author agrees its behavior.
   shared by the tracker's bars and the nameplate dots so the colors become a
   quick visual code. Saved per character as `AARRGGBB` hex strings, the
   format of the Settings color swatch, and editable on the DoT Colors page
-  with a nameplate switch per slot. The bars and dots are WTF's own regions,
-  so new colors apply at once, also in combat. When defaults change, a
+  with a nameplate switch per slot. The tracker's bars take their color only
+  as they are built (see the panel opacity rule: the engine owns them
+  afterwards), so a new color rebuilds the tracker's rows, out of combat; the
+  nameplate dots are WTF's own textures and change at once. When defaults change, a
   one-time step (`colorsVersion`) moves slots still on an old default to the
   new one and keeps colors the user picked.
 
@@ -731,6 +828,11 @@ general frameworks, or speculative modules without agreement.
 - Every release needs a `## <version>` section in CHANGELOG.md with player-facing
   changes; the builder puts it at the top of release-notes.md (GitHub release
   notes and CurseForge changelog) and fails without it.
+- Every CHANGELOG version section (author's format for all of Dyre's AddOns'
+  change and version notes, from 1.1.0 on) has descriptive, player-facing
+  bullets under `### Features`, `### Fixes`, and `### Other changes`, in that
+  order, leaving out an empty one. The builder's section ends only at the
+  next `## `, so the `###` headings stay in the release notes.
 - Package only WarlockToolsForever.toc, Commands.lua, Core.lua, Layout.lua, Shards.lua, Stones.lua, Announce.lua, Tracker.lua, Dots.lua, Control.lua, Alerts.lua, Shield.lua, Chimes.lua, Reminders.lua, Probe.lua, Options.lua, LICENSE,
   and Textures/ShieldArc.tga, Textures/ShieldArcInner.tga, Textures/ShieldArcInnermost.tga (no sound files)
   under the top-level

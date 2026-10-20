@@ -311,8 +311,20 @@ and printing.
       show in the purple pinned row, the other mob in the list below, with
       icons, countdowns, sweeps, and draining bars; an expired spell shows dim.
 - [ ] Tab to the other mob: the pinned row follows and the old target joins
-      the list. Set a focus: the red-outlined row appears and the list
-      moves below it; clear it and the list moves up.
+      the list. Set a focus: the red-outlined row appears; clear it: the list
+      stays where it is.
+- [ ] Tracker sections: after the update, with no drag yet, the target row,
+      focus row, and list sit where they were before (also for a tracker you
+      had moved). Unlocked, drag each one by its rows on its own; each snaps
+      to other frames and to the grid (Dyre's Toolkit), and its place
+      survives /reload. Drag one in combat: it moves after combat. `/wtf
+      reset` stacks all three at the default place again.
+- [ ] Panel opacity: move each panel opacity slider (Target, Focus, Other
+      mobs) in Compact and in Bars, out of combat and in combat: each fades
+      only its own panel; out of combat the DoT bars follow at once, in
+      combat when combat ends; BugSack stays empty (no "forbidden object"
+      error); a theme change or /reload keeps them; the nameplate dots do not
+      change.
 - [ ] Click a dim slot in the target and focus rows, also in combat: the
       spell is cast on that unit; Bane and Curse slots use the last one cast.
 - [ ] A mob that dies leaves the list; the list hides after combat.
@@ -322,15 +334,42 @@ and printing.
       nameplate AddOn, and that `TempPortraitAlphaMask` makes the dots round.
       The height slider shows a gold mark at 50, and no other slider in the
       Settings panel shows one.
-- [ ] The DoT Colors page: a new color recolors the tracker's bars and the
-      nameplate dots at once; Defaults restores them; nameplate switches add
-      and remove dots.
+- [ ] The DoT Colors page: a new color recolors the nameplate dots at once
+      and the tracker's bars at once out of combat (in combat, when it ends),
+      with BugSack empty; Defaults restores them; nameplate switches add and
+      remove dots.
 - [ ] Spells you have not learned yet (shown greyed in the spellbook) appear
       in neither theme nor on the nameplate dots.
 - [ ] With the default Bars theme: each mob shows its name and a bar line per
       spell you know, with icon, spell name, and time left, draining from
       right to left; missing spells show as dim named lines; clicking a line
       in the pinned rows recasts it. A switch in combat applies after combat.
+- [ ] Nameplate dot opacity: at 100% the dots look as before; at 50% each
+      bubble above a nameplate (background and dots) is half as solid, also
+      when changed in combat, and new bubbles take it; the DoT tracker rows do
+      not change.
+- [ ] Long names (unlocked samples, and a mob with a long name): every name
+      is one line in its room, cut with "..." only when it does not fit, at
+      text size 50%, 100%, and 200%, in every name position; no row grows,
+      and no text spills out of a row; with health text on, the name is cut
+      before the health text.
+- [ ] Tracker sizes: with no change the tracker looks as before. Compact:
+      icon size, name width, and text size change every row; each name
+      position (left, right, above, below) puts the name there with nothing
+      overlapping. Bars: bar width, line height, text size, name above or
+      below. Only the chosen theme's size settings show, also right after
+      switching the theme. Reset size restores the look. A change in combat
+      applies when combat ends.
+- [ ] Mob health: turn on Show mob health: the line with each mob's name is
+      its health bar, purple on the target row, red on the focus row, dark
+      grey on the others, at least as wide as the row's DoTs (both themes,
+      every name position); the name, text, and icons stay readable on top;
+      it drains
+      as the mob loses health, also in combat, on the target, focus, and list
+      rows; no Lua error or "secret" error in BugGrabber. Health text Number,
+      Percent, and Number and Percent each show after the name and change in
+      combat (compare with the nameplate). A list mob out of nameplate range
+      shows no health until its plate is back.
 - [ ] Unlocked: the grid covers the screen under every frame, red lines
       cross at the center, clicks pass through it, it rebuilds after a UI
       scale change, and its switch hides it.
