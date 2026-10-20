@@ -158,7 +158,9 @@ class CurseForgeTests(unittest.TestCase):
                                    "relations": {"projects": [{"slug": "dyres-sounds",
                                                                "type": "requiredDependency"},
                                                               {"slug": "dyres-toolkit",
-                                                               "type": "requiredDependency"}]}})
+                                                               "type": "requiredDependency"},
+                                                              {"slug": "weapon-skills-forever",
+                                                               "type": "optionalDependency"}]}})
         self.assertEqual(parts[1].get_filename(), self.archive.name)
         self.assertEqual(parts[1].get_content_type(), "application/zip")
         uploaded = parts[1].get_payload(decode=True)
@@ -192,11 +194,13 @@ class CurseForgeTests(unittest.TestCase):
                     self.publish()
                 self.assert_no_network()
 
-    def test_dyres_sounds_and_toolkit_are_the_only_relations_and_required(self):
-        # Required, so the CurseForge app installs the sounds and the toolkit with WTF.
-        projects = publisher.RELATIONS["projects"]
-        self.assertEqual([p["slug"] for p in projects], ["dyres-sounds", "dyres-toolkit"])
-        self.assertTrue(all(p["type"] == "requiredDependency" for p in projects))
+    def test_relations_match_the_project(self):
+        # Required, so the CurseForge app installs the sounds and the toolkit with
+        # WTF; Weapon Skills Forever is optional.
+        types = {p["slug"]: p["type"] for p in publisher.RELATIONS["projects"]}
+        self.assertEqual(types, {"dyres-sounds": "requiredDependency",
+                                 "dyres-toolkit": "requiredDependency",
+                                 "weapon-skills-forever": "optionalDependency"})
 
     def test_strict_tag(self):
         for tag in ("0.1.0-beta", "v0.1.0", "vv0.1.0-beta", "v0.1.0-beta\n", "v../bad"):

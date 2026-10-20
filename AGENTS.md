@@ -528,7 +528,9 @@ module only after the author agrees its behavior.
   TOC lists `DyresToolkit` in `## OptionalDeps` (never `## Dependencies`) and
   `## Group: DyresToolkit`, so WTF nests under it in the AddOn list;
   CurseForge has it as a required dependency (`dyres-toolkit` in
-  `RELATIONS`).
+  `RELATIONS`). `RELATIONS` also lists Weapon Skills Forever
+  (`weapon-skills-forever`) as an optional dependency, as the author set it on
+  the project; WTF does not use it, so the TOC does not name it.
 - Core's `WTF.Toolkit()` returns `DyresToolkit.RequireContract(1)` when every
   function WTF uses is there (`RegisterAddOn`, `RegisterSettingsCategory`,
   `RegisterMovable`, `BeginDrag`, `EndDrag`, `ScaleKeepingCenter`,

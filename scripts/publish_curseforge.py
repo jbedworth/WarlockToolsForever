@@ -29,9 +29,11 @@ MAX_RESPONSE_BYTES = 2 * 1024 * 1024
 RECEIPT_NAME = "curseforge-upload.json"
 # Dyre's Sounds and Dyre's Toolkit are required on CurseForge, so the app
 # installs them with WTF; the TOC lists them as OptionalDeps, so WTF still
-# loads without them.
+# loads without them. Weapon Skills Forever is an optional companion (as set on
+# the project); WTF does not use it, so the TOC does not name it.
 RELATIONS = {"projects": [{"slug": "dyres-sounds", "type": "requiredDependency"},
-                          {"slug": "dyres-toolkit", "type": "requiredDependency"}]}
+                          {"slug": "dyres-toolkit", "type": "requiredDependency"},
+                          {"slug": "weapon-skills-forever", "type": "optionalDependency"}]}
 
 
 class PublishError(Exception):

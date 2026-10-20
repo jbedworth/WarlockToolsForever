@@ -41,6 +41,9 @@ settings home. The CurseForge app installs it with WTF. With it:
 Without it, WTF works as before, with its own top-level settings page, its
 own unlock, and its own grid, and says once in chat to install it.
 
+WTF works well with **Weapon Skills Forever**, another of Dyre's AddOns. It
+is optional: WTF does not need it.
+
 ## Soul Shards
 
 Drain Soul fills your bags with shards. WTF deletes each shard that Drain Soul

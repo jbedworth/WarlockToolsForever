@@ -17,7 +17,7 @@ tested.
 | Logo | artwork/warlock-tools-forever-logo.png (1024 x 1024) |
 | Source | https://github.com/jbedworth/WarlockToolsForever |
 | Issues | https://github.com/jbedworth/WarlockToolsForever/issues |
-| Relations | Dyre's Sounds (`dyres-sounds`) and Dyre's Toolkit (`dyres-toolkit`), Required Dependency. Each CI upload sends them (`RELATIONS` in scripts/publish_curseforge.py); set them on the project too if the form asks. |
+| Relations | Dyre's Sounds (`dyres-sounds`) and Dyre's Toolkit (`dyres-toolkit`), Required Dependency; Weapon Skills Forever (`weapon-skills-forever`), Optional Dependency. Each CI upload sends them (`RELATIONS` in scripts/publish_curseforge.py); set them on the project too if the form asks. |
 
 ## Summary
 
@@ -77,7 +77,7 @@ WTF's sounds come from **Dyre's Sounds**, which holds the sounds for all of Dyre
 - `/warlocktools` works the same, in case another AddOn uses `/wtf`.
 
 ### Compatibility
-Beta: tested on the Forever beta client 1.60.1, build 70450. If a client update removes an API it needs, WTF turns itself off with one chat message.
+Tested on the Forever beta client 1.60.1, build 70450. If a client update removes an API it needs, WTF turns itself off with one chat message.
 
 WowUp users (2.24.0 or later): install from the repository URL; GitHub releases carry the Forever metadata WowUp needs.
 

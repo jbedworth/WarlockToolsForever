@@ -4,6 +4,12 @@ Player-facing changes for each Warlock Tools Forever release, newest first. The
 release builder copies the section for the TOC version into the GitHub release
 notes and the CurseForge changelog, and fails if that section is missing.
 
+## 1.0.0
+
+The first full release for WoW: Forever, no longer marked beta: it was play tested on the Forever beta client 1.60.1, build 70450. CurseForge now offers it as a release, so the app updates it and installs what it needs for every player.
+
+- The CurseForge app installs Dyre's Toolkit and Dyre's Sounds with WTF. Weapon Skills Forever is listed as optional.
+
 ## 0.3.4-beta
 
 - With **Dyre's Toolkit** installed, WTF joins one layout mode for all of Dyre's AddOns: `/wtf unlock`, `/dyre unlock`, or the toolkit's minimap button unlock every Dyre's AddOn's frames at once, WTF's frames (the shield ring too) snap to theirs, and the toolkit's grid (with Snap to the grid) shows.
