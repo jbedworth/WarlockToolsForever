@@ -40,6 +40,10 @@ Per-file changelogs need no manual text: each CI upload uses the version's
 - **Click a slot** on your target or focus row to recast that spell.
 - Two looks: **Bars** that drain like the Cooldown Manager's, or **Compact** icons. Every color is yours to change.
 - Optional **DoT dots above enemy nameplates**: grey means missing.
+- **Move the target, focus, and other-mobs panels separately**: each snaps to your other Dyre's frames and to the grid.
+- **Mob health on each row**: the name line becomes a health bar in the panel's color, with the number, the percent, or both.
+- **Sizes for each look**: icon size, name width, text size, and name position; bar width and line height for Bars.
+- **Opacity for each panel**, and for the nameplate DoT dots.
 
 ### Soul Shards, handled
 - Set a shard limit (it matches your soul bags by default). **Extra shards from Drain Soul and Shadowburn are deleted for you.**
