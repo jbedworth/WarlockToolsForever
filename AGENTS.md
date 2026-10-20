@@ -13,7 +13,7 @@ module only after the author agrees its behavior.
   1753581, unlisted, slug `dyres-sounds`) ships sound files; MTF, WTF, and
   Dyre's Shields Up depend on it, so players keep one copy. WTF ships no
   sounds; add none.
-- The TOC lists it as `## OptionalDeps: DyresSounds` (never
+- The TOC lists it in `## OptionalDeps: DyresSounds, DyresToolkit` (never
   `## Dependencies`, which stops WTF loading when it is missing), and
   CurseForge as a required dependency (`RELATIONS` in
   scripts/publish_curseforge.py), so the CurseForge app installs it.
@@ -51,8 +51,20 @@ module only after the author agrees its behavior.
 - A shard is "created" when it arrives during a source channel or within
   `CREATION_WINDOW` (3 s) after the source spell ends. Shards that arrive
   otherwise (bank, mail, trade) are never deleted, even above the limit
-  (author-approved). Delete at most as many shards as were just created, from
-  the slots that just gained them.
+  (author-approved). Only a rise in the carried count is a creation: a shard
+  that moves to another slot (the player's move, or the client putting one
+  back after a refused deletion) is no new shard.
+- The keep count (author-approved, after in-client misses: a full soul bag
+  and two shards from one kill left one undeleted): the shards WTF must keep.
+  It starts as the count at login; a rise outside a creation window (or while
+  deletion is off or stopped) raises it to the new count; a rise inside one
+  raises it only up to the limit; a drop lowers it to the new count. While the
+  carried count is above both the limit and the keep count, each key press or
+  click deletes one shard (an unlocked one outside the soul bags first, else
+  in them), so a created shard missed at once still goes later, and lowering
+  the limit deletes nothing. After a deletion the next waits until a bag scan
+  shows the count dropped, or 2 s (`SETTLE_TIMEOUT`), so a stale count never
+  deletes below the limit.
 - The limit: total slots of equipped soul bags (bag family bit 4), in any
   carried bag slot including the reagent slot (verified: a 14-slot soul bag
   sat in bag 5), or 6 without one; or a manual limit (1-60). Turning the match
@@ -65,10 +77,22 @@ module only after the author agrees its behavior.
   one shard (split stacks); confirm the cursor holds a Soul Shard; then
   `DeleteCursorItem`. If anything is unexpected, put the item back. If the
   client refuses (cursor still full, or `ADDON_ACTION_BLOCKED`/`FORBIDDEN` for
-  WTF during the delete), put the shard back. A refusal in combat holds the
-  queue until input after combat, silently; one out of combat reports once
-  and stops deleting until `/reload`. Queued deletions wait for input with no
-  timeout and are dropped once the count is within the limit.
+  WTF during the delete), put the shard back. Never pick up or delete while
+  deletion is restricted (`DeletionRestricted`, checked at each call: before
+  the pickup and again before `DeleteCursorItem`): `InCombatLockdown()`,
+  `UnitAffectingCombat("player")` true or secret, or an active Combat,
+  Encounter, ChallengeMode, PvPMatch, or Map AddOn restriction. Found in
+  client: `DeleteCursorItem` from a key press raised "[ADDON_ACTION_BLOCKED]
+  ... 'UNKNOWN()'" (BugGrabber, 6x, in a dungeon with DBM). The keep count
+  leaves such a shard for the first input after. A refusal anyway, while a
+  restriction began meanwhile, waits silently; one otherwise reports once and
+  stops deleting until `/reload` (this could still happen only under a
+  client rule WTF cannot read). A pickup that takes nothing (empty cursor: nothing to put back)
+  waits for the next input, and after 3 such tries that slot is skipped (its
+  shard stays; another may go). `/wtf debug_shards` shows the count, limit,
+  and keep count, the stop reason, the last attempt (result, count, keep
+  count, combat, restriction), each deletion (slot, count and keep count
+  before it), and each gain with the keep count after it.
 
 ### Stones (built)
 
@@ -89,7 +113,7 @@ module only after the author agrees its behavior.
   "! Healthstone" and "! Soulstone" in the character macro tab
   (`CreateMacro(..., true)`, question-mark icon 134400 so `#showtooltip` shows
   the stone), rewritten out of combat only when the body changes:
-  `/cast [btn:2] <create>` and `/stopmacro [btn:2]`, then the `/use` lines.
+  `/use [btn:2] <create>` and `/stopmacro [btn:2]`, then the `/use` lines.
   Healthstone: the downranked create rank by exact name
   (`Create Healthstone(Rank N)` from `C_Spell.GetSpellSubtext`; Forever's
   stones are one spell with numeric ranks) and `/use item:` for every rank,
@@ -121,7 +145,13 @@ module only after the author agrees its behavior.
   best rank they can use when you carry none. On `TRADE_SHOW` within 10 s,
   WTF picks up the stone and calls `ClickTradeButton` on a free slot; if the
   client refuses, it puts the stone back and tries once more at the next key
-  press or click. WTF never accepts a trade.
+  press or click. While item moves are restricted (`WTF.MoveRestricted` in
+  Core, the shard guard's states, checked before the pickup and again before
+  `ClickTradeButton`) WTF picks up and clicks nothing: it tries at the next
+  key press, and if that is restricted too, or later than 10 s after the
+  click, it says once to drag the stone in yourself (author-approved).
+  `/wtf debug_stones` shows `moveRestricted` and `lastRestricted`. WTF never
+  accepts a trade.
 - Stone status (author-approved): your Soulstone Resurrection cast (by name of
   spell 20707) is saved per character with its target and end time (30 min,
   Classic's duration), announced in chat when it ends. Reminders when no
@@ -225,14 +255,23 @@ module only after the author agrees its behavior.
 - "Known" means learned: the spellbook also lists spells learned later
   (`SpellBookItemType.FutureSpell`), which count as unknown for the tracker's
   slots, the pinned recasts, and the nameplate dots.
+- Rows have an engine slot only for the spell families you know
+  (`tracker.shown`); a spellbook change updates the filters of those slots
+  only, and a newly learned family's slot comes with the rebuild that
+  follows. Asking for a slot a row lacks raises "aura slot 'siphon' was not
+  found with this key." (found in client, 69x, for a Warlock without Siphon
+  Life; the mock now raises it too).
 - Pinned slots are `SecureActionButtonTemplate` buttons over the engine slots:
-  `/cast [@target,harm,nodead] <name>` (or `@focus`), by name so the highest
+  `/use [@target,harm,nodead] <name>` (or `[@focus,exists,harm,nodead]`), by name so the highest
   rank is used. Bane and Curse slots recast the last Bane or Curse cast (saved
   per character). Their attributes change only out of combat. The pinned rows
   live in a secure anchor (`WarlockToolsForeverTracker`) whose rows the game
   shows and hides with `RegisterStateDriver(row, "visibility",
   "[@target,harm,nodead] show; hide")`; the list
   (`WarlockToolsForeverTrackerList`) is an ordinary frame anchored below it.
+- Locked, tracker rows let clicks through (`EnableMouse(not db.locked)`; the
+  pinned rows' own mouse, a secure frame's, changes only out of combat); their
+  slot buttons always take clicks. Unlocked, the rows take the mouse to drag.
 - List rows only display: a secure button cannot change its unit in combat,
   and the restricted environment has no `UnitGUID` or `UnitName`, so secure
   code cannot tell which nameplate belongs to a row. Nameplate AddOns only
@@ -384,6 +423,13 @@ module only after the author agrees its behavior.
   says once in chat to install Dyre's Sounds.
   WTF passes `missingSounds = WTF.ReportMissingSounds` to `Initialize`, so the
   shield sound and the chimes and Nightfall share one line (author-approved: one per AddOn).
+- Version 9 (with MTF, WTF, and DSU; coordinator-approved): `Initialize`'s
+  host table takes an optional `layout = {register(frame, save),
+  beginDrag(frame), endDrag(frame)}`; with it the ring registers, drags,
+  snaps, and saves through the host's layout, else it moves itself as
+  before. WTF passes Dyre's Toolkit's `RegisterMovable`, `BeginDrag`, and
+  `EndDrag` only when it uses the toolkit (`WTF.toolkit`); without it, no
+  layout.
 
 ### Demon Armor reminder (built)
 
@@ -406,26 +452,43 @@ module only after the author agrees its behavior.
   cast through mouseover, as "! Fear" does, still counts and marks); a
   recast on the same mob keeps its row. A row goes when the mob dies, after the longest such spell plus 5 s
   (Fear 20, Banish 30), or never when the cast fails.
-- A raid marker per spell when the cast succeeds (Control page; Banish
-  moon by default; author-approved: single-target control only, one marker
-  slot in a group, so Fear never marks and has no marker setting). %M puts
-  its chat code in the message ("{moon}"). An earlier default diamond moves
-  to the moon once (`markersVersion`). SetRaidTarget toggles: a unit that already has the marker loses it (the
-  pinned /tm source; its "!" prefix skips an equal marker). GetRaidTargetIndex
-  is secret to AddOn code in combat, so the mark is skipped when the index is
-  readable and equal, or, unreadable, when this AddOn marked that mob (by GUID)
-  already. The mark goes on your target or focus when it is the mob, as
-  TankHelper marks `TARGET`. A player's own `/tm` macro would clash in combat
-  (the AddOn cannot see that mark), so the README says to turn the AddOn's
-  marking off when using one.
+- A raid marker per spell (Control page; Banish moon by default;
+  author-approved: single-target control only, one marker slot in a group, so
+  Fear never marks and has no marker setting). An earlier default diamond
+  moves to the moon once (`markersVersion`).
+- WTF never calls SetRaidTarget (author-approved, found in client): MTF's
+  call, with the same out-of-combat guard WTF had, raised
+  "[ADDON_ACTION_FORBIDDEN] AddOn 'MageToolsForever' tried to call the
+  protected function 'SetRaidTarget()'" (BugGrabber, 4x, from Mark() in
+  OnCastSucceeded; the taint log agrees), so AddOn code may not call it even
+  out of combat. The exact rule is unknown (TankHelper's direct call on an
+  unmarked target from a C_Timer callback works); do not try to work around
+  it. In combat it also showed the "blocked from an action only available to
+  the Blizzard UI" popup (pinned RaidMarkersDocumentation: HasRestrictions).
+- Markers come only from the game's `/tm` (author-approved, as MTF): a
+  macro's `/tm` runs untainted from the key press (pinned SlashCommands.lua),
+  so it works in and out of combat. "! Banish" has `/tm
+  [@focus,harm,nodead,exists] !N` after its focus line, and the Banish row
+  click marks the unit it casts on (`@focus`, then `@target`) before each cast
+  (`WTF.MarkLine`, `WTF.RecastMacro`); N is the Banish marker setting, and
+  None leaves the line out. "!" keeps a second press from toggling it off. A
+  marker change rebuilds the macros and clicks out of combat. "! Fear" and
+  "! Seduction" (no marker setting) have no `/tm`. Banish cast from the plain
+  spell button gets no marker. %M names the marker ("{moon}") only for a cast
+  sent within 0.5 s of a row click (the click slot's PreClick); WTF cannot
+  know that "! Banish" or the spell button cast it, so then %M is empty. A
+  player's own `/tm` macro without "!" toggles the marker WTF's macro set, so
+  the README says to set the marker to None when using one.
 - Click to recast, Banish only (author-approved: single-target control
   follows the focus): each row has a fixed secure click slot under it
-  (`WarlockToolsForeverControlClick1`..5) with `/cast [@focus,harm,nodead]
+  (`WarlockToolsForeverControlClick1`..5) with `/use [@focus,exists,harm,nodead]
   Banish`, `/stopmacro [@focus,exists]`, then by name: `/cleartarget`,
-  `/targetexact <mob>`, `/cast [@target,harm,nodead] Banish`,
+  `/targetexact <mob>`, `/use [@target,harm,nodead] Banish`,
   `/targetlasttarget`; set only out of combat: at cast start for a pull, else
   when combat ends. A slot shows only while it has a click (or while
-  unlocked, to drag by). Fear rows have no click (author-approved): a secure
+  unlocked, to drag by). A secure slot cannot hide in combat, so a row whose
+  mob died or whose cast failed in combat stays on screen, dimmed, while its
+  slot still shows: no click area is ever invisible (MTF had one). Fear rows have no click (author-approved): a secure
   macro can aim only at a unit token or a name, never at a GUID (the
   restricted environment has no UnitGUID), tokens move in combat, and juggled
   mobs share names. Rows find their mob through focus, target, then its
@@ -437,25 +500,76 @@ module only after the author agrees its behavior.
   range may get another plate and token, and the engine shows its real time
   left). Clicking the plate targets the mob.
 - Macros (author-approved, after the author's own, `control.macros`):
-  "! Fear" once you know Fear, the author's juggling macro: `/cast
-  [@mouseover,harm,nodead][harm,nodead] Fear` (no focus: a focus holds one
-  mob; hover a feared mob's nameplate as its timer ends); "! Banish" once you know Banish and "! Seduction" once your summoned demon
+  "! Fear" once you know Fear, the author's juggling macro (author-approved):
+  `/focus [mod:shift,@mouseover,harm,nodead][mod:shift,harm,nodead]` then
+  `/use [@focus,exists,harm,nodead][@mouseover,harm,nodead][harm,nodead]
+  Fear`: with Shift the mob under the mouse, else the target, becomes the
+  focus; the cast goes to the focus first if there is one, else the
+  mouseover, such as a feared mob's nameplate as its timer ends, else the
+  target. A plain press never changes the focus. No /tm, as Fear has no
+  marker setting; "! Banish" once you know Banish and "! Seduction" once your summoned demon
   knows Seduction (a Grimoire teaches it; the pet spellbook, by ID or by name,
   so a Succubus or an Incubus counts; checked on `UNIT_PET` and
   `SPELLS_CHANGED`; the macro stays when the demon is dismissed; per the
   author, a learned Grimoire teaches both the Succubus and the Incubus): `#showtooltip`, `/focus [@mouseover,harm,nodead]
-  [nocombat,harm,nodead]`, `/cast [@focus,harm,nodead] <spell>` (Seduction
-  with `pet:Succubus/Incubus`, so it does nothing without one). They do not
-  `/tm`: WTF marks on landing, and a second mark would toggle it off (the
-  pinned /tm source: SetRaidTarget toggles; "!" skips an equal marker).
+  [nocombat,harm,nodead]`, `/use [@focus,exists,harm,nodead] <spell>` (Seduction
+  with `pet:Succubus/Incubus`, so it does nothing without one). "! Banish"
+  also has its `/tm` line (see the marker rules above); the others have none.
   Written with Stones' macro writer, out of combat; off deletes them.
 - Group messages as the cast starts (Announce page, `WTF.SendGroupAnnouncement`,
   the Announce channel, nothing alone, at most every 3 s per spell): Fear,
   Banish, Enslave Demon, and Howl of Terror (no target).
 
+### Dyre's Toolkit (built; author-approved, 2026-10-19)
+
+- Dyre's Toolkit (`src/DyresToolkit`, owned by the coordinating session; do
+  not edit it, send needs there) gives every Dyre's AddOn one layout mode,
+  grid, snapping across AddOns, and the "Dyre's AddOns" settings home. The
+  TOC lists `DyresToolkit` in `## OptionalDeps` (never `## Dependencies`) and
+  `## Group: DyresToolkit`, so WTF nests under it in the AddOn list;
+  CurseForge has it as a required dependency (`dyres-toolkit` in
+  `RELATIONS`).
+- Core's `WTF.Toolkit()` returns `DyresToolkit.RequireContract(1)` when every
+  function WTF uses is there (`RegisterAddOn`, `RegisterSettingsCategory`,
+  `RegisterMovable`, `BeginDrag`, `EndDrag`, `ScaleKeepingCenter`,
+  `IsLocked`, `Lock`, `Unlock`, `OpenSettings`), else nil and "missing" or
+  "old". At login, before any module registers a frame, Core points
+  `WTF.RegisterMovable`, `WTF.BeginDrag`, `WTF.EndDrag`, and
+  `WTF.ScaleKeepingCenter` at the toolkit's and copies its lock (locked at
+  login) into WTF's lock flags. After the settings exist, WTF calls
+  `RegisterAddOn` with `setLocked` (`WTF.SetFramesLocked(locked, true)`: the
+  same flags and refreshes, no chat line, since the toolkit says one for all)
+  and `openSettings` (`WTF.OpenSettings`, through the toolkit's
+  `OpenSettings`, which refuses in combat).
+- With the toolkit, `/wtf unlock` and `/wtf lock` call the toolkit's
+  `Unlock`/`Lock`; WTF's pages have no unlock or grid switch (author-approved:
+  the toolkit's page has them for every AddOn; `db.grid` stays), and WTF
+  draws no grid; WTF's page is
+  `RegisterSettingsCategory("Warlock Tools Forever")` with every WTF page
+  under it, and no `RegisterAddOnCategory`. If it returns nil, WTF makes its
+  own top-level page.
+- Without it (or with an older one), WTF works as before: Layout.lua, WTF's
+  grid, its top-level page, and its own lock messages, and it says once at
+  login to install (or update) Dyre's Toolkit, naming only CurseForge.
+- The shield display (Shield.lua, shared byte-identical, version 9) gets the
+  toolkit's layout through `Initialize`'s `layout` field, so the ring snaps
+  with the other frames too; any change to Shield.lua goes through the
+  coordinator.
+
+### Macro text (author-approved)
+
+- Every macro and click macrotext WTF writes uses `/use`, not `/cast` (every
+  letter counts): the pinned SlashCommands.lua `/use` handler tries an item
+  (SecureCmdItemParse, C_Item.GetItemInfo(name)), else CastSpellByName, so
+  it casts spells. No spell WTF names is an item's name; a new spell whose
+  name is also an item's keeps `/cast` on its line. Every `@focus` condition
+  has `exists` (author: focus conditions need it), as in
+  `[@focus,exists,harm,nodead]`; the `/tm` lines use `[@focus,harm,nodead,exists]`.
+
 ### Magnetic frames (built)
 
-- Layout.lua (author-approved, MTF's snapping improved): every movable WTF
+- Layout.lua (author-approved, MTF's snapping improved; used only without
+  Dyre's Toolkit, whose layout has the same rules): every movable WTF
   frame registers a save function; while unlocked, a frame dropped within 24
   units of a spot beside another shown frame snaps there, 20 apart, lined up
   by tops, centers, or bottoms (lefts, centers, or rights when stacked),
@@ -532,8 +646,11 @@ general frameworks, or speculative modules without agreement.
 - The project uses the MIT License. The public author name is `Dyre` (TOC
   `## Author`, login banner, listings); LICENSE keeps the legal name, John
   Bedworth, and the release builder requires that exact notice.
-- The TOC uses `## Category: Warlock`; keep it identical to the CurseForge main
-  category, because the in-game AddOn list groups by exact text.
+- The TOC has `## Group: DyresToolkit`, so the in-game AddOn list nests WTF
+  under Dyre's Toolkit with the rest of the family. It keeps
+  `## Category: Warlock`, which groups WTF only when the toolkit is missing;
+  keep it identical to the CurseForge main category, since the list groups by
+  exact text.
 - WTF ships no runtime assets beyond the shield display's three crescent
   textures, and no sound files; add none without agreement.
 - Git origin: git@github.com:jbedworth/WarlockToolsForever.git. Inspect Git
@@ -541,10 +658,10 @@ general frameworks, or speculative modules without agreement.
 
 ## Client and API verification
 
-- Target: Forever beta 1.60.1, build 70338, Interface 16001, Lua 5.1. Pin source
-  review to Gethe/wow-ui-source commit
-  `943764493e6b16d63ded3ab304150d1f05e58b57`. Treat target-client documentation
-  and FrameXML as authoritative; Retail and Classic examples are references only.
+- Target: Forever beta 1.60.1, build 70450, Interface 16001, Lua 5.1 (the
+  client WTF is tested on). Pin source review to Gethe/wow-ui-source commit
+  `943764493e6b16d63ded3ab304150d1f05e58b57`, which is the 70338 source.
+  Treat target-client documentation and FrameXML as authoritative; Retail and Classic examples are references only.
 - Do not gate the runtime on client version, build, or Interface. Gate only on
   required APIs and the Warlock class.
 - The target client has Midnight's secret values and AddOn restrictions

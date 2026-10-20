@@ -8,7 +8,8 @@ the automated test method, and the in-client checklist.
 
 1. **Pinned source review.** Client behavior is read from Blizzard's FrameXML
    and generated API documentation at Gethe/wow-ui-source commit
-   `943764493e6b16d63ded3ab304150d1f05e58b57` (`1.60.1.70338`). Source
+   `943764493e6b16d63ded3ab304150d1f05e58b57` (`1.60.1.70338`; the client is
+   tested on build 70450, with the same Interface 16001). Source
    establishes declared APIs, templates, and code paths, not operational behavior.
 2. **Automated mock tests.** `tests/run.lua` exercises commands, saved settings,
    the shard limit and deletion rules, diagnostics, and the settings pages
@@ -31,10 +32,12 @@ the automated test method, and the in-client checklist.
   version, the class, and the APIs; prints one banner; reports another AddOn's
   `/wtf` registration once; then calls `WTF.InitializeShards` and
   `WTF.InitializeOptions` directly, so startup never depends on event order.
-- Shards scans carried bags on `BAG_UPDATE_DELAYED` and compares stack counts
-  per slot with the previous scan. Gains inside a creation window queue
-  deletions, at most the excess over the limit and at most the gained amount.
-  `ITEM_LOCK_CHANGED` and `CURSOR_CHANGED` retry queued deletions.
+- Shards counts carried shards on `BAG_UPDATE_DELAYED` and keeps a keep
+  count: the count at login, raised to the count by rises outside a creation
+  window, raised only up to the limit by rises inside one, and lowered by
+  drops (a shard moved to another slot changes nothing). On a key press or
+  world click, while the count is above the limit and the keep count, one
+  shard is deleted; the next waits for a bag scan that shows it (2 s at most).
 - Stones requires `C_SpellBook.IsSpellKnown`, `C_Item.GetItemCount`, and
   `C_Item.GetItemInfo`; without them Stones stays off with one message and the
   rest of WTF runs. Secure attributes and bar visibility change only out of
@@ -160,7 +163,8 @@ the automated test method, and the in-client checklist.
   is on. WTF's secure buttons set `useOnKeyDown` to false, as RestedXP does,
   yet `/click` macros still did nothing, for any AddOn button: on Forever
   `/click` does not press AddOn buttons. WTF writes stone macros with the
-  game's own `/use` and `/cast` instead, as Consumable Connoisseur does.
+  game's own `/use` instead (it casts spells too), as Consumable Connoisseur
+  does.
 - The Healthstone gift whisper went out as the trade window opened, and the
   Soulstone whisper reached the target.
 - An emote sent from Create Soulstone's `UNIT_SPELLCAST_SUCCEEDED` was
@@ -246,8 +250,14 @@ and printing.
       combat spell, so the shard may arrive just before or just after combat
       ends; `debug_shards` shows when it arrived.
 - [ ] Finish one mob with Drain Soul while another mob still attacks you, so
-      the shard arrives in combat: it goes on your next key press, or on the
-      first key press after combat if the client refuses in combat.
+      the shard arrives in combat: nothing is picked up or deleted in
+      combat, and it goes on the first key press after combat. In a dungeon
+      boss fight (Encounter restriction) the same: no ADDON_ACTION_BLOCKED in
+      BugGrabber, and `/wtf debug_shards` shows `restricted=true` and a
+      recent `held=` during the fight.
+- [ ] A Warlock who has not learned Siphon Life (or a curse): learn a new
+      rank of a DoT you know, in and out of combat: no "aura slot ... was not
+      found" error in BugGrabber, and the tracker shows the new rank.
 - [ ] Typing in chat, movement keys, and key bindings all still work with WTF
       loaded (the key hook passes every key on).
 - [ ] The shard counter shows your count, red at or below the Low shard warning and
@@ -256,6 +266,21 @@ and printing.
       `/wtf reset` it; its place survives `/reload`.
 - [ ] Move shards from the bank above the limit: none are deleted. Then Drain
       Soul once: only the new shard is deleted.
+- [ ] With a full soul bag (so new shards land in an ordinary bag), finish two
+      mobs with Drain Soul, also with the second in combat: each new shard is
+      deleted from the ordinary bag on a key press (in combat, or on the first
+      key press after combat), and `/wtf debug_shards` shows `blocked=false`
+      and `lastAttempt=deleted`. If deletion stops, the red warning and
+      `debug_shards` (`stopped=`, `lastAttempt=`) name why.
+- [ ] With a full soul bag, a long Drain Soul that creates two shards on one
+      kill: both are deleted (two "Deleted a Soul Shard" lines, one per key
+      press or click), and `/wtf shards` shows your limit. `/wtf debug_shards`
+      lists both as "deleted ... count=16 keep=14 limit=14" and "count=15".
+- [ ] Carry 16 shards with a 14 limit by moving 2 in from the bank: none are
+      deleted (`keep=16`). Use a shard (for example create a Healthstone):
+      `keep=15`. Lower the manual limit: nothing is deleted.
+- [ ] Move a shard between bags while Drain Soul channels: nothing is deleted
+      and `debug_shards` logs no gain for it.
 - [ ] Hold an item on the cursor while a shard is created: nothing is deleted
       until the cursor is empty, and the held item is never deleted.
 - [ ] `/wtf shards` matches the bag contents; settings survive `/reload` and
@@ -316,15 +341,19 @@ and printing.
       in chat.
 - [ ] Control bar: Fear two mobs and Banish a third: a row each, draining,
       following the mobs as you tab, empty when one breaks, gone when it
-      dies. Banish puts the moon on its mob; Fear marks nothing. Each feared
+      dies. "! Banish" and a row click put the moon on the mob; Banish from
+      the spell button and Fear mark nothing. Each feared
       mob's nameplate shows a draining Fear timer, also after it leaves plate
-      range and comes back. "! Fear" Fears the mob whose nameplate you
-      hover, else your target. "! Banish", and "! Seduction" (only once your Succubus or Incubus has its
+      range and comes back. "! Fear" Fears your focus if you have one
+      (also while you hover another mob), else the mob whose nameplate you
+      hover, else your target. Shift+press while hovering a mob: it becomes
+      your focus and is feared. A plain press afterwards keeps that focus. "! Banish", and "! Seduction" (only once your Succubus or Incubus has its
       Seduction Grimoire; check both demons, and `/wtf debug_control` for the
       pet family and seduction=true)
       focus the mob under the mouse and cast on it; Seduction does nothing
       with another pet. A Banish row's click banishes the focus. In a party, each
-      cast starts with its group message (Banish with {moon} as an icon). Fear a mob
+      cast starts with its group message (Banish with {moon} as an icon only
+      after a row click). Fear a mob
       before the pull, then click its row in combat after it breaks: it
       recasts on that mob and returns to your target; with the mob gone,
       nothing is cast. `/wtf debug_control` lists the IDs (check Forever's).
@@ -361,6 +390,24 @@ and printing.
 - [ ] With Dyre's Cooldown Chimes still enabled (with or without DBR): the
       settings name Dyre's Cooldown Chimes and `/dcc`, and WTF plays no
       chimes.
+- [ ] Every WTF macro and row click works with `/use`: "! Healthstone" and
+      "! Soulstone" (left-click uses, right-click creates the rank), "! Fear",
+      "! Banish", "! Seduction", a pinned DoT slot click on the target and on
+      the focus, and a Banish row click. With no focus, the focus row stays
+      hidden and "! Banish" does nothing.
+- [ ] Banish a mob from the plain spell button, in and out of combat: no
+      "blocked from an action" popup, no ADDON_ACTION_FORBIDDEN in BugGrabber
+      or the taint log, no marker, and the group message has no {moon}.
+- [ ] In combat, "! Banish" on a mob under the mouse: the moon appears, no
+      popup; press it again: the moon stays. Click a Banish row in combat:
+      the mob it recasts on gets the moon, and the group message has {moon}.
+      Out of combat the same. Set the Banish marker to Skull out
+      of combat: "! Banish" says `!8`; set it to None: the macro has no `/tm`
+      line.
+- [ ] Banish a mob, then kill it in combat: its row stays, dimmed, while its
+      click slot is there, and both go when combat ends. Locked, click on the
+      world through the DoT tracker rows and the Control bar's empty area:
+      the clicks reach the world.
 - [ ] Shield display: Shadow Ward and Sacrifice fill the crescent, each icon
       in its own spot; with MTF installed too, the display shows on both a
       Warlock and a Mage. A Blessing of Protection from a Paladin, also in
@@ -370,9 +417,29 @@ and printing.
       the shard counter and show sample tracker rows; all three drag; unticking
       or `/wtf lock` locks them, and the switch and commands stay in step;
       `/wtf reset` puts them back; their places survive `/reload`.
+- [ ] With Dyre's Toolkit enabled: no "Install Dyre's Toolkit" line at
+      login; the AddOn list shows WTF in the Dyre's AddOns group; the
+      settings show Dyre's AddOns > Warlock Tools Forever with WTF's pages
+      under it, and no WTF unlock or grid switch on any WTF page; `/wtf` opens WTF's page (in combat it
+      says it opens after combat). `/wtf unlock`, `/dyre unlock`, the minimap
+      button, and the toolkit's Unlock frames switch each unlock every
+      Dyre's AddOn's frames
+      with one "Dyre:" chat line and no "WTF:" line; one grid shows (the
+      toolkit's); a WTF frame dropped near another Dyre's AddOn's frame snaps
+      to it; with Snap to the grid on, it snaps to the grid; the shield ring
+      (unlocked) snaps to the other frames too; Shift-drag moves a snapped
+      group across AddOns; the Demon Armor icon resizes with the
+      mouse wheel; `/wtf lock` locks them all; places survive `/reload`;
+      frames start locked after `/reload`. No taint in combat.
+- [ ] Without Dyre's Toolkit (disable it): one chat line at login says to
+      install it from CurseForge; WTF's own top-level page, unlock, and grid
+      work as before; positions saved with the toolkit are kept.
 - [ ] Target a lower-level party member and left-click the Healthstone button:
       with a stone they can use, a trade opens with it in the window; without
       one, it is created, and the next left-click trades it. WTF never accepts.
+- [ ] In a dungeon during a boss fight (or in combat), the Healthstone trade:
+      no ADDON_ACTION_BLOCKED; the stone goes in at the first key press after
+      the restriction ends, or WTF says once to drag it in yourself.
 - [ ] Soulstone a party member: `/wtf stones` names them; 30 minutes later a
       chat line says it ended. With no Soulstone up or no Healthstone, a
       reminder after a fight, at most every 10 minutes; the switches stop them.

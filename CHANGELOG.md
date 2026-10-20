@@ -4,6 +4,25 @@ Player-facing changes for each Warlock Tools Forever release, newest first. The
 release builder copies the section for the TOC version into the GitHub release
 notes and the CurseForge changelog, and fails if that section is missing.
 
+## 0.3.4-beta
+
+- With **Dyre's Toolkit** installed, WTF joins one layout mode for all of Dyre's AddOns: `/wtf unlock`, `/dyre unlock`, or the toolkit's minimap button unlock every Dyre's AddOn's frames at once, WTF's frames (the shield ring too) snap to theirs, and the toolkit's grid (with Snap to the grid) shows.
+- With Dyre's Toolkit, WTF's settings move under **Options > AddOns > Dyre's AddOns > Warlock Tools Forever**, and the game's AddOn list shows WTF in the Dyre's AddOns group. The CurseForge app installs Dyre's Toolkit with WTF.
+- With Dyre's Toolkit, WTF's settings have no unlock or grid switch of their own: use **Unlock frames** on the Dyre's AddOns page, the minimap button, or `/wtf unlock`.
+- Without Dyre's Toolkit, WTF works as before and says once in chat to install it from CurseForge.
+- Soul Shards: with a full soul bag, extra shards from Drain Soul could stay in your bags: shard deletion stopped after one failed try, and when one kill created two shards, one could be missed. WTF now remembers how many shards you keep (the ones you had and the ones you moved in, but created ones only up to your limit) and deletes every new shard above it, one per key press or click, also one it missed before. A try that picks up nothing, or one the game refuses just after combat, waits for your next key press.
+- Soul Shards: moving a shard to another bag slot while Drain Soul channels no longer counts as a new shard, so it is never deleted.
+- Control bar: no more "Warlock Tools Forever has been blocked from an action only available to the Blizzard UI", and no more blocked-action errors for SetRaidTarget. The game does not let AddOns set raid markers, so WTF no longer marks a mob itself.
+- WTF's macros and clicks use `/use` instead of `/cast` (shorter; it casts spells the same way), and every focus condition checks that you have a focus.
+- The "! Fear" macro now Fears your focus first when you have one, then the mob under your mouse, then your target. Hold Shift as you press it to make the mob under your mouse (or your target) your focus first; a plain press keeps your focus.
+- The "! Banish" macro and clicking a Banish row now mark the mob with the game's `/tm`, in and out of combat: your Banish marker (the moon by default; None leaves it out). Pressing it again never takes the marker off. Banish from its plain spell button gets no marker. The group message names the marker after a row click only.
+- Control bar: when a Banished mob dies in combat, its row now stays on screen, dimmed, until combat ends, so its click area is never invisible.
+- DoT tracker: while frames are locked, clicks pass through the tracker rows to the world; the spell slots on your target and focus rows still recast.
+- Soul Shards: no more "Warlock Tools Forever tried to call the protected function" errors from shard deletion. The game refuses AddOn item deletion in combat and during boss fights and other restricted content, so WTF waits and deletes the extra shards on your first key press or click after.
+- Healthstone trading: while the game restricts AddOns (combat, boss fights, and other restricted content), WTF no longer tries to move the stone, so no blocked-action errors; it puts the stone in at your next key press, or tells you to drag it in.
+- DoT tracker: no more "aura slot 'siphon' was not found" errors when you learn a new spell rank without knowing Siphon Life (or another tracked spell).
+- `/wtf debug_shards` and `/wtf shards` now say why shard deletion stopped, and `/wtf debug_shards` lists each deletion with the shard count before it.
+
 ## 0.3.3-beta
 
 - With **Dyre's Buff Reminders** 0.3.0 or later installed, WTF plays no Nightfall sound of its own, so you do not hear it twice. Dyre's Buff Reminders now plays it with its proc sounds and copies your WTF Nightfall switch and sound the first time they run. WTF's Alerts page is greyed out and points you to `/dbr`; your WTF Nightfall settings stay as they are. With an older Dyre's Buff Reminders, WTF plays the Nightfall sound as before.

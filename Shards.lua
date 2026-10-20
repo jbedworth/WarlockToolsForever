@@ -3,6 +3,14 @@ local addonName, WTF = ...
 -- Soul Shard management: deletes shards that Drain Soul creates above the
 -- carried limit. Shards the user moves in (from the bank, mail, or trade) are
 -- never deleted, because they arrive outside a creation window.
+--
+-- The keep count (author-approved): the shards WTF must keep. It starts as the
+-- shards carried at login; a rise outside a creation window raises it to the
+-- new count, and a rise inside one raises it only up to the limit; any drop
+-- lowers it to the new count. While the bags hold more than the limit and more
+-- than the keep count, each key press or click deletes one shard. A created
+-- shard WTF could not delete at once therefore still goes later, and two
+-- shards arriving together are both deleted, however the client reports them.
 local SOUL_SHARD_ITEM_ID = 6265
 -- Bit in GetContainerNumFreeSlots' bagFamily that marks a soul bag.
 local SOUL_BAG_FAMILY = 4
@@ -17,6 +25,14 @@ local SHARD_SOURCES = {
     {id = 17877, window = 9},  -- Shadowburn
 }
 local GAIN_LOG_SIZE = 10
+local DELETION_LOG_SIZE = 10
+-- Inputs on which a pickup may take nothing (the item still settling) before
+-- WTF skips that slot; the shard stays.
+local MAX_PICKUP_MISSES = 3
+-- After a deletion, the next waits until a bag scan shows the count dropped,
+-- so a stale count never deletes below the limit; this long at most, in case
+-- the client reports no change.
+local SETTLE_TIMEOUT = 2
 -- The shard counter: a movable Soul Shard icon with your count.
 local COUNTER_SIZE = 40
 -- The icon is dimmed and the number enlarged so red and green read on the
@@ -37,19 +53,24 @@ local REQUIRED_CONTAINER = {
 local REQUIRED_GLOBALS = {"GetCursorInfo", "ClearCursor", "DeleteCursorItem", "GetTime", "InCombatLockdown"}
 
 local state = {
-    slots = {},
+    count = 0,
+    keep = 0,
+    settling = nil,
+    misses = {},
+    deletions = {},
     sourceWindows = {},
     channeling = false,
     windowEnd = 0,
-    pending = {},
     blocked = false,
-    combatBlocked = false,
+    heldAt = nil,
     deleting = false,
     refused = false,
     processing = false,
     secretCasts = false,
     gains = {},
     lastSpell = nil,
+    stopReason = nil,
+    lastAttempt = nil,
 }
 
 function WTF.CheckShardCapabilities()
@@ -159,32 +180,21 @@ local function SourceWindow(spellID)
     return name and state.sourceWindows[name]
 end
 
+-- When the client refuses AddOn item deletion, also from a key press
+-- (WTF.MoveRestricted in Core; found in client: DeleteCursorItem raised
+-- ADDON_ACTION_BLOCKED in a dungeon, BugGrabber 6x): WTF neither picks up nor
+-- deletes a shard then; the keep count leaves it for the first input after.
+local function DeletionRestricted()
+    return WTF.MoveRestricted()
+end
+
 local function InCreationWindow()
     return state.channeling or GetTime() <= state.windowEnd
 end
 
--- New shards per slot, comparing the last scan with this one.
-local function FindGains(before, after)
-    local gains = {}
-    for key, stack in pairs(after) do
-        local previous = before[key] and before[key].count or 0
-        if stack.count > previous then
-            gains[#gains + 1] = {bag = stack.bag, slot = stack.slot, amount = stack.count - previous}
-        end
-    end
-    table.sort(gains, function(a, b)
-        if a.bag ~= b.bag then
-            return a.bag < b.bag
-        end
-        return a.slot < b.slot
-    end)
-    return gains
-end
-
 local function LogGain(amount, count, created)
     local entry = {time = GetTime(), amount = amount, count = count, created = created,
-        combat = InCombatLockdown(),
-        spell = state.lastSpell}
+        combat = InCombatLockdown(), keep = state.keep, spell = state.lastSpell}
     table.insert(state.gains, 1, entry)
     state.gains[GAIN_LOG_SIZE + 1] = nil
 end
@@ -194,7 +204,7 @@ local function StopDeleting(reason)
         return
     end
     state.blocked = true
-    state.pending = {}
+    state.stopReason = reason
     WTF.Warn("Soul Shard deletion stopped: " .. reason
         .. ". It stays off until you /reload.")
 end
@@ -203,10 +213,25 @@ local function CursorEmpty()
     return GetCursorInfo() == nil
 end
 
+-- The number of shards WTF keeps now: the keep count, and never below the limit.
+local function KeepNow()
+    return math.max(state.keep, (WTF.GetShardLimit()))
+end
+
+local function Settling()
+    local settling = state.settling
+    return settling ~= nil and GetTime() < settling.untilTime
+end
+
 -- Deletes one shard from a slot. Picks up exactly one, checks the cursor holds
 -- a shard, and puts anything unexpected back. Returns "deleted", "blocked"
--- (the client refused; the shard is back), or "unexpected".
-local function DeleteOne(bag, slot)
+-- (the client refused; the shard is back), "missed" (the pickup took nothing,
+-- so nothing changed), "held" (restricted: nothing picked up or deleted), or
+-- "unexpected". The restriction is checked again at each call.
+local function DeleteOne(bag, slot, count)
+    if DeletionRestricted() then
+        return "held"
+    end
     local info = ShardStack(bag, slot)
     if info.stackCount > 1 then
         C_Container.SplitContainerItem(bag, slot, 1)
@@ -214,65 +239,107 @@ local function DeleteOne(bag, slot)
         C_Container.PickupContainerItem(bag, slot)
     end
     local kind, itemID = GetCursorInfo()
+    if kind == nil then
+        return "missed"
+    end
     if kind ~= "item" or itemID ~= SOUL_SHARD_ITEM_ID then
         ClearCursor()
         return "unexpected"
     end
+    if DeletionRestricted() then
+        ClearCursor()
+        return "held"
+    end
+    -- Set first: the client may report the bags before DeleteCursorItem returns.
+    state.settling = {expected = count - 1, untilTime = GetTime() + SETTLE_TIMEOUT}
     -- Blocked-action events name WTF for any blocked call, so only those raised
     -- during the deletion itself count against it.
     state.deleting, state.refused = true, false
     DeleteCursorItem()
     state.deleting = false
     if state.refused or not CursorEmpty() then
+        state.settling = nil
         ClearCursor()
         return "blocked"
     end
     return "deleted"
 end
 
--- Works through queued deletions while the carried count is above the limit.
--- The client deletes items only during a hardware event (a key press or a
--- click), so this runs from WTF's input hooks, never from game events. It waits
--- for an empty cursor and unlocked items. If the client refuses in combat, the
--- rest waits for input after combat; a refusal out of combat stops deletion.
--- Cursor events fire while a deletion is under way, so calls never nest.
-local function ProcessPending()
-    if state.processing or state.blocked or (state.combatBlocked and InCombatLockdown()) then
-        return
-    end
-    state.processing = true
-    while #state.pending > 0 do
-        local entry = state.pending[1]
-        local info = ShardStack(entry.bag, entry.slot)
-        if not info or WTF.CountShards() <= WTF.GetShardLimit() then
-            table.remove(state.pending, 1)
-        elseif info.isLocked or not CursorEmpty() then
-            break
-        else
-            local result = DeleteOne(entry.bag, entry.slot)
-            if result == "deleted" then
-                table.remove(state.pending, 1)
-                if WTF.db.shards.report then
-                    WTF.Report(string.format("Deleted a Soul Shard above your limit of %d.",
-                        WTF.GetShardLimit()))
+-- The slot to delete from: an unlocked shard outside the soul bags first (it
+-- frees ordinary bag space), the last one in bag order; slots whose pickups
+-- kept taking nothing are skipped.
+local function DeletionSlot()
+    local found, foundSoul
+    for bag = BACKPACK, LastCarriedBag() do
+        local soul = bag ~= BACKPACK and SoulBagFamily(bag)
+        for slot = 1, C_Container.GetContainerNumSlots(bag) do
+            local info = ShardStack(bag, slot)
+            if info and not info.isLocked and (state.misses[bag .. ":" .. slot] or 0) < MAX_PICKUP_MISSES then
+                if soul then
+                    foundSoul = {bag = bag, slot = slot}
+                else
+                    found = {bag = bag, slot = slot}
                 end
-            elseif result == "blocked" and InCombatLockdown() then
-                state.combatBlocked = true
-                break
-            else
-                StopDeleting(result == "blocked" and "the client blocked it"
-                    or "the cursor did not hold one Soul Shard, so nothing was deleted")
-                break
             end
         end
     end
+    return found or foundSoul
+end
+
+local function LogDeletion(bag, slot, count, keep)
+    table.insert(state.deletions, 1, {time = GetTime(), bag = bag, slot = slot, count = count, keep = keep,
+        limit = (WTF.GetShardLimit())})
+    state.deletions[DELETION_LOG_SIZE + 1] = nil
+end
+
+-- Deletes one shard while the carried count is above the limit and the keep
+-- count. The client deletes items only during a hardware event (a key press or
+-- a click), so this runs from WTF's input hooks, never from game events: one
+-- shard per input, once the bags have settled after the last one. It waits for
+-- an empty cursor and unlocked items, and does nothing while deletion is
+-- restricted (DeletionRestricted). A refusal anyway waits like one in combat
+-- when a restriction began meanwhile; otherwise it stops deletion. A pickup that
+-- takes nothing waits for the next input. Cursor events fire while a deletion
+-- is under way, so calls never nest.
+local function ProcessDeletions()
+    if state.processing or state.blocked or not WTF.db.shards.enabled or Settling() then
+        return
+    end
+    if DeletionRestricted() then
+        state.heldAt = GetTime()
+        return
+    end
+    local count, keep = WTF.CountShards(), KeepNow()
+    if count <= keep or not CursorEmpty() then
+        return
+    end
+    local target = DeletionSlot()
+    if not target then
+        return
+    end
+    state.processing = true
+    local result = DeleteOne(target.bag, target.slot, count)
     state.processing = false
+    state.lastAttempt = {time = GetTime(), result = result, combat = InCombatLockdown(),
+        restricted = DeletionRestricted(), count = count, keep = keep}
+    if result == "deleted" then
+        LogDeletion(target.bag, target.slot, count, keep)
+        if WTF.db.shards.report then
+            WTF.Report(string.format("Deleted a Soul Shard above your limit of %d.", WTF.GetShardLimit()))
+        end
+    elseif result == "held" or (result == "blocked" and DeletionRestricted()) then
+        state.heldAt = GetTime()
+    elseif result == "missed" then
+        local key = target.bag .. ":" .. target.slot
+        state.misses[key] = (state.misses[key] or 0) + 1
+    else
+        StopDeleting(result == "blocked" and "the client blocked it"
+            or "the cursor did not hold one Soul Shard, so nothing was deleted")
+    end
 end
 
 local function OnInput()
-    if #state.pending > 0 then
-        ProcessPending()
-    end
+    ProcessDeletions()
 end
 
 local counter
@@ -371,32 +438,27 @@ function WTF.ResetShardCounterPosition()
     end
 end
 
+-- Only a rise in the carried count is a gain: a shard that moves to another
+-- slot (yours, or one the client puts back after a refused deletion) adds to
+-- that slot but is no new shard. Rises and drops move the keep count.
 local function OnBagsChanged()
-    local slots, count = Scan()
-    local gains = FindGains(state.slots, slots)
-    state.slots = slots
+    local count = WTF.CountShards()
+    local change = count - state.count
+    state.count = count
+    if state.settling and count <= state.settling.expected then
+        state.settling = nil
+    end
     WTF.RefreshShardCounter()
-    if #gains > 0 then
+    if change > 0 then
         local created = InCreationWindow()
-        local amount = 0
-        for _, gain in ipairs(gains) do
-            amount = amount + gain.amount
+        if created and WTF.db.shards.enabled and not state.blocked then
+            state.keep = math.max(state.keep, math.min(count, (WTF.GetShardLimit())))
+        else
+            state.keep = math.max(state.keep, count)
         end
-        LogGain(amount, count, created)
-        local excess = count - WTF.GetShardLimit()
-        if created and WTF.db.shards.enabled and not state.blocked and excess > 0 then
-            -- Newest slots first; never more deletions than shards just created.
-            -- They go on the next key press or click.
-            for index = #gains, 1, -1 do
-                for _ = 1, gains[index].amount do
-                    if excess > 0 then
-                        state.pending[#state.pending + 1] = {bag = gains[index].bag,
-                            slot = gains[index].slot}
-                        excess = excess - 1
-                    end
-                end
-            end
-        end
+        LogGain(change, count, created)
+    elseif change < 0 then
+        state.keep = math.min(state.keep, count)
     end
 end
 
@@ -441,7 +503,8 @@ function WTF.InitializeShards()
     if next(state.sourceWindows) == nil then
         WTF.Report("Drain Soul was not found, so Soul Shard deletion stays off. Run /wtf debug_shards.")
     end
-    state.slots = Scan()
+    state.count = WTF.CountShards()
+    state.keep = state.count
     CreateCounter()
     WTF.RefreshShardCounter()
     WTF.AddInputHandler(OnInput)
@@ -461,8 +524,8 @@ function WTF.DebugDeleteShard()
     local function Report(text)
         WTF.Report("debug_delete " .. text)
     end
-    if InCombatLockdown() then
-        Report("works out of combat only.")
+    if DeletionRestricted() then
+        Report("works out of combat and outside AddOn restrictions only.")
         return
     end
     if not CursorEmpty() then
@@ -482,7 +545,7 @@ function WTF.DebugDeleteShard()
             end
         end
     end
-    local result = DeleteOne(last.bag, last.slot)
+    local result = DeleteOne(last.bag, last.slot, count)
     if result == "deleted" then
         Report(string.format("deleted one shard from bag %d slot %d; %d carried now.",
             last.bag, last.slot, WTF.CountShards()))
@@ -503,7 +566,7 @@ function WTF.ReportShardStatus()
     local limit, source = WTF.GetShardLimit()
     local deletion = WTF.db.shards.enabled and "on" or "off"
     if state.blocked then
-        deletion = "stopped until /reload"
+        deletion = "stopped until /reload (" .. tostring(state.stopReason) .. ")"
     end
     WTF.Report(string.format("Soul Shards: %d carried, limit %d (%s). Deletion is %s.",
         WTF.CountShards(), limit, LIMIT_SOURCES[source], deletion))
@@ -557,15 +620,26 @@ function WTF.ReportShardDebug()
     end
     local limit, source = WTF.GetShardLimit()
     WTF.Report(string.format(
-        "debug_shards count=%d limit=%d source=%s enabled=%s blocked=%s combatBlocked=%s channeling=%s secretCasts=%s pending=%d",
-        WTF.CountShards(), limit, source, tostring(WTF.db and WTF.db.shards.enabled),
-        tostring(state.blocked), tostring(state.combatBlocked), tostring(state.channeling),
-        tostring(state.secretCasts), #state.pending))
+        "debug_shards count=%d limit=%d keep=%d source=%s enabled=%s blocked=%s restricted=%s held=%s channeling=%s secretCasts=%s settling=%s",
+        WTF.CountShards(), limit, state.keep, source, tostring(WTF.db and WTF.db.shards.enabled),
+        tostring(state.blocked), tostring(DeletionRestricted()),
+        state.heldAt and string.format("%.1fs ago", GetTime() - state.heldAt) or "never", tostring(state.channeling),
+        tostring(state.secretCasts), tostring(Settling())))
     local now = GetTime()
+    local attempt = state.lastAttempt
+    WTF.Report(string.format("debug_shards stopped=%s lastAttempt=%s", tostring(state.stopReason),
+        attempt and string.format("%s %.1fs ago count=%d keep=%d combat=%s restricted=%s", attempt.result,
+            now - attempt.time, attempt.count, attempt.keep, tostring(attempt.combat),
+            tostring(attempt.restricted)) or "none"))
+    for _, deletion in ipairs(state.deletions) do
+        WTF.Report(string.format("debug_shards deleted %.1fs ago bag=%d slot=%d count=%d keep=%d limit=%d",
+            now - deletion.time, deletion.bag, deletion.slot, deletion.count, deletion.keep, deletion.limit))
+    end
     for _, gain in ipairs(state.gains) do
         local spell = gain.spell
-        WTF.Report(string.format("debug_shards gain %.1fs ago +%d count=%d created=%s combat=%s last=%s %s %.1fs before",
-            now - gain.time, gain.amount, gain.count, tostring(gain.created), tostring(gain.combat),
+        WTF.Report(string.format(
+            "debug_shards gain %.1fs ago +%d count=%d keep=%d created=%s combat=%s last=%s %s %.1fs before",
+            now - gain.time, gain.amount, gain.count, gain.keep, tostring(gain.created), tostring(gain.combat),
             spell and spell.event or "none", spell and spell.id or "-",
             spell and gain.time - spell.time or 0))
     end

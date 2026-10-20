@@ -156,6 +156,8 @@ class CurseForgeTests(unittest.TestCase):
         self.assertEqual(metadata, {"gameVersions": [12345], "releaseType": "beta",
                                    "changelog": notes, "changelogType": "markdown",
                                    "relations": {"projects": [{"slug": "dyres-sounds",
+                                                               "type": "requiredDependency"},
+                                                              {"slug": "dyres-toolkit",
                                                                "type": "requiredDependency"}]}})
         self.assertEqual(parts[1].get_filename(), self.archive.name)
         self.assertEqual(parts[1].get_content_type(), "application/zip")
@@ -190,10 +192,10 @@ class CurseForgeTests(unittest.TestCase):
                     self.publish()
                 self.assert_no_network()
 
-    def test_dyres_sounds_is_the_only_relation_and_required(self):
-        # Required, so the CurseForge app installs the sounds with WTF.
+    def test_dyres_sounds_and_toolkit_are_the_only_relations_and_required(self):
+        # Required, so the CurseForge app installs the sounds and the toolkit with WTF.
         projects = publisher.RELATIONS["projects"]
-        self.assertEqual([p["slug"] for p in projects], ["dyres-sounds"])
+        self.assertEqual([p["slug"] for p in projects], ["dyres-sounds", "dyres-toolkit"])
         self.assertTrue(all(p["type"] == "requiredDependency" for p in projects))
 
     def test_strict_tag(self):

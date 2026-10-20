@@ -27,7 +27,7 @@ end
 local RUNTIME_FILES = {"Commands.lua", "Core.lua", "Layout.lua", "Shards.lua", "Stones.lua", "Announce.lua", "Tracker.lua",
     "Dots.lua", "Control.lua", "Alerts.lua", "Shield.lua", "Chimes.lua", "Reminders.lua", "Probe.lua", "Options.lua"}
 local SHARD = 6265
-local SPELLS = {[1120] = "Drain Soul", [11675] = "Drain Soul", [686] = "Shadow Bolt", [172] = "Corruption",
+local SPELLS = {[1120] = "Drain Soul", [11675] = "Drain Soul", [8288] = "Drain Soul", [686] = "Shadow Bolt", [172] = "Corruption",
     [6222] = "Corruption", [980] = "Curse of Agony", [698] = "Ritual of Summoning",
     [20707] = "Soulstone Resurrection", [20762] = "Soulstone Resurrection",
     [693] = "Create Soulstone", [20752] = "Create Soulstone",
@@ -209,14 +209,12 @@ local function fixture(options)
         local data = state.units[unit]
         return data and state.marks[data.guid or data.name]
     end
-    -- As in client, setting the marker a unit already has clears it.
-    env.SetRaidTarget = function(unit, index)
-        local data = state.units[unit]
-        local key = data.guid or data.name
-        if state.marks[key] == index then index = nil end
-        state.marks[key] = index
-        state.markCount = (state.markCount or 0) + 1
-        state.markedUnit = unit
+    -- As in client (MTF's guarded call, BugGrabber and the taint log), AddOn
+    -- code may never call SetRaidTarget: it raises ADDON_ACTION_FORBIDDEN, also
+    -- out of combat. Markers come from the game's /tm in a macro.
+    env.SetRaidTarget = function()
+        state.markCalls = (state.markCalls or 0) + 1
+        state.emit("ADDON_ACTION_FORBIDDEN", "WarlockToolsForever", "SetRaidTarget()")
     end
     env.UnitIsDeadOrGhost = function(unit) return state.units[unit] ~= nil and state.units[unit].dead == true end
     -- State drivers: "[@unit,harm,nodead] show; hide", evaluated by the game.
@@ -249,7 +247,13 @@ local function fixture(options)
     env.GetTradePlayerItemLink = function(slot)
         if state.tradeSlots[slot] then return "item:" .. state.tradeSlots[slot] end
     end
+    -- As in client, item moves are refused in combat and under AddOn restrictions.
     env.ClickTradeButton = function(slot)
+        if state.deletionRestricted() then
+            state.restrictedCalls = (state.restrictedCalls or 0) + 1
+            state.emit("ADDON_ACTION_BLOCKED", "WarlockToolsForever", "UNKNOWN()")
+            return
+        end
         if state.tradeNeedsHardware and not state.hardware then
             state.emit("ADDON_ACTION_BLOCKED", "WarlockToolsForever", "UNKNOWN()")
             return
@@ -379,6 +383,44 @@ local function fixture(options)
     end
     -- The last sound played through Dyre's Sounds.
     function state.lastSound() return state.soundsPlayed[#state.soundsPlayed] end
+    -- Dyre's Toolkit, faked (it has its own suite): options.toolkit = true offers
+    -- contract 1, "old" no contract WTF can use; options.toolkitMissing names a
+    -- function it lacks; options.toolkitNoSettings has no settings home. It
+    -- records what WTF registers and asks for.
+    if options.toolkit then
+        local toolkit = {locked = true, movables = {}, calls = {}, opened = {}}
+        function toolkit.RequireContract(contract)
+            if options.toolkit ~= "old" and contract == 1 then return toolkit end
+        end
+        function toolkit.RegisterAddOn(info) toolkit.info = info; return true end
+        function toolkit.RegisterSettingsCategory(name)
+            if options.toolkitNoSettings then return nil end
+            toolkit.home = toolkit.home or env.Settings.RegisterVerticalLayoutCategory("Dyre's AddOns")
+            return env.Settings.RegisterVerticalLayoutSubcategory(toolkit.home, name)
+        end
+        function toolkit.RegisterMovable(frame, save)
+            toolkit.movables[#toolkit.movables + 1] = frame
+            return true
+        end
+        function toolkit.BeginDrag(frame) toolkit.calls[#toolkit.calls + 1] = {"BeginDrag", frame} end
+        function toolkit.EndDrag(frame) toolkit.calls[#toolkit.calls + 1] = {"EndDrag", frame} end
+        function toolkit.ScaleKeepingCenter(frame, scale)
+            toolkit.calls[#toolkit.calls + 1] = {"ScaleKeepingCenter", frame, scale}
+            frame:SetScale(scale)
+        end
+        function toolkit.IsLocked() return toolkit.locked end
+        function toolkit.SetLocked(locked)
+            toolkit.locked = locked
+            if toolkit.info and toolkit.info.setLocked then toolkit.info.setLocked(locked) end
+            env.DEFAULT_CHAT_FRAME:AddMessage("Dyre: Frames " .. (locked and "locked." or "unlocked."))
+        end
+        function toolkit.Lock() toolkit.SetLocked(true) end
+        function toolkit.Unlock() toolkit.SetLocked(false) end
+        function toolkit.OpenSettings(category) toolkit.opened[#toolkit.opened + 1] = category; return true end
+        if options.toolkitMissing then toolkit[options.toolkitMissing] = nil end
+        env.DyresToolkit = toolkit
+        state.toolkit = toolkit
+    end
     -- Cooldowns: readable out of combat, secret in it, as on Forever.
     state.cooldowns = {}
     env.C_Spell.GetSpellCooldown = function(id)
@@ -442,14 +484,21 @@ local function fixture(options)
             if not entry then return end
             return {itemID = entry.itemID, stackCount = entry.stackCount, isLocked = entry.isLocked == true}
         end,
+        -- state.pickupMisses: pickups that take nothing, as for an item still settling.
         PickupContainerItem = function(bag, slot)
+            if state.deletionRestricted() then state.restrictedCalls = (state.restrictedCalls or 0) + 1 end
             local entry = item(bag, slot)
             if state.cursor or not entry then return end
+            if (state.pickupMisses or 0) > 0 then
+                state.pickupMisses = state.pickupMisses - 1
+                return
+            end
             state.bags[bag].items[slot] = nil
             state.cursor = {itemID = entry.itemID, count = entry.stackCount, bag = bag, slot = slot}
             state.emit("CURSOR_CHANGED")
         end,
         SplitContainerItem = function(bag, slot, amount)
+            if state.deletionRestricted() then state.restrictedCalls = (state.restrictedCalls or 0) + 1 end
             local entry = item(bag, slot)
             equal(amount, 1, "splits exactly one")
             if state.cursor or not entry or entry.stackCount <= amount then return end
@@ -458,6 +507,19 @@ local function fixture(options)
             state.emit("CURSOR_CHANGED")
         end,
     }
+    -- As in client (BugGrabber: ADDON_ACTION_BLOCKED from DeleteCursorItem in a
+    -- dungeon, on a key press), the client refuses AddOn item deletion in combat,
+    -- while the player affects combat, or under an AddOn restriction.
+    function state.deletionRestricted()
+        if state.combat or state.encounter or (state.units and state.units.player
+            and state.units.player.affectingCombat) then
+            return true
+        end
+        for kind = 0, 4 do
+            if (state.restrictions or {})[kind] == 2 then return true end
+        end
+        return false
+    end
     env.GetCursorInfo = function()
         if state.cursor then return "item", state.cursor.itemID end
     end
@@ -476,7 +538,8 @@ local function fixture(options)
     -- In client, DeleteCursorItem outside a key press or click raised
     -- ADDON_ACTION_BLOCKED (UNKNOWN()) and left the item on the cursor.
     env.DeleteCursorItem = function()
-        if state.deleteBlocked or not state.hardware or (state.combat and state.combatDeleteBlocked) then
+        if state.deletionRestricted() then state.restrictedCalls = (state.restrictedCalls or 0) + 1 end
+        if state.deleteBlocked or not state.hardware or state.deletionRestricted() then
             state.emit("ADDON_ACTION_BLOCKED", "WarlockToolsForever", "UNKNOWN()")
             return
         end
@@ -484,6 +547,9 @@ local function fixture(options)
         state.deleted = (state.deleted or 0) + state.cursor.count
         state.cursor = nil
         state.emit("CURSOR_CHANGED")
+        -- The client reports the bags after a deletion; options.noBagUpdateOnDelete
+        -- leaves that out, as a slow report would.
+        if not options.noBagUpdateOnDelete then state.emit("BAG_UPDATE_DELAYED") end
     end
 
     -- Units, auras, and restrictions for the probe.
@@ -583,17 +649,24 @@ local function fixture(options)
             return state.plates[unit]
         end,
     }
-    env.UnitAffectingCombat = function(unit) return unit == "player" and state.combat end
+    env.UnitAffectingCombat = function(unit)
+        if unit == "player" and state.affectingSecret then
+            local value = secret()
+            state.secrets[value] = true
+            return value
+        end
+        return unit == "player" and (state.combat or state.units.player.affectingCombat == true)
+    end
     if not options.noRestrictionAPI then
         env.Enum = env.Enum or {}
-        env.Enum.AddOnRestrictionType = {Combat = 0, Encounter = 1, Chat = 5}
+        env.Enum.AddOnRestrictionType = {Combat = 0, Encounter = 1, ChallengeMode = 2, PvPMatch = 3, Map = 4, Chat = 5}
         env.Enum.UnitAuraSoundTrigger = {Added = 0, ApplicationsIncreased = 1, Removed = 2}
         env.C_RestrictedActions = {GetAddOnRestrictionState = function(kind)
             return (state.restrictions or {})[kind] or 0
         end}
         env.C_CombatLog = {IsCombatLogRestricted = function() return state.combatLogRestricted == true end}
         env.C_RestrictedActions.IsAddOnRestrictionActive = function(kind)
-            return kind == 1 and state.encounter == true
+            return (kind == 1 and state.encounter == true) or (state.restrictions or {})[kind] == 2
         end
     end
 
@@ -727,7 +800,11 @@ local function fixture(options)
         function object:SetClipsChildren(value) self.clips = value end
         function object:SetColorTexture(...) self.color = {...} end
         function object:SetWidth(width) self.width = width end
-        function object:EnableMouse(value) self.mouseDisabled = value == false end
+        -- As in client, secure frames refuse mouse changes in combat.
+        function object:EnableMouse(value)
+            if state.combat and self.protected then error("EnableMouse in combat") end
+            self.mouseDisabled = value == false
+        end
         function object:SetHeight(height) self.height = height end
         function object:SetSize(width, height) self.width, self.height = width, height end
         -- As in client, secure frames refuse layout changes in combat.
@@ -787,7 +864,14 @@ local function fixture(options)
             if state.combat and self.protected then error("Hide in combat") end
             self.shown = false
         end
+        function object:SetAlpha(value) self.alpha = value end
         function object:IsShown() return self.shown end
+        function object:IsVisible()
+            if not self.shown then return false end
+            local parent = self.parent
+            if type(parent) == "table" and type(parent.IsVisible) == "function" then return parent:IsVisible() end
+            return true
+        end
         function object:IsProtected() return self.protected == true end
         function object:SetPoint(...)
             if state.combat and self.protected then error("SetPoint in combat") end
@@ -839,10 +923,16 @@ local function fixture(options)
                 ids = slotOptions.candidateFilters.includeSpellIDs, candidates = slotOptions.candidateFilters}
             return button
         end
+        -- As in client (ErrorUtil: "aura slot 'siphon' was not found with this
+        -- key."), a key the container has no slot for is an error.
         function object:SetAuraSlotCandidateFilters(key, filters)
-            for _, slot in ipairs(self.slots) do
-                if slot.key == key then slot.ids, slot.candidates = filters.includeSpellIDs, filters end
+            for _, slot in ipairs(self.slots or {}) do
+                if slot.key == key then
+                    slot.ids, slot.candidates = filters.includeSpellIDs, filters
+                    return
+                end
             end
+            error("aura slot '" .. tostring(key) .. "' was not found with this key.")
         end
         function object:SetUnit(unit) self.unit = unit end
         function object:UpdateAllAuras() self.updates = (self.updates or 0) + 1 end
@@ -929,9 +1019,11 @@ local function fixture(options)
         hardware(function()
             state.used = {type = button.attributes["type" .. suffix], item = button.attributes["item" .. suffix],
                 macrotext = button.attributes["macrotext" .. suffix], spell = button.attributes["spell" .. suffix]}
-            -- Secure buttons run PostClick for the press and the release.
-            button.scripts.PostClick(button, mouseButton, true)
-            button.scripts.PostClick(button, mouseButton, false)
+            -- Secure buttons run PreClick and PostClick for the press and the release.
+            for _, down in ipairs({true, false}) do
+                if button.scripts.PreClick then button.scripts.PreClick(button, mouseButton, down) end
+                if button.scripts.PostClick then button.scripts.PostClick(button, mouseButton, down) end
+            end
         end)
     end
     function state.click()
@@ -1281,7 +1373,7 @@ test("debug_delete refuses in combat, with a busy cursor, or within the limit", 
     equal(state.last(), "WTF: debug_delete nothing to delete: 3 carried, limit 6.")
     state.combat = true
     state.slash("debug_delete")
-    equal(state.last(), "WTF: debug_delete works out of combat only.")
+    equal(state.last(), "WTF: debug_delete works out of combat and outside AddOn restrictions only.")
     state.combat = false
     state.cursor = {itemID = 4306, count = 1, bag = 1, slot = 9}
     state.slash("debug_delete")
@@ -1339,17 +1431,24 @@ test("a deletion waits while the cursor holds something", function()
     state.press()
     equal(state.count(), 6)
 end)
-test("a deletion waits for a locked shard to unlock", function()
+test("a locked shard is never picked up: another shard goes, or the deletion waits", function()
     local state = fixture()
     state.fill(6)
     state.channel()
     state.put(1, 1, 1, {isLocked = true})
     state.emit("BAG_UPDATE_DELAYED")
     state.press()
-    equal(state.count(), 7)
-    state.bags[1].items[1].isLocked = false
-    state.press()
-    equal(state.count(), 6)
+    equal(state.count(), 6, "an unlocked shard goes instead")
+    equal(state.bags[1].items[1].itemID, SHARD, "the locked one stays")
+    local alone = fixture()
+    alone.channel()
+    alone.put(0, 1, 7, {isLocked = true})
+    alone.emit("BAG_UPDATE_DELAYED")
+    alone.press()
+    equal(alone.count(), 7, "every shard is locked: wait")
+    alone.bags[0].items[1].isLocked = false
+    alone.press()
+    equal(alone.count(), 6)
 end)
 test("a queued deletion waits for input however long it takes", function()
     local state = fixture()
@@ -1370,19 +1469,54 @@ test("a queued deletion is dropped once the count is back within the limit", fun
     equal(state.count(), 6)
     equal(state.deleted, nil)
 end)
-test("shards created in combat are deleted on a key press in combat", function()
+test("shards created in combat wait for the first key press after combat", function()
     local state = fixture()
     state.fill(6)
     state.combat = true
     state.channel()
     state.gain(1, 1)
+    equal(state.count(), 7, "nothing is picked up or deleted in combat")
+    equal(state.restrictedCalls, nil)
+    state.combat = false
+    state.press()
     equal(state.count(), 6)
+end)
+test("no shard is picked up or deleted while the client restricts AddOns", function()
+    -- In client DeleteCursorItem raised ADDON_ACTION_BLOCKED in a dungeon, on a
+    -- key press (BugGrabber, 6x).
+    local cases = {
+        {"in combat", function(state) state.combat = true end},
+        {"affecting combat", function(state) state.units.player.affectingCombat = true end},
+        {"a secret combat state", function(state) state.affectingSecret = true end},
+        {"an encounter", function(state) state.encounter = true end},
+        {"the Combat restriction", function(state) state.restrictions = {[0] = 2} end},
+        {"the ChallengeMode restriction", function(state) state.restrictions = {[2] = 2} end},
+        {"the PvPMatch restriction", function(state) state.restrictions = {[3] = 2} end},
+        {"the Map restriction", function(state) state.restrictions = {[4] = 2} end},
+    }
+    for _, case in ipairs(cases) do
+        local state = fixture()
+        state.fill(6)
+        state.channel()
+        case[2](state)
+        state.clear()
+        state.gain(1, 1)
+        state.click()
+        equal(state.count(), 7, case[1] .. ": the shard waits")
+        equal(state.restrictedCalls, nil, case[1] .. ": no pickup or delete")
+        equal(state.cursor, nil, case[1])
+        equal(#state.messages, 0, case[1] .. ": nothing to say")
+        state.combat, state.encounter, state.restrictions, state.affectingSecret = false, nil, nil, nil
+        state.units.player.affectingCombat = nil
+        state.press()
+        equal(state.count(), 6, case[1] .. ": deleted on the first key press after")
+        equal(state.wtf.db.shards.enabled, true)
+    end
 end)
 test("if the client refuses in combat, shards wait for input after combat", function()
     local state = fixture()
     state.fill(6)
     state.combat = true
-    state.combatDeleteBlocked = true
     state.channel()
     state.clear()
     state.gain(1, 1)
@@ -1394,7 +1528,9 @@ test("if the client refuses in combat, shards wait for input after combat", func
     equal(state.count(), 8, "no retry in combat")
     state.combat = false
     state.press()
-    equal(state.count(), 6, "both go on the first key press after combat")
+    equal(state.count(), 7, "one on the first key press after combat")
+    state.press()
+    equal(state.count(), 6, "the other on the next")
     equal(state.bags[1].items[1], nil)
     equal(state.bags[1].items[2], nil)
 end)
@@ -1414,6 +1550,280 @@ test("a deletion blocked out of combat puts the shard back, reports once, and st
     state.gain(1, 2)
     equal(state.count(), 8, "no more deletions until /reload")
     equal(#state.messages, 1)
+end)
+-- John's bags in client: a full 14-slot soul bag in the reagent slot (bag 5),
+-- so new shards land in an ordinary bag (bag 3).
+local function fullSoulBag()
+    local bags = {
+        [0] = {size = 16, family = 0, items = {}},
+        [1] = {size = 8, family = 0, items = {}},
+        [2] = {size = 8, family = 0, items = {}},
+        [3] = {size = 8, family = 0, items = {}},
+        [4] = {size = 8, family = 0, items = {}},
+        [5] = {size = 14, family = 4, items = {}},
+    }
+    local state = fixture({bags = bags, reagentBag = true})
+    for slot = 1, 14 do state.put(5, slot) end
+    state.emit("BAG_UPDATE_DELAYED")
+    equal(state.wtf.GetShardLimit(), 14)
+    return state
+end
+
+test("with a full soul bag, shards created in another bag are deleted there", function()
+    local state = fullSoulBag()
+    state.combat = true
+    state.channel(8288)
+    state.clear()
+    state.arrive(3, 1)
+    state.arrive(3, 2)
+    equal(state.count(), 16)
+    state.combat = false
+    state.stopChannel(8288)
+    state.press()
+    state.press()
+    equal(state.count(), 14, "both, from bag 3, one per key press")
+    equal(state.bags[3].items[1], nil)
+    equal(state.bags[3].items[2], nil)
+    equal(#state.bags[5].items, 14, "the soul bag is untouched")
+end)
+-- John's second test: one Drain Soul kill created two shards at once above a
+-- full soul bag, and only one was deleted.
+local function twoShardKill(arrive)
+    local state = fullSoulBag()
+    state.combat = true
+    state.channel(8288)
+    state.clear()
+    arrive(state)
+    state.stopChannel(8288)
+    state.combat = false
+    for _ = 1, 3 do state.press() end
+    equal(state.count(), 14, "both new shards are deleted")
+    equal(state.deleted, 2)
+    equal(#state.bags[5].items, 14, "the soul bag is untouched")
+    return state
+end
+test("two shards created in one bag update, in two slots, are both deleted", function()
+    twoShardKill(function(state)
+        state.put(3, 1)
+        state.put(3, 2)
+        state.emit("BAG_UPDATE_DELAYED")
+    end)
+end)
+test("two shards created in one bag update, in one stack, are both deleted", function()
+    twoShardKill(function(state)
+        state.put(3, 1, 2)
+        state.emit("BAG_UPDATE_DELAYED")
+    end)
+end)
+test("two shards created in two bag updates close together are both deleted", function()
+    twoShardKill(function(state)
+        state.arrive(3, 1)
+        state.arrive(3, 2)
+    end)
+end)
+test("a second shard that lands after the first is deleted is deleted too", function()
+    twoShardKill(function(state)
+        state.combat = false
+        state.gain(3, 1)
+        equal(state.count(), 14)
+        state.arrive(3, 1)
+    end)
+end)
+test("a second shard reported with the first one's deletion is deleted too", function()
+    twoShardKill(function(state)
+        state.arrive(3, 1)
+        state.press()
+        state.arrive(3, 2)
+    end)
+end)
+-- The keep count ------------------------------------------------------------------
+
+local function fullSoulBagWith(options)
+    local bags = {
+        [0] = {size = 16, family = 0, items = {}},
+        [1] = {size = 8, family = 0, items = {}},
+        [2] = {size = 8, family = 0, items = {}},
+        [3] = {size = 8, family = 0, items = {}},
+        [4] = {size = 8, family = 0, items = {}},
+        [5] = {size = 14, family = 4, items = {}},
+    }
+    options.bags, options.reagentBag = bags, true
+    local state = fixture(options)
+    for slot = 1, 14 do state.put(5, slot) end
+    state.emit("BAG_UPDATE_DELAYED")
+    return state
+end
+
+test("a created shard the bag reports hid is still deleted on a later key press", function()
+    -- The client may report a deletion and a new shard in one bag update, so the
+    -- count does not rise: the keep count still says the new shard is extra.
+    local state = fullSoulBagWith({noBagUpdateOnDelete = true})
+    state.channel(8288)
+    state.gain(3, 1)
+    equal(state.count(), 14, "the first goes")
+    state.put(3, 2)
+    state.emit("BAG_UPDATE_DELAYED")
+    state.stopChannel(8288)
+    state.now = state.now + 60
+    state.press()
+    equal(state.count(), 14, "the second goes on a key press a minute later")
+end)
+test("after a deletion the next waits until the bags show it, so none goes below the limit", function()
+    local state = fullSoulBagWith({noBagUpdateOnDelete = true})
+    state.channel(8288)
+    state.put(3, 1)
+    state.put(3, 2)
+    state.emit("BAG_UPDATE_DELAYED")
+    state.press()
+    equal(state.count(), 15)
+    state.press()
+    equal(state.count(), 15, "waits for the bags to show the first deletion")
+    state.emit("BAG_UPDATE_DELAYED")
+    state.press()
+    equal(state.count(), 14)
+    state.press()
+    state.now = state.now + 10
+    state.press()
+    equal(state.count(), 14, "never below the limit")
+end)
+test("a deletion the bags never show waits at most two seconds before the next", function()
+    local state = fullSoulBagWith({noBagUpdateOnDelete = true})
+    state.channel(8288)
+    state.put(3, 1)
+    state.put(3, 2)
+    state.emit("BAG_UPDATE_DELAYED")
+    state.press()
+    state.now = state.now + 1
+    state.press()
+    equal(state.count(), 15)
+    state.now = state.now + 1.5
+    state.press()
+    equal(state.count(), 14)
+end)
+test("shards from the bank above the limit are kept, and only new ones go", function()
+    local state = fullSoulBagWith({})
+    state.arrive(3, 1)
+    state.arrive(3, 2)
+    state.press()
+    equal(state.count(), 16, "moved in by hand: kept")
+    state.channel(8288)
+    state.gain(3, 3)
+    state.stopChannel(8288)
+    state.press()
+    equal(state.count(), 16, "only the created one went")
+    state.slash("debug_shards")
+    contains(table.concat(state.messages, "|"), "count=16 limit=14 keep=16")
+end)
+test("using shards lowers the keep count, so new ones above the limit go", function()
+    local state = fullSoulBagWith({})
+    state.arrive(3, 1)
+    state.arrive(3, 2)
+    for slot = 1, 3 do state.bags[5].items[slot] = nil end
+    state.emit("BAG_UPDATE_DELAYED")
+    equal(state.count(), 13)
+    state.channel(8288)
+    state.put(3, 3)
+    state.put(3, 4)
+    state.emit("BAG_UPDATE_DELAYED")
+    state.stopChannel(8288)
+    for _ = 1, 3 do state.press() end
+    equal(state.count(), 14, "one of the two is within the limit")
+end)
+test("lowering the limit deletes no shard", function()
+    local state = fullSoulBagWith({})
+    state.settings.WTF_SHARDS_AUTO_LIMIT:SetValue(false)
+    state.settings.WTF_SHARDS_LIMIT:SetValue(6)
+    state.press()
+    equal(state.count(), 14)
+    state.channel(8288)
+    state.gain(3, 1)
+    equal(state.count(), 14, "a new shard still goes")
+end)
+test("shards created while deletion is off stay when it is turned on", function()
+    local state = fullSoulBagWith({db = {shards = {enabled = false}}})
+    state.channel(8288)
+    state.gain(3, 1)
+    state.stopChannel(8288)
+    state.settings.WTF_SHARDS_ENABLED:SetValue(true)
+    state.press()
+    equal(state.count(), 15)
+end)
+test("debug_shards shows each deletion with the count and keep count before it", function()
+    local state = fullSoulBagWith({})
+    state.channel(8288)
+    state.gain(3, 1)
+    state.clear()
+    state.slash("debug_shards")
+    local text = table.concat(state.messages, "|")
+    contains(text, "lastAttempt=deleted 0.0s ago count=15 keep=14")
+    contains(text, "debug_shards deleted 0.0s ago bag=3 slot=1 count=15 keep=14 limit=14")
+    contains(text, "gain 0.0s ago +1 count=15 keep=14 created=true")
+end)
+test("a pickup that takes nothing waits for the next input instead of stopping deletion", function()
+    -- John's test: two shards created above a full soul bag, none deleted,
+    -- and debug_shards said blocked=true combatBlocked=false.
+    local state = fullSoulBag()
+    state.channel(8288)
+    state.clear()
+    state.pickupMisses = 1
+    state.gain(3, 1)
+    equal(state.count(), 15, "the shard was still settling")
+    equal(#state.messages, 0, "nothing to say")
+    state.press()
+    equal(state.count(), 14, "deleted on the next key press")
+    state.gain(3, 2)
+    equal(state.count(), 14, "and deletion still runs")
+    state.clear()
+    state.slash("debug_shards")
+    contains(table.concat(state.messages, "|"), "blocked=false")
+    contains(table.concat(state.messages, "|"), "stopped=nil lastAttempt=deleted")
+end)
+test("a slot whose pickup keeps taking nothing is given up, and the shard stays", function()
+    local state = fullSoulBag()
+    state.channel(8288)
+    state.clear()
+    state.pickupMisses = 3
+    state.gain(3, 1)
+    state.press()
+    state.press()
+    equal(state.count(), 15, "three tries took nothing")
+    equal(state.cursor, nil)
+    equal(#state.messages, 0)
+    state.press()
+    equal(state.count(), 14, "then another shard goes")
+    equal(state.bags[3].items[1].itemID, SHARD, "the stuck slot is left alone")
+    state.gain(3, 2)
+    equal(state.count(), 14, "a new shard is still deleted")
+end)
+test("a shard moved to another slot is no new shard, even while Drain Soul channels", function()
+    local state = fullSoulBag()
+    state.arrive(3, 1)
+    equal(state.count(), 15, "a shard from outside a creation window stays")
+    state.channel(8288)
+    state.clear()
+    state.bags[5].items[1] = nil
+    state.put(3, 4)
+    state.emit("BAG_UPDATE_DELAYED")
+    state.press()
+    equal(state.count(), 15, "a move deletes nothing")
+    equal(state.deleted, nil)
+    state.slash("debug_shards")
+    equal(table.concat(state.messages, "|"):find("+1 count=15 created=true", 1, true), nil, "and logs no gain")
+end)
+test("a refusal under the combat restriction just after combat waits, as one in combat", function()
+    local state = fullSoulBag()
+    state.restrictions = {[0] = 2}
+    state.channel(8288)
+    state.clear()
+    state.gain(3, 1)
+    equal(state.count(), 15)
+    equal(state.cursor, nil, "the shard is back")
+    equal(#state.messages, 0, "no stop, no message")
+    state.press()
+    equal(state.count(), 15, "no retry while restricted")
+    state.restrictions = nil
+    state.press()
+    equal(state.count(), 14, "deleted once the restriction ends")
 end)
 test("a blocked-action event outside a deletion never stops deletion", function()
     -- In client, the probe's old combat log registration raised
@@ -1502,8 +1912,9 @@ test("debug_shards lists bags, the source spell, and recent gains", function()
     contains(state.messages[3], "source spell=17877 name=Shadowburn window=9s")
     contains(state.messages[4], "NUM_BAG_SLOTS=4 NUM_TOTAL_EQUIPPED_BAG_SLOTS=nil itemCount=0")
     contains(state.messages[6], "bag=1 slots=12 family=4 soul=true items=1 shards=1 shardSlotsByID=1 noInfo=0")
-    contains(state.messages[10], "count=3 limit=12 source=soul bag")
-    contains(state.messages[11], "gain 0.0s ago +1 count=3 created=true combat=false last=UNIT_SPELLCAST_CHANNEL_START 11675 1.0s before")
+    contains(state.messages[10], "count=3 limit=12 keep=3 source=soul bag")
+    contains(state.messages[11], "debug_shards stopped=nil lastAttempt=none")
+    contains(state.messages[12], "gain 0.0s ago +1 count=3 keep=3 created=true combat=false last=UNIT_SPELLCAST_CHANNEL_START 11675 1.0s before")
 end)
 local function reported(state, fragment)
     for _, message in ipairs(state.messages) do
@@ -1523,7 +1934,7 @@ test("debug_restrictions reports states and never reads secret contents", functi
     state.clear()
     state.slash("debug_restrictions")
     equal(state.messages[1], "WTF: debug_restrictions combat=true secretAPI=true")
-    contains(state.messages[2], "states Combat=active Encounter=inactive Chat=inactive")
+    contains(state.messages[2], "states Combat=active Encounter=inactive ChallengeMode=inactive PvPMatch=inactive Map=inactive Chat=inactive")
     equal(state.messages[3], "WTF: debug_restrictions combatLog restricted=false")
     reported(state, "target name=secret guid=Creature-1 canAttack=true")
     reported(state, "target byIndex 1: name=Corruption spellId=secret icon=136118 duration=18 expires=secret")
@@ -1689,12 +2100,12 @@ test("WTF writes Healthstone and Soulstone macros in the character tab", functio
     local state = stonesFixture()
     equal(macroBody(state, "! Healthstone"), table.concat({
         "#showtooltip item:5511",
-        "/cast [btn:2] Create Healthstone(Rank 3)",
+        "/use [btn:2] Create Healthstone(Rank 3)",
         "/stopmacro [btn:2]",
         "/use item:9421", "/use item:5510", "/use item:5509", "/use item:5511", "/use item:5512"}, "\n"))
     equal(macroBody(state, "! Soulstone"), table.concat({
         "#showtooltip item:16892",
-        "/cast [btn:2] Create Soulstone",
+        "/use [btn:2] Create Soulstone",
         "/stopmacro [btn:2]",
         "/use [@target,help,nodead][@player] item:16892"}, "\n"))
     equal(state.macros[1].icon, 134400, "the question mark, so #showtooltip shows the stone")
@@ -1703,7 +2114,7 @@ test("the macros follow your bags and downranking, out of combat only", function
     local state = stonesFixture()
     state.carried[5509] = 1
     state.emit("BAG_UPDATE_DELAYED")
-    contains(macroBody(state, "! Healthstone"), "/cast [btn:2] Create Healthstone(Rank 1)")
+    contains(macroBody(state, "! Healthstone"), "/use [btn:2] Create Healthstone(Rank 1)")
     local edits = state.macroEdits
     state.combat = true
     state.carried[5509] = 0
@@ -1967,48 +2378,61 @@ test("each mob you Fear or Banish gets its own bar, bound to its unit", function
     state.runTimers()
     equal(first.shown, false, "gone once the longest Fear is over")
 end)
-test("a landed Banish gets the moon; Fear never marks, so WTF takes one marker slot", function()
+test("WTF never calls SetRaidTarget: markers come only from the game's /tm in a macro", function()
+    -- In client the call raised ADDON_ACTION_FORBIDDEN for AddOn code, also out
+    -- of combat (MTF's same guarded call).
     local state = controlFixture()
+    state.units.target = state.units.nameplate4
     castAt(state, BANISH, "nameplate4")
-    equal(state.marks["Creature-2"], 5, "the moon")
     castAt(state, FEAR, "nameplate3")
-    equal(state.marks["Creature-1"], nil)
-    equal(state.settings.WTF_CONTROL_MARKER_FEAR, nil, "no marker setting for Fear")
+    state.combat = true
     castAt(state, BANISH, "nameplate4")
-    equal(state.markCount, 1, "an existing marker is left alone")
+    state.combat = false
+    state.units.target = nil
+    state.units.mouseover = {name = "Felguard", guid = "Creature-8"}
+    state.emit("UNIT_SPELLCAST_SENT", "player", "Felguard", "cast-mo", BANISH)
+    state.emit("UNIT_SPELLCAST_SUCCEEDED", "player", "cast-mo", BANISH)
+    equal(state.markCalls, nil, "never called")
+    equal(controlRow(state, 1).name.text, "Imp", "the rows still track")
+    contains(state.env.WarlockToolsForeverControlClick1.attributes.macrotext1, "/tm [@target,harm,nodead,exists] !5",
+        "the row click marks with /tm")
+    equal(state.settings.WTF_CONTROL_MARKER_FEAR, nil, "no marker setting for Fear")
+    state.clear()
+    state.slash("debug_control")
+    equal(table.concat(state.messages, "|"):find("marked=", 1, true), nil, "no marked= in debug_control")
     local old = fixture({db = {control = {markers = {banish = 3}}}})
     equal(old.wtf.db.control.markers.banish, 5, "the old diamond default becomes the moon")
     local chosen = fixture({db = {control = {markers = {banish = 8}, markersVersion = 2}}})
     equal(chosen.wtf.db.control.markers.banish, 8, "a marker you chose stays")
 end)
-test("a Banish cast on the mob under the mouse is tracked and marked", function()
+test("a Banish cast on the mob under the mouse is tracked", function()
     local state = controlFixture()
     state.units.target = nil
     state.units.mouseover = {name = "Felguard", guid = "Creature-8"}
     state.emit("UNIT_SPELLCAST_SENT", "player", "Felguard", "cast-mo", BANISH)
     state.emit("UNIT_SPELLCAST_SUCCEEDED", "player", "cast-mo", BANISH)
     equal(controlRow(state, 1).name.text, "Felguard", "tracked")
-    equal(state.marks["Creature-8"], 5, "the moon, through mouseover")
     equal(controlRow(state, 1).container.unit, "none", "rows never bind to mouseover")
 end)
-test("a Banish that lands in combat still gets its marker, on your target", function()
-    local state = controlFixture()
-    state.units.target = state.units.nameplate4
-    state.emit("UNIT_SPELLCAST_SENT", "player", "Imp", "cast-b", BANISH)
-    state.combat = true
-    state.emit("UNIT_SPELLCAST_SUCCEEDED", "player", "cast-b", BANISH)
-    equal(state.marks["Creature-2"], 5, "marked although the marker cannot be read in combat")
-    equal(state.markedUnit, "target")
-    -- A recast in combat on the same mob must not toggle the marker off.
-    state.emit("UNIT_SPELLCAST_SENT", "player", "Imp", "cast-b2", BANISH)
-    state.emit("UNIT_SPELLCAST_SUCCEEDED", "player", "cast-b2", BANISH)
-    equal(state.marks["Creature-2"], 5, "still the moon after a recast")
+test("the group message names the marker only after a Banish row click", function()
+    local state = controlFixture({group = "party", known = {[FEAR] = true, [BANISH] = true, [ENSLAVE] = true}})
+    castAt(state, BANISH, "nameplate4")
+    equal(state.sent[1].message, "Banishing >> Imp << to the Twisting Nether. Hands off until it comes back"
+        .. " - via Warlock Tools Forever (WTF)", "a plain cast: WTF cannot know it was marked")
+    state.now = state.now + 10
+    state.clickButton("WarlockToolsForeverControlClick1", "LeftButton")
+    castAt(state, BANISH, "nameplate4")
+    equal(state.sent[2].message, "Banishing >> Imp << {moon} to the Twisting Nether. Hands off until it comes back"
+        .. " - via Warlock Tools Forever (WTF)", "the click's /tm marked it")
+    state.now = state.now + 10
+    castAt(state, BANISH, "nameplate4")
+    equal(state.sent[3].message:find("{moon}", 1, true), nil, "a later plain cast names none again")
 end)
 test("control spells tell the group as the cast starts, with the marker in chat", function()
     local state = controlFixture({group = "party", known = {[FEAR] = true, [BANISH] = true, [ENSLAVE] = true}})
     castAt(state, BANISH, "nameplate4")
     equal(state.sent[1].chatType, "PARTY")
-    equal(state.sent[1].message, "Banishing >> Imp << {moon} to the Twisting Nether. Hands off until it comes back"
+    equal(state.sent[1].message, "Banishing >> Imp << to the Twisting Nether. Hands off until it comes back"
         .. " - via Warlock Tools Forever (WTF)")
     castAt(state, FEAR, "nameplate3")
     equal(state.sent[2].message, "Fearing >> Boar <<. Let it run; chase it and you bring friends"
@@ -2027,8 +2451,10 @@ test("control spells tell the group as the cast starts, with the marker in chat"
     castAt(alone, FEAR, "nameplate3")
     equal(#alone.sent, 0, "nothing when alone")
 end)
-local RECAST_BANISH_IMP = "/cast [@focus,harm,nodead] Banish\n/stopmacro [@focus,exists]\n/cleartarget"
-    .. "\n/targetexact Imp\n/cast [@target,harm,nodead] Banish\n/targetlasttarget"
+-- Each cast marks its mob first with the game's /tm, which works in combat.
+local RECAST_BANISH_IMP = "/tm [@focus,harm,nodead,exists] !5\n/use [@focus,exists,harm,nodead] Banish"
+    .. "\n/stopmacro [@focus,exists]\n/cleartarget\n/targetexact Imp\n/tm [@target,harm,nodead,exists] !5"
+    .. "\n/use [@target,harm,nodead] Banish\n/targetlasttarget"
 
 test("clicking a Banish row recasts on your focus, or with none on the mob by name", function()
     local state = controlFixture()
@@ -2048,6 +2474,35 @@ test("clicking a Banish row recasts on your focus, or with none on the mob by na
     contains(state.env.WarlockToolsForeverControlClick2.attributes.macrotext1, "/targetexact Voidwalker")
     equal(state.env.WarlockToolsForeverControlClick3.shown, false, "no click area without a mob")
 end)
+-- A shown click slot under a hidden row is an invisible area that takes
+-- clicks (MTF had one). Every slot that can be clicked has its row on screen.
+local function noHiddenClickArea(state, label)
+    for index = 1, 5 do
+        local holder = state.env["WarlockToolsForeverControlClick" .. index]
+        if holder:IsVisible() then
+            equal(controlRow(state, index).shown, true, label .. ": slot " .. index .. " has its row on screen")
+        end
+    end
+end
+test("a Banish mob that dies in combat leaves its click slot visible, dimmed, until combat ends", function()
+    local state = controlFixture()
+    castAt(state, BANISH, "nameplate4")
+    local row = controlRow(state, 1)
+    noHiddenClickArea(state, "out of combat")
+    state.combat = true
+    state.units.nameplate4.dead = true
+    state.emit("UNIT_HEALTH", "nameplate4")
+    equal(state.env.WarlockToolsForeverControlClick1.shown, true, "a secure slot cannot hide in combat")
+    equal(row.shown, true, "so its row stays on screen")
+    equal(row.alpha, 0.45, "dimmed")
+    equal(row.name.text, "Imp")
+    noHiddenClickArea(state, "in combat")
+    state.combat = false
+    state.emit("PLAYER_REGEN_ENABLED")
+    equal(state.env.WarlockToolsForeverControlClick1.shown, false)
+    equal(row.shown, false, "both go after combat")
+    equal(row.alpha, 1)
+end)
 test("Fear rows show the timer but have no click, so no click Fears the wrong mob", function()
     local state = controlFixture()
     castAt(state, FEAR, "nameplate3")
@@ -2064,9 +2519,10 @@ test("a Banish row whose click is set keeps its slot until combat ends", functio
     state.combat = true
     state.units.nameplate4.dead = true
     state.emit("UNIT_HEALTH", "nameplate4")
-    equal(controlRow(state, 1).shown, false, "the Imp is gone")
+    equal(controlRow(state, 1).shown, true, "the Imp is gone, but its click slot shows: the row stays, dimmed")
+    equal(controlRow(state, 1).alpha, 0.45)
     castAt(state, FEAR, "nameplate3")
-    equal(controlRow(state, 1).shown, false, "its row is not reused while its click still names the Imp")
+    equal(controlRow(state, 1).name.text, "Imp", "its row is not reused while its click still names the Imp")
     equal(controlRow(state, 2).name.text, "Boar")
     state.combat = false
     state.emit("PLAYER_REGEN_ENABLED")
@@ -2146,21 +2602,25 @@ test("a feared mob's nameplate shows a Fear countdown, also after its plate come
 end)
 test("control macros appear only for the spells you know; Seduction needs your Succubus", function()
     local state = controlFixture({known = {[FEAR] = true}})
-    equal(macroBody(state, "! Fear"), "#showtooltip Fear\n/cast [@mouseover,harm,nodead][harm,nodead] Fear",
-        "the mob under the mouse, else your target; no focus")
+    local fear = "#showtooltip Fear\n/focus [mod:shift,@mouseover,harm,nodead][mod:shift,harm,nodead]"
+        .. "\n/use [@focus,exists,harm,nodead][@mouseover,harm,nodead][harm,nodead] Fear"
+    equal(macroBody(state, "! Fear"), fear,
+        "Shift sets the focus; then your focus first, else the mob under the mouse, else your target")
+    equal(#fear, 157, "the body's length")
     equal(macroBody(state, "! Banish"), nil, "no Banish before you learn it")
     equal(macroBody(state, "! Seduction"), nil, "no Seduction before Summon Succubus")
     state.known[BANISH] = true
     state.emit("SPELLS_CHANGED")
     equal(macroBody(state, "! Banish"), "#showtooltip Banish\n/focus [@mouseover,harm,nodead][nocombat,harm,nodead]"
-        .. "\n/cast [@focus,harm,nodead] Banish")
+        .. "\n/tm [@focus,harm,nodead,exists] !5\n/use [@focus,exists,harm,nodead] Banish",
+        "the moon by the game's /tm, also in combat")
     state.known[712] = true
     state.emit("SPELLS_CHANGED")
     equal(macroBody(state, "! Seduction"), nil, "Summon Succubus alone is not enough: no Grimoire yet")
     -- The Succubus learns Seduction from its Grimoire.
     state.petKnown = {[6358] = true}
     state.emit("UNIT_PET", "player")
-    contains(macroBody(state, "! Seduction"), "/cast [@focus,harm,nodead,pet:Succubus/Incubus] Seduction",
+    contains(macroBody(state, "! Seduction"), "/use [@focus,exists,harm,nodead,pet:Succubus/Incubus] Seduction",
         "does nothing unless your pet is a Succubus or an Incubus")
     state.combat = true
     state.settings.WTF_CONTROL_MACROS:SetValue(false)
@@ -2170,6 +2630,29 @@ test("control macros appear only for the spells you know; Seduction needs your S
     equal(macroBody(state, "! Banish"), nil, "turning them off deletes them")
     equal(macroBody(state, "! Seduction"), nil)
     equal(macroBody(state, "! Fear"), nil)
+end)
+test("the Banish marker setting goes into the macro and the row click, rebuilt out of combat", function()
+    local state = controlFixture({known = {[FEAR] = true, [BANISH] = true}})
+    castAt(state, BANISH, "nameplate4")
+    local click = state.env.WarlockToolsForeverControlClick1
+    state.settings.WTF_CONTROL_MARKER_BANISH:SetValue(8)
+    contains(macroBody(state, "! Banish"), "/tm [@focus,harm,nodead,exists] !8")
+    contains(click.attributes.macrotext1, "/tm [@target,harm,nodead,exists] !8")
+    state.combat = true
+    state.settings.WTF_CONTROL_MARKER_BANISH:SetValue(0)
+    contains(macroBody(state, "! Banish"), "!8", "a macro changes only out of combat")
+    state.combat = false
+    state.emit("PLAYER_REGEN_ENABLED")
+    equal(macroBody(state, "! Banish"):find("/tm", 1, true), nil, "None: no /tm line")
+    equal(click.attributes.macrotext1:find("/tm", 1, true), nil)
+    contains(click.attributes.macrotext1, "/targetexact Imp", "the click still recasts")
+    equal(macroBody(state, "! Fear"):find("/tm", 1, true), nil, "Fear never marks")
+end)
+test("Seduction has no marker setting, so its macro has no /tm", function()
+    local state = controlFixture({known = {[712] = true}})
+    state.petKnown = {[6358] = true}
+    state.emit("UNIT_PET", "player")
+    equal(macroBody(state, "! Seduction"):find("/tm", 1, true), nil)
 end)
 test("an Incubus that knows Seduction by its own ID gets the macro too; one that does not, none", function()
     local state = controlFixture({known = {[FEAR] = true, [713] = true}})
@@ -2275,6 +2758,149 @@ test("unlocked, the reminder drags, snaps, and resizes with the mouse wheel", fu
     state.clear()
     state.slash("debug_reminders")
     contains(state.messages[1], "debug_reminders armor on=true known=false")
+end)
+
+-- Dyre's Toolkit ----------------------------------------------------------------------
+
+local TOOLKIT_INSTALL = "WTF: Install Dyre's Toolkit from CurseForge for one layout mode and settings home for "
+    .. "all Dyre's AddOns."
+
+local function countMessages(state, text)
+    local found = 0
+    for _, message in ipairs(state.messages) do
+        if message:find(text, 1, true) then found = found + 1 end
+    end
+    return found
+end
+
+local function registeredMovable(state, frame)
+    for _, movable in ipairs(state.toolkit.movables) do
+        if movable == frame then return true end
+    end
+    return false
+end
+
+test("with Dyre's Toolkit WTF joins its layout mode, quietly, and starts locked", function()
+    local state = fixture({toolkit = true, db = {locked = false}})
+    local toolkit, db = state.toolkit, state.wtf.db
+    equal(toolkit.info.addon, "WarlockToolsForever")
+    equal(toolkit.info.title, "Warlock Tools Forever")
+    equal(db.locked, true, "frames start locked, as the toolkit's do")
+    equal(countMessages(state, "Dyre's Toolkit"), 0, "nothing to install")
+    for _, frame in ipairs({state.wtf.shardCounter, state.env.WarlockToolsForeverStones,
+        state.env.WarlockToolsForeverTracker, state.env.WarlockToolsForeverControl,
+        state.env.WarlockToolsForeverReminder_armor}) do
+        equal(registeredMovable(state, frame), true, "every movable frame snaps through the toolkit")
+    end
+    state.clear()
+    state.slash("unlock")
+    equal(toolkit.locked, false, "/wtf unlock unlocks every Dyre's AddOn")
+    equal(db.locked, false)
+    equal(db.tracker.placeholders, true, "sample rows to drag the tracker by")
+    equal(state.env.WarlockToolsForeverStones.mover.shown, true, "outlined")
+    equal(state.wtf.shardCounter.mover.shown, true)
+    equal(countMessages(state, "All WTF frames"), 0, "the toolkit says one line for all")
+    equal(state.last(), "Dyre: Frames unlocked.")
+    equal(state.wtf.grid, nil, "the toolkit draws the grid")
+    local icon = state.env.WarlockToolsForeverReminder_armor
+    icon.scripts.OnDragStart(icon)
+    icon.scripts.OnDragStop(icon)
+    equal(toolkit.calls[#toolkit.calls - 1][1], "BeginDrag")
+    equal(toolkit.calls[#toolkit.calls - 1][2], icon)
+    equal(toolkit.calls[#toolkit.calls][1], "EndDrag")
+    icon.scripts.OnMouseWheel(icon, 1)
+    equal(toolkit.calls[#toolkit.calls][1], "ScaleKeepingCenter", "resizing goes through the toolkit")
+    equal(state.wtf.db.reminders.icons.armor.scale, 110)
+    state.slash("lock")
+    equal(toolkit.locked, true, "/wtf lock locks every Dyre's AddOn")
+    equal(db.locked, true)
+    equal(state.env.WarlockToolsForeverStones.mover.shown, false)
+    toolkit.Unlock()
+    equal(db.locked, false, "the toolkit's own unlock reaches WTF's frames")
+    state.slash("lock")
+    equal(toolkit.locked, true)
+    equal(db.locked, true)
+end)
+test("with Dyre's Toolkit WTF's settings sit under Dyre's AddOns, three levels deep", function()
+    local state = fixture({toolkit = true})
+    local home = state.categories["Dyre's AddOns"]
+    local page = state.categories["Warlock Tools Forever"]
+    equal(page.parent, home)
+    equal(state.registered, nil, "no top-level page of its own")
+    for _, name in ipairs({"Soul Shards", "Stones", "DoT Tracker", "DoT Colors", "Alerts", "Shield",
+        "Cooldown Chimes", "Control", "Announce"}) do
+        equal(state.categories[name].parent, page, name .. " is under WTF's page")
+    end
+    equal(state.settings.WTF_GRID, nil, "the toolkit's page has the grid")
+    equal(state.settings.WTF_UNLOCKED, nil, "and the one unlock switch for every Dyre's AddOn")
+    for _, category in pairs(state.categories) do
+        for _, initializer in ipairs(category.initializers) do
+            equal((initializer.setting.name or ""):find("Unlock", 1, true), nil,
+                "no unlock switch on " .. category.name)
+        end
+    end
+    state.slash("options")
+    equal(state.toolkit.opened[1], page, "opened through the toolkit, which waits out combat")
+    state.toolkit.info.openSettings()
+    equal(state.toolkit.opened[2], page)
+end)
+test("without Dyre's Toolkit WTF keeps its own layout and pages and says once to install it", function()
+    local state = fixture()
+    equal(countMessages(state, TOOLKIT_INSTALL), 1)
+    local page = state.categories["Warlock Tools Forever"]
+    equal(state.registered, page, "WTF's own top-level page")
+    equal(page.parent, nil)
+    equal(state.categories["Soul Shards"].parent, page)
+    equal(state.settings.WTF_GRID:GetValue(), true, "WTF's own grid switch")
+    equal(state.settings.WTF_UNLOCKED.category, page, "WTF's own unlock switch, the only one here")
+    state.settings.WTF_UNLOCKED:SetValue(true)
+    equal(state.wtf.db.locked, false)
+    state.settings.WTF_UNLOCKED:SetValue(false)
+    equal(state.wtf.db.locked, true)
+    state.slash("unlock")
+    contains(state.last(), "All WTF frames unlocked")
+    equal(state.wtf.grid.shown, true, "WTF's own grid")
+    state.slash("lock")
+    equal(countMessages(state, TOOLKIT_INSTALL), 1, "once")
+end)
+test("with Dyre's Toolkit the shield ring drags and snaps through its layout", function()
+    local state = fixture({toolkit = true})
+    local toolkit, ring = state.toolkit, state.wtf.ShieldDisplay.frame
+    equal(registeredMovable(state, ring), true, "the ring is one of the toolkit's frames")
+    ring.scripts.OnDragStart(ring)
+    equal(#toolkit.calls, 0, "locked: no drag")
+    state.slash("unlock")
+    ring.scripts.OnDragStart(ring)
+    ring.scripts.OnDragStop(ring)
+    equal(toolkit.calls[#toolkit.calls - 1][1], "BeginDrag")
+    equal(toolkit.calls[#toolkit.calls - 1][2], ring)
+    equal(toolkit.calls[#toolkit.calls][1], "EndDrag")
+    equal(ring.moving, nil, "the toolkit moves it, not the ring itself")
+end)
+test("without Dyre's Toolkit the shield ring drags itself, as before", function()
+    local state = fixture()
+    local ring = state.wtf.ShieldDisplay.frame
+    state.slash("unlock")
+    ring.scripts.OnDragStart(ring)
+    equal(ring.moving, true)
+    ring.scripts.OnDragStop(ring)
+    equal(ring.moving, false)
+    equal(type(state.wtf.db.shield.position), "table", "its place is saved")
+end)
+test("an unusable Dyre's Toolkit leaves WTF on its own layout", function()
+    for _, options in ipairs({{toolkit = "old"}, {toolkit = true, toolkitMissing = "ScaleKeepingCenter"}}) do
+        local state = fixture(options)
+        equal(state.toolkit.info, nil, "not registered")
+        equal(countMessages(state, "WTF: Update Dyre's Toolkit from CurseForge"), 1)
+        equal(state.registered, state.categories["Warlock Tools Forever"])
+        equal(#state.toolkit.movables, 0)
+        state.slash("unlock")
+        equal(state.toolkit.locked, true, "the toolkit is not asked")
+        contains(state.last(), "All WTF frames unlocked")
+    end
+    local homeless = fixture({toolkit = true, toolkitNoSettings = true})
+    equal(homeless.registered, homeless.categories["Warlock Tools Forever"], "no home: WTF's own top-level page")
+    equal(homeless.toolkit.info.addon, "WarlockToolsForever", "the layout mode still applies")
 end)
 
 -- Magnetic frames -------------------------------------------------------------------
@@ -2558,13 +3184,13 @@ end)
 
 test("a copy registered first whose AddOn stays off does not keep WTF's display away", function()
     -- MTF loads first (folder order) but stays off on a Warlock.
-    local state = fixture({shieldCopies = {{addon = "MageToolsForever", version = 8, before = true}}})
+    local state = fixture({shieldCopies = {{addon = "MageToolsForever", version = 9, before = true}}})
     equal(state.wtf.ShieldDisplay.IsOwner(), true, "only running copies take part")
     equal(state.wtf.ShieldDisplay.frame ~= nil, true, "WTF draws the ring")
     state.clear()
     state.slash("debug_shield")
     contains(table.concat(state.messages, "|"),
-        "owner=WarlockToolsForever copies=MageToolsForever v8, WarlockToolsForever v8 (running)")
+        "owner=WarlockToolsForever copies=MageToolsForever v9, WarlockToolsForever v9 (running)")
     equal(table.concat(state.messages, "|"):find("failed", 1, true), nil, "every debug step ran")
 end)
 test("with Dyre's Shields Up loaded, WTF draws no shield and greys out its shield settings", function()
@@ -2598,7 +3224,7 @@ test("with Dyre's Shields Up loaded, WTF draws no shield and greys out its shiel
     equal(#fixture().categories.Shield.headings, 0, "no heading without Dyre's Shields Up")
 end)
 test("a newer running copy takes over, and WTF says which AddOn shows the display", function()
-    local state = fixture({shieldCopies = {{addon = "ShieldForever", version = 9}}})
+    local state = fixture({shieldCopies = {{addon = "ShieldForever", version = 10}}})
     equal(state.wtf.ShieldDisplay.frame ~= nil, true, "drawing while it is the only one running")
     local function shieldGreyed(want)
         local seen = 0
@@ -2955,6 +3581,56 @@ test("a refused trade placement waits for the next key press, once", function()
     equal(state.cursor, nil, "the stone is back in the bag")
     state.press()
     equal(state.tradeSlots[1], 5511, "placed on the key press")
+end)
+local function tradeFixture()
+    return stonesFixture({carried = {[5511] = 1}, bags = bagWith(5511),
+        units = {target = {name = "Lowbie", player = true, friend = true, level = 20}}})
+end
+test("a trade that opens while item moves are restricted is placed at the first free key press", function()
+    local state = tradeFixture()
+    state.clickButton(HEALTH, "LeftButton")
+    state.encounter = true
+    state.clear()
+    state.emit("TRADE_SHOW")
+    equal(state.restrictedCalls, nil, "no pickup or click while restricted")
+    equal(state.tradeSlots[1], nil)
+    equal(state.cursor, nil)
+    equal(#state.messages, 0, "no warning")
+    state.encounter = nil
+    state.press()
+    equal(state.tradeSlots[1], 5511, "placed at the first key press without a restriction")
+    equal(state.last(), "WTF: Healthstone in the trade window. Press Trade to give it.")
+    state.clear()
+    state.slash("debug_stones")
+    contains(table.concat(state.messages, "|"), "moveRestricted=false lastRestricted=")
+end)
+test("a trade still restricted at the next key press warns once and makes no call", function()
+    local state = tradeFixture()
+    state.clickButton(HEALTH, "LeftButton")
+    state.restrictions = {[4] = 2}
+    state.emit("TRADE_SHOW")
+    state.clear()
+    state.press()
+    state.press()
+    equal(state.restrictedCalls, nil, "never a pickup or click")
+    equal(state.tradeSlots[1], nil)
+    equal(#state.messages, 1, "one warning")
+    contains(state.messages[1], "drag it in yourself")
+    state.restrictions = nil
+    state.press()
+    equal(state.tradeSlots[1], nil, "given up: you drag it in")
+end)
+test("a trade retry later than the wait window gives up with the warning", function()
+    local state = tradeFixture()
+    state.clickButton(HEALTH, "LeftButton")
+    state.combat = true
+    state.emit("TRADE_SHOW")
+    state.combat = false
+    state.now = state.now + 30
+    state.clear()
+    state.press()
+    equal(state.tradeSlots[1], nil)
+    contains(state.last(), "drag it in yourself")
 end)
 test("a trade window long after the click, or from someone else, gets nothing", function()
     local state = stonesFixture({carried = {[5511] = 1}, bags = bagWith(5511),
@@ -3519,7 +4195,7 @@ test("the pinned rows show only while target or focus is a live hostile", functi
     local state = trackerFixture()
     equal(state.targetRow.shown, true)
     equal(state.focusRow.shown, false, "no focus")
-    equal(state.drivers[state.focusRow], "[@focus,harm,nodead] show; hide")
+    equal(state.drivers[state.focusRow], "[@focus,exists,harm,nodead] show; hide")
     state.units.focus = {name = "Wolf", guid = "Creature-2"}
     state.applyDrivers()
     equal(state.focusRow.shown, true)
@@ -3531,14 +4207,14 @@ test("pinned slots recast on target or focus by spell name", function()
     local state = trackerFixture()
     local casts = state.targetRow.casts
     equal(casts[3].template, "SecureActionButtonTemplate")
-    equal(casts[3].attributes.macrotext1, "/cast [@target,harm,nodead] Corruption")
-    equal(casts[4].attributes.macrotext1, "/cast [@target,harm,nodead] Immolate")
+    equal(casts[3].attributes.macrotext1, "/use [@target,harm,nodead] Corruption")
+    equal(casts[4].attributes.macrotext1, "/use [@target,harm,nodead] Immolate")
     equal(casts[5], nil, "no Siphon Life slot: not known")
-    equal(casts[2].attributes.macrotext1, "/cast [@target,harm,nodead] Curse of Agony",
+    equal(casts[2].attributes.macrotext1, "/use [@target,harm,nodead] Curse of Agony",
         "Agony until another Bane is used")
     equal(casts[1].attributes.type1, nil, "no Curse used yet")
-    equal(casts[6].attributes.macrotext1, "/cast [@target,harm,nodead] Fear")
-    equal(state.focusRow.casts[3].attributes.macrotext1, "/cast [@focus,harm,nodead] Corruption")
+    equal(casts[6].attributes.macrotext1, "/use [@target,harm,nodead] Fear")
+    equal(state.focusRow.casts[3].attributes.macrotext1, "/use [@focus,exists,harm,nodead] Corruption")
     casts[1].scripts.OnEnter(casts[1])
     contains(state.tooltip[1], "it recasts the last one you used")
 end)
@@ -3549,12 +4225,12 @@ test("Bane and Curse slots recast the last one used, changed after combat", func
     equal(state.targetRow.casts[1].attributes.type1, nil, "no change in combat")
     state.combat = false
     state.emit("PLAYER_REGEN_ENABLED")
-    equal(state.targetRow.casts[1].attributes.macrotext1, "/cast [@target,harm,nodead] Curse of Weakness")
+    equal(state.targetRow.casts[1].attributes.macrotext1, "/use [@target,harm,nodead] Curse of Weakness")
     dot(state, 980, "Boar")
-    equal(state.focusRow.casts[2].attributes.macrotext1, "/cast [@focus,harm,nodead] Curse of Agony")
+    equal(state.focusRow.casts[2].attributes.macrotext1, "/use [@focus,exists,harm,nodead] Curse of Agony")
     equal(state.wtf.db.tracker.lastBane, "Curse of Agony")
     local reloaded = trackerFixture({db = {tracker = {lastCurse = "Curse of Weakness"}}})
-    equal(reloaded.targetRow.casts[1].attributes.macrotext1, "/cast [@target,harm,nodead] Curse of Weakness")
+    equal(reloaded.targetRow.casts[1].attributes.macrotext1, "/use [@target,harm,nodead] Curse of Weakness")
 end)
 test("spellbook ranks with a tracked name join the slot, Banes by name", function()
     local state = trackerFixture({spellbook = {
@@ -3677,6 +4353,27 @@ test("a ninth mob replaces the oldest list row", function()
     equal(rows[1].name.text, "Mob2")
     equal(rows[8].name.text, "Mob9")
 end)
+test("locked tracker rows let clicks through; unlocked they take the mouse to be dragged", function()
+    local state = trackerFixture()
+    dot(state, 6222, "Wolf")
+    local rows = shownRows(state)
+    equal(#rows, 1)
+    equal(rows[1].mouseDisabled, true, "a list row while locked")
+    equal(state.targetRow.mouseDisabled, true, "the target row while locked")
+    equal(state.focusRow.mouseDisabled, true)
+    state.slash("unlock")
+    equal(state.targetRow.mouseDisabled, false, "unlocked: drag by it")
+    equal(rows[1].mouseDisabled, false)
+    state.slash("lock")
+    equal(state.targetRow.mouseDisabled, true)
+    equal(rows[1].mouseDisabled, true)
+    state.combat = true
+    state.slash("unlock")
+    equal(state.targetRow.mouseDisabled, true, "a secure row waits for combat to end")
+    state.combat = false
+    state.emit("PLAYER_REGEN_ENABLED")
+    equal(state.targetRow.mouseDisabled, false)
+end)
 test("placeholders show sample rows for positioning, out of combat", function()
     local state = trackerFixture({units = {}})
     equal(state.targetRow.shown, false)
@@ -3737,7 +4434,7 @@ test("learning a rank in combat updates every row after combat", function()
     equal(slotByKey(row.container, "corruption").ids[990003], true)
     equal(slotByKey(row.container, "siphon") ~= nil, true, "Siphon Life now has a slot")
     equal(slotByKey(pinnedRow(state, "focus").container, "corruption").ids[990003], true)
-    equal(pinnedRow(state, "target").casts[5].attributes.macrotext1, "/cast [@target,harm,nodead] Siphon Life")
+    equal(pinnedRow(state, "target").casts[5].attributes.macrotext1, "/use [@target,harm,nodead] Siphon Life")
 end)
 test("without the aura container the tracker stays off and the rest runs", function()
     local state = fixture({noAuraContainer = true})
@@ -3895,7 +4592,7 @@ test("pinned bar rows recast from each bar line", function()
     local state = barsFixture()
     local casts = state.targetRow.casts
     equal(casts[5], nil, "no Siphon Life line, so no button")
-    equal(casts[3].attributes.macrotext1, "/cast [@target,harm,nodead] Corruption")
+    equal(casts[3].attributes.macrotext1, "/use [@target,harm,nodead] Corruption")
     equal(casts[3].points[1][1], "TOPLEFT")
     equal(casts[3].points[1][5], -(18 + 2 * 18), "over the Corruption line")
 end)
@@ -3932,6 +4629,27 @@ test("a theme change in combat waits for combat to end", function()
     state.combat = false
     state.emit("PLAYER_REGEN_ENABLED")
     equal(before.shown, false)
+end)
+test("a Warlock without Siphon Life and other optional DoTs can learn ranks with no slot error", function()
+    -- In client: "aura slot 'siphon' was not found with this key." (x69) when a
+    -- spellbook change updated every slot, also ones the rows never had.
+    for _, theme in ipairs({"compact", "bars"}) do
+        local state = trackerFixture({db = {tracker = {theme = theme}},
+            spellbook = {{spellID = 172, name = "Corruption"}, {spellID = 348, name = "Immolate"}}})
+        local row = currentRows(state)[1]
+        equal(slotByKey(row.container, "siphon"), nil, theme .. ": no Siphon Life slot")
+        equal(slotByKey(row.container, "curse"), nil, theme .. ": no Curse slot")
+        state.spellbook[#state.spellbook + 1] = {spellID = 990003, name = "Corruption"}
+        state.emit("SPELLS_CHANGED")
+        equal(slotByKey(currentRows(state)[1].container, "corruption").ids[990003], true, theme .. ": the new rank")
+        state.spellbook[#state.spellbook + 1] = {spellID = 990004, name = "Immolate"}
+        state.combat = true
+        state.emit("SPELLS_CHANGED")
+        state.combat = false
+        state.emit("PLAYER_REGEN_ENABLED")
+        equal(slotByKey(currentRows(state)[1].container, "immolate").ids[990004], true, theme .. ": after combat")
+        equal(slotByKey(pinnedRow(state, "target").container, "siphon"), nil)
+    end
 end)
 test("learning a spell adds its bar line, after combat", function()
     local state = barsFixture()

@@ -181,7 +181,7 @@ local function CharacterMacroLimit()
     end
 end
 
--- The name /cast needs: on Forever each stone spell has numeric ranks, cast
+-- The spell name /use (as /cast) needs: on Forever each stone spell has numeric ranks, cast
 -- as "Create Healthstone(Rank 2)".
 local function CastName(spellID)
     local name = C_Spell.GetSpellName(spellID)
@@ -197,7 +197,7 @@ end
 -- Connoisseur's Forever data does.
 local function CreateLines(lines, castName)
     if castName then
-        lines[#lines + 1] = "/cast [btn:2] " .. castName
+        lines[#lines + 1] = "/use [btn:2] " .. castName
         lines[#lines + 1] = "/stopmacro [btn:2]"
     end
 end
@@ -423,11 +423,36 @@ end
 -- Puts the requested Healthstone into the trade window. The client may allow
 -- moving items only during a key press or click, as with deleting them; a
 -- refused move is put back and tried once more at the next key press or
--- click. WTF never presses Trade for you.
+-- click. While item moves are restricted (WTF.MoveRestricted: combat or an
+-- AddOn restriction) WTF picks up nothing and clicks nothing; it tries at the
+-- next key press, and if that is restricted too, or too late, it says once to
+-- drag the stone in yourself. WTF never presses Trade for you.
+local DRAG_YOURSELF = "The game did not let WTF put the Healthstone into the trade window; drag it in yourself."
 local PlaceTradeStone
+
+-- One more try at the next key press or click, or the warning on the retry.
+local function RetryOrGiveUp(retry)
+    if retry then
+        stones.pendingTrade = nil
+        WTF.Warn(DRAG_YOURSELF)
+    else
+        WTF.RunOnNextInput(function() PlaceTradeStone(true) end)
+    end
+end
+
 function PlaceTradeStone(retry)
     local trade = stones.pendingTrade
     if not trade or GetCursorInfo() then
+        return
+    end
+    if retry and GetTime() - trade.time > TRADE_WAIT then
+        stones.pendingTrade = nil
+        WTF.Warn(DRAG_YOURSELF)
+        return
+    end
+    if WTF.MoveRestricted() then
+        stones.lastRestricted = GetTime()
+        RetryOrGiveUp(retry)
         return
     end
     local bag, slot = FindItemSlot(trade.itemID)
@@ -443,17 +468,18 @@ function PlaceTradeStone(retry)
         stones.pendingTrade = nil
         return
     end
+    if WTF.MoveRestricted() then
+        ClearCursor()
+        stones.lastRestricted = GetTime()
+        RetryOrGiveUp(retry)
+        return
+    end
     stones.placing, stones.refused = true, false
     ClickTradeButton(tradeSlot)
     stones.placing = false
     if stones.refused or GetCursorInfo() then
         ClearCursor()
-        if retry then
-            stones.pendingTrade = nil
-            WTF.Warn("The game did not let WTF put the Healthstone into the trade window; drag it in yourself.")
-        else
-            WTF.RunOnNextInput(function() PlaceTradeStone(true) end)
-        end
+        RetryOrGiveUp(retry)
         return
     end
     stones.pendingTrade = nil
@@ -876,7 +902,9 @@ function WTF.ReportStoneDebug()
     local healthRank = WTF.HealthstoneRankForTarget()
     WTF.Report(string.format("debug_stones targetLevel=%s healthstoneRank=%s pending=%s",
         tostring(FriendlyPlayerLevel()), tostring(healthRank and healthRank.spell), tostring(stones.pending)))
-    WTF.Report(string.format("debug_stones lastGiftWhisper=%s", tostring(stones.lastGift)))
+    WTF.Report(string.format("debug_stones lastGiftWhisper=%s moveRestricted=%s lastRestricted=%s",
+        tostring(stones.lastGift), tostring(WTF.MoveRestricted()),
+        stones.lastRestricted and string.format("%.1fs ago", GetTime() - stones.lastRestricted) or "never"))
     local now = GetTime()
     for _, entry in ipairs(stones.tradeLog) do
         WTF.Report(string.format("debug_stones trade %.1fs ago %s %s %s", now - entry.time, entry.event,

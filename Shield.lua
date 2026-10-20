@@ -55,7 +55,7 @@ local addonName, ns = ...
 -- other copy says which AddOn shows it. Version 1 copies elect among every
 -- registered copy, so a version 1 copy stands down for any newer one.
 
-local VERSION = 8
+local VERSION = 9
 local REGISTRY_NAME = "ShieldForeverRegistry"
 
 local ARC_TEXTURE = "Interface\\AddOns\\" .. addonName .. "\\Textures\\ShieldArc"
@@ -783,12 +783,27 @@ local function CreateRing()
     frame.text:SetPoint("TOP", frame, "BOTTOMLEFT", ARC_SIZE * TEXT_X, ARC_SIZE * TEXT_Y)
     frame.text:SetShadowColor(0, 0, 0, 1)
     frame.text:SetShadowOffset(1, -1)
+    -- A host's layout (Dyre's Toolkit) drags, snaps, and saves the ring;
+    -- without one it moves freely.
+    local layout = host.layout
+    if layout then
+        layout.register(frame, function(position) Config().position = position end)
+    end
     frame:SetScript("OnDragStart", function(self)
-        if not Config().locked then
+        if Config().locked then
+            return
+        end
+        if layout then
+            layout.beginDrag(self)
+        else
             self:StartMoving()
         end
     end)
     frame:SetScript("OnDragStop", function(self)
+        if layout then
+            layout.endDrag(self)
+            return
+        end
         self:StopMovingOrSizing()
         local point, _, relativePoint, x, y = self:GetPoint()
         Config().position = {point = point, relativePoint = relativePoint, x = x, y = y}
@@ -905,7 +920,11 @@ end
 -- unlockHint = optional text shown above the ring while it is unlocked;
 -- missingSounds = optional function the display calls instead of its own
 -- chat line when Dyre's Sounds is missing, so a host says it once for all its
--- sounds (author-approved: one line per AddOn).
+-- sounds (author-approved: one line per AddOn);
+-- layout = optional {register(frame, save), beginDrag(frame), endDrag(frame)}
+-- that moves the ring with the host's other frames (Dyre's Toolkit's
+-- RegisterMovable, BeginDrag, EndDrag); save(position) stores
+-- {point, relativePoint, x, y} against UIParent.
 -- An AddOn calls this only when it runs, so only running AddOns take part.
 function ShieldDisplay.Initialize(options)
     host = options

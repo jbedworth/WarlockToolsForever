@@ -27,9 +27,11 @@ FOREVER_TYPE_ID = 88568
 TIMEOUT = 30
 MAX_RESPONSE_BYTES = 2 * 1024 * 1024
 RECEIPT_NAME = "curseforge-upload.json"
-# Dyre's Sounds is required on CurseForge, so the app installs it with WTF;
-# the TOC lists it as OptionalDeps, so WTF still loads without it.
-RELATIONS = {"projects": [{"slug": "dyres-sounds", "type": "requiredDependency"}]}
+# Dyre's Sounds and Dyre's Toolkit are required on CurseForge, so the app
+# installs them with WTF; the TOC lists them as OptionalDeps, so WTF still
+# loads without them.
+RELATIONS = {"projects": [{"slug": "dyres-sounds", "type": "requiredDependency"},
+                          {"slug": "dyres-toolkit", "type": "requiredDependency"}]}
 
 
 class PublishError(Exception):
@@ -111,8 +113,8 @@ def load_artifact(artifact_dir, tag):
         if type(supplied) is not type(value) or supplied != value:
             raise PublishError(f"Release manifest {key} mismatch")
     if (verified["interface"] != 16001 or verified["game_version"] != "1.60.1"
-            or verified["target_build"] != 70338):
-        raise PublishError("Only Forever beta 1.60.1 / Interface 16001 / build 70338 is supported")
+            or verified["target_build"] != 70450):
+        raise PublishError("Only Forever beta 1.60.1 / Interface 16001 / build 70450 is supported")
     # Upload the held bytes, not a later read of a possibly replaced artifact.
     digest = hashlib.sha256(archive_bytes).hexdigest()
     if digest != verified["sha256"]:

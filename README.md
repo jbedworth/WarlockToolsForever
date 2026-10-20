@@ -8,7 +8,7 @@ several mobs, and a Nightfall sound.
 
 ## Compatibility
 
-WTF is tested on the Forever beta, `1.60.1` build `70338`, Interface `16001`,
+WTF is tested on the Forever beta, `1.60.1` build `70450`, Interface `16001`,
 Lua `5.1`. It does not check the client version or build, because beta builds
 change several times a week. At login it checks for the APIs it needs and
 disables itself with one message if any are missing. It runs on Warlocks only;
@@ -24,13 +24,32 @@ CurseForge app installs it with WTF. Otherwise get it from CurseForge or
 Without it, WTF works as usual but plays no sounds, and says so once in chat.
 The sounds you chose are kept.
 
+## Dyre's Toolkit
+
+**Dyre's Toolkit** gives all of Dyre's AddOns one layout mode and one
+settings home. The CurseForge app installs it with WTF. With it:
+
+- WTF's settings are under **Options → AddOns → Dyre's AddOns → Warlock
+  Tools Forever**, and WTF's own pages (Soul Shards, Stones, and the rest)
+  are under that.
+- `/wtf unlock`, `/dyre unlock`, or the toolkit's minimap button unlock the
+  frames of every Dyre's AddOn at once. WTF's frames, the shield ring too,
+  snap to the frames of Dyre's other AddOns, and the toolkit draws the grid (with **Snap to the
+  grid** on its settings page).
+- In the game's AddOn list, WTF is in the Dyre's AddOns group.
+
+Without it, WTF works as before, with its own top-level settings page, its
+own unlock, and its own grid, and says once in chat to install it.
+
 ## Soul Shards
 
 Drain Soul fills your bags with shards. WTF deletes each shard that Drain Soul
 creates above your limit, with no prompt. The game lets AddOns delete items
-only on a key press or click, so the extra shard goes on your next key press
-or click on the game world, which during play is almost at once. WTF passes
-every key on to the game unchanged.
+only on a key press or click, and not in combat or during boss fights,
+challenge modes, PvP matches, or on maps that restrict AddOns. So the extra
+shard goes on your next key press or click on the game world when none of
+those applies: out of combat, almost at once. WTF passes every key on to the
+game unchanged.
 
 - **The limit** matches the total size of your equipped soul bags (also one in
   the reagent bag slot), or 6 if you have none. Turn off **Match soul bag size** to set your own, from 1 to 60.
@@ -41,7 +60,12 @@ every key on to the game unchanged.
   move into your bags yourself, from the bank, mail, or trade, are never
   deleted, even above the limit.
 - **Only the new shard goes.** If you carry more than the limit on purpose, WTF
-  deletes only the shard Drain Soul just created and keeps the rest.
+  deletes only the shard Drain Soul just created and keeps the rest. WTF
+  remembers how many shards to keep: the shards you had at login and the ones
+  you move in yourself, but created ones only up to your limit. So a new shard
+  it could not delete at once (for example the second of two from one kill)
+  still goes on a later key press, and lowering your limit deletes nothing.
+  One shard goes per key press or click.
 - **Carried bags only,** including your reagent bag, where Forever puts
   shards first. The bank is never touched.
 - **Safety:** WTF waits while your cursor holds an item, and deletes only after
@@ -64,7 +88,9 @@ A small bar with a Soulstone and a Healthstone button; see
   be applied in combat. A Healthstone is used on you, except with a friendly player
   targeted: then left-click **trades** them the best Healthstone they can use
   (you press **Trade** yourself), or, if you carry none for their level,
-  creates one; left-click again to trade it.
+  creates one; left-click again to trade it. During combat or a boss fight the
+  game does not let WTF move the stone, so it goes in at your next key press
+  after, or WTF tells you to drag it in.
 - **Right-click** creates the best rank you know. With a friendly player
   targeted, the Healthstone button creates the best rank that player can use.
   You can carry one Healthstone of each rank, so when you already carry that
@@ -79,7 +105,7 @@ A small bar with a Soulstone and a Healthstone button; see
   icon shows the stone. WTF updates them as your bags and spells change.
   Turn **Keep stone macros** off on the Stones settings page to remove them.
   (On Forever, `/click` macros do not press AddOn buttons, so these macros
-  use the game's own `/use` and `/cast`.)
+  use the game's own `/use`.)
 - Spellstone and Firestone buttons and reminders are planned; they show as
   greyed-out **Coming soon** switches on the Stones settings page.
 - The game lets the buttons change only out of combat, so a stone made or used
@@ -177,11 +203,15 @@ left, in the same style as the DoT tracker's Bars theme. Several mobs at once
 are fine. It follows each mob as you change target, empties when the spell
 breaks early, and goes when the mob dies.
 
-- **Raid marker:** a mob you Banish gets the moon when the cast lands, so your
-  group knows it is out of the fight (change it on the Control settings page).
+- **Raid marker:** the "! Banish" macro and clicking a Banish row put the
+  moon on the mob, in and out of combat, so your group knows it is out of the
+  fight (change the marker on the Control settings page). The game lets only
+  your own key press or click set markers, so Banish cast from its plain
+  spell button gets none. The group message names the marker after a row
+  click only, since WTF cannot tell which button cast it otherwise.
   Fear marks nothing, so WTF uses only one marker slot in a group. If you mark
   with your own `/tm` macro, set Banish's marker to None: the game toggles a
-  marker that is set twice, and in combat WTF cannot see yours.
+  marker that is set twice.
 - **Group messages:** Fear, Banish, Enslave Demon, and Howl of Terror can tell
   your party or raid as you start casting, with the mob's name and marker
   (Announce page).
@@ -196,8 +226,10 @@ breaks early, and goes when the mob dies.
   one is about to break: click its nameplate to target it, then Fear.
 - **Macros:** WTF keeps "! Fear", "! Banish", and "! Seduction" in your
   character macros, each once you know its spell ("! Seduction" once your
-  Succubus or Incubus has learned Seduction from its Grimoire). "! Fear" Fears the mob under your mouse, else your
-  target: hover a feared mob's nameplate as its timer runs out and press it.
+  Succubus or Incubus has learned Seduction from its Grimoire). "! Fear" Fears your focus if you have one, else the mob under your
+  mouse, else your target: hover a feared mob's nameplate as its timer runs
+  out and press it. Hold Shift as you press it to make the mob under your
+  mouse (or your target) your focus first; a plain press keeps your focus.
   "! Banish" and "! Seduction" focus the hostile mob under your mouse (or your
   target, out of combat) and cast on your focus; "! Seduction" does nothing
   unless your pet is a Succubus or an Incubus. Turn them off on the Control settings page.
@@ -245,7 +277,8 @@ Demon Skin, out of combat. Click it to cast your armor.
 ## Settings
 
 **Options → AddOns → Warlock Tools Forever** (or `/wtf`) has one switch per
-module. Each module has its own subpage, such as **Soul Shards**.
+module. Each module has its own subpage, such as **Soul Shards**. With Dyre's
+Toolkit, the page is under **Dyre's AddOns**.
 
 ## Moving frames
 
@@ -261,6 +294,11 @@ While unlocked, a faint grid covers the screen, with red lines through its
 center, so you can line frames up. Turn off **Show a grid while unlocked** on
 the main settings page if you'd rather not see it.
 
+With Dyre's Toolkit, unlocking unlocks every Dyre's AddOn's frames, WTF's
+frames also snap to theirs, and the unlock switch and the grid are the
+toolkit's: they are on the **Dyre's AddOns** page, and WTF's page has none of
+its own. `/wtf unlock` and `/wtf lock` still work.
+
 ## Commands
 
 | Command | Effect |
@@ -268,7 +306,7 @@ the main settings page if you'd rather not see it.
 | `/wtf`, `/wtf options` | Open the settings |
 | `/wtf shards` | Show your shard count, limit, and whether deletion is on |
 | `/wtf stones` | Show who has your Soulstone and the stones you carry |
-| `/wtf unlock` | Unlock every WTF frame, so you can drag them |
+| `/wtf unlock` | Unlock every WTF frame (with Dyre's Toolkit, every Dyre's AddOn's frames), so you can drag them |
 | `/wtf lock` | Lock them again where they are |
 | `/wtf reset` | Move every WTF frame back to its default place |
 | `/wtf debug_shards` | Diagnostics: bags, soul bag sizes, and recent shard gains |
@@ -278,7 +316,7 @@ the main settings page if you'd rather not see it.
 | `/wtf debug_announce` | Diagnostics: the latest summon and Soulstone cast events |
 | `/wtf debug_emote` | Diagnostics: two test emotes from a timer, one per chat function, and which the game blocks |
 | `/wtf debug_tracker` | Diagnostics: the spell IDs each tracker slot accepts, and tracked mobs |
-| `/wtf debug_control` | Diagnostics: the control bar's spell IDs, rows, clicks, and the last marker |
+| `/wtf debug_control` | Diagnostics: the control bar's spell IDs, rows, and clicks |
 | `/wtf debug_chimes` | Diagnostics: each chime spell, its cooldown, and the sound |
 | `/wtf debug_shield` | Diagnostics: the absorb APIs and the shields WTF tracks |
 | `/wtf debug_reminders` | Diagnostics: the Demon Armor reminder and its click |

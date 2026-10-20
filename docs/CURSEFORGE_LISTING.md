@@ -17,7 +17,7 @@ tested.
 | Logo | artwork/warlock-tools-forever-logo.png (1024 x 1024) |
 | Source | https://github.com/jbedworth/WarlockToolsForever |
 | Issues | https://github.com/jbedworth/WarlockToolsForever/issues |
-| Relations | Dyre's Sounds (`dyres-sounds`), Required Dependency. Each CI upload sends it (`RELATIONS` in scripts/publish_curseforge.py); set it on the project too if the form asks. |
+| Relations | Dyre's Sounds (`dyres-sounds`) and Dyre's Toolkit (`dyres-toolkit`), Required Dependency. Each CI upload sends them (`RELATIONS` in scripts/publish_curseforge.py); set them on the project too if the form asks. |
 
 ## Summary
 
@@ -54,7 +54,7 @@ Per-file changelogs need no manual text: each CI upload uses the version's
 
 ### Fear and Banish control
 - A countdown bar for **every mob you Fear or Banish**, plus a Fear timer under each feared nameplate, so you know which one breaks next.
-- Banish marks its mob with the moon, so your group leaves it alone.
+- **! Banish** and a click on a Banish row mark the mob with the moon, so your group leaves it alone.
 - **! Fear**, **! Banish**, and **! Seduction** macros: aim with your mouse, no retargeting.
 
 ### Stays out of your way
@@ -77,7 +77,7 @@ WTF's sounds come from **Dyre's Sounds**, which holds the sounds for all of Dyre
 - `/warlocktools` works the same, in case another AddOn uses `/wtf`.
 
 ### Compatibility
-Beta: tested on the Forever beta client 1.60.1, build 70338. If a client update removes an API it needs, WTF turns itself off with one chat message.
+Beta: tested on the Forever beta client 1.60.1, build 70450. If a client update removes an API it needs, WTF turns itself off with one chat message.
 
 WowUp users (2.24.0 or later): install from the repository URL; GitHub releases carry the Forever metadata WowUp needs.
 

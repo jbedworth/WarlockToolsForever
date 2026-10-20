@@ -57,7 +57,7 @@ local SAMPLE_NAMES = {target = "Target (sample)", focus = "Focus (sample)",
     list = {"Another mob (sample)", "One more mob (sample)"}}
 local PINNED = {
     target = {unit = "target", driver = "[@target,harm,nodead] show; hide"},
-    focus = {unit = "focus", driver = "[@focus,harm,nodead] show; hide"},
+    focus = {unit = "focus", driver = "[@focus,exists,harm,nodead] show; hide"},
 }
 
 -- Every Warlock spell family that leaves a debuff on an enemy, per Forever's
@@ -440,7 +440,7 @@ local function ApplyCastButtons()
             local name = SlotSpellName(SLOTS[slotIndex])
             button:SetAttribute("type1", name and "macro" or nil)
             button:SetAttribute("macrotext1", name
-                and ("/cast [@" .. pinned.unit .. ",harm,nodead] " .. name) or nil)
+                and ("/use [@" .. pinned.unit .. (pinned.unit == "focus" and ",exists" or "") .. ",harm,nodead] " .. name) or nil)
             button.spellName = name
         end
     end
@@ -538,6 +538,8 @@ local function ApplyPinnedVisibility()
     tracker.visibilityDirty = false
     local settings = WTF.db.tracker
     for key, row in pairs(tracker.pinned) do
+        -- The row itself takes the mouse only to be dragged; its slots always do.
+        row:EnableMouse(not WTF.db.locked)
         UnregisterStateDriver(row, "visibility")
         if settings.placeholders then
             row:Show()
@@ -678,6 +680,8 @@ function Layout()
         row:Show()
     end
     for _, row in ipairs(tracker.rows) do
+        -- List rows only display: they take the mouse only to be dragged.
+        row:EnableMouse(not WTF.db.locked)
         if not used[row] then
             row:Hide()
             if row.sample then
@@ -775,9 +779,14 @@ end
 local function ApplySpellSets()
     tracker.setsDirty = false
     BuildSpellSets()
+    -- Only the slots the rows were built with: a spell family you do not know
+    -- has no slot, and asking for one raises "aura slot ... was not found"
+    -- (found in client, for Siphon Life). A newly learned family's slot comes
+    -- with the rebuild that follows.
     local function Update(row)
-        for _, slot in ipairs(SLOTS) do
-            row.container:SetAuraSlotCandidateFilters(slot.key, WTF.TrackerCandidateFilters(slot.key))
+        for _, slotIndex in ipairs(tracker.shown) do
+            local key = SLOTS[slotIndex].key
+            row.container:SetAuraSlotCandidateFilters(key, WTF.TrackerCandidateFilters(key))
         end
     end
     for _, row in ipairs(tracker.rows) do

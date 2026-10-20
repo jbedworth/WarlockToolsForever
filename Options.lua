@@ -270,14 +270,20 @@ local function AddControlPage(parent)
                             WTF.db.control.markers[spell.key] = value
                         end
                     end
+                    -- The macros and row clicks carry it; both change out of combat.
+                    WTF.ApplyControlMacros()
+                    WTF.RefreshControl()
                 end)
-            Settings.CreateDropdown(page, marker, MarkerChoices, "The raid marker WTF puts on a mob when your "
-                .. spell.label .. " lands, and %M in its message. In a raid only the leader and assistants mark.")
+            Settings.CreateDropdown(page, marker, MarkerChoices, "The raid marker for a mob you "
+                .. spell.label .. ": the \"! " .. spell.label .. "\" macro and the row click mark it, also in "
+                .. "combat. Banish from its plain spell button gets none: the game lets only your own key press "
+                .. "or click set markers. After a row click, %M puts it in the message. In a raid only the leader "
+                .. "and assistants mark.")
         end
     end
     Flag(page, "WTF_CONTROL_MACROS", "Keep control macros", "control", "macros", true,
         "Keep \"! Fear\", \"! Banish\", and \"! Seduction\" in your character macros for your action bars, "
-            .. "each once you know its spell. \"! Fear\" Fears the mob under your mouse (a feared mob's nameplate "
+            .. "each once you know its spell. \"! Fear\" Fears your focus (Shift-press it to focus the mob under your mouse, or your target, first), else the mob under your mouse (a feared mob's nameplate "
             .. "as its timer runs out), else your target. The others focus the hostile mob under your mouse (or "
             .. "your target, out of combat) and cast on your focus. \"! Seduction\" appears once your Succubus "
             .. "or Incubus has learned Seduction from its Grimoire, and casts only while one is your pet. Turning "
@@ -573,7 +579,7 @@ local ANNOUNCE_ROWS = {
     {switch = "healthstoneEmote", label = "Healthstone created: emote (starts with your name; once a minute)"},
     {switch = "soulstoneEmote", label = "Soulstone created: emote (starts with your name; once a minute)"},
     {switch = "fearGroup", label = "Fear: tell the group as you start casting"},
-    {switch = "banishGroup", label = "Banish: tell the group as you start casting (%M: its moon)"},
+    {switch = "banishGroup", label = "Banish: tell the group as you start casting (%M: its moon, after a row click)"},
     {switch = "enslaveGroup", label = "Enslave Demon: tell the group as you start casting"},
     {switch = "howlGroup", label = "Howl of Terror: tell the group"},
 }
@@ -623,7 +629,7 @@ local function CreateAnnouncePage()
     title:SetPoint("TOPLEFT", PAGE_LEFT, -16)
     local help = Text(content, "GameFontHighlightSmall",
         "%T is the target's full name (for control spells, the mob), %Z your zone, and %M the mob's raid "
-            .. "marker. Press Enter to keep an edit, Escape to undo it. "
+            .. "marker (after a Banish row click; else nothing). Press Enter to keep an edit, Escape to undo it. "
             .. "Nothing is sent for yourself or for a cast that fails.")
     help:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -8)
     help:SetWidth(EDIT_WIDTH)
@@ -731,7 +737,10 @@ function WTF.InitializeOptions()
     if not HasSettingsAPI() then
         return
     end
-    category = Settings.RegisterVerticalLayoutCategory(TITLE)
+    -- With Dyre's Toolkit, WTF's page sits under its "Dyre's AddOns" home and
+    -- WTF's own pages under that; else WTF's page is top level.
+    local home = WTF.toolkit and WTF.toolkit.RegisterSettingsCategory(TITLE)
+    category = home or Settings.RegisterVerticalLayoutCategory(TITLE)
     Flag(category, "WTF_SHARDS_ENABLED", "Soul Shard management", "shards", "enabled", true,
         "Delete Soul Shards that Drain Soul creates above your limit. Shards you move into your bags are never deleted.")
     Flag(category, "WTF_STONES_ENABLED", "Stones", "stones", "enabled", true,
@@ -768,20 +777,33 @@ function WTF.InitializeOptions()
             "A sound just before Death Coil, Howl of Terror, and your other chosen spells are ready again."
                 .. (WTF.SoundLibrary() and "" or " Install Dyre's Sounds to hear them."))
     end
-    local unlocked = Proxy(category, "WTF_UNLOCKED", Settings.VarType.Boolean, "Unlock frames to move them", false,
-        function() return not WTF.db.locked end,
-        function(value) WTF.SetFramesLocked(value ~= true) end)
-    Settings.CreateCheckbox(category, unlocked,
-        "Outline the Stones bar and the shard counter, and show sample DoT tracker rows, so you can drag them; "
-            .. "untick to lock them again. /wtf unlock and /wtf lock do the same, and /wtf reset moves them back.")
-    local grid = Proxy(category, "WTF_GRID", Settings.VarType.Boolean, "Show a grid while unlocked", true,
-        function() return WTF.db.grid end,
-        function(value)
-            WTF.db.grid = value == true
-            WTF.RefreshGrid()
-        end)
-    Settings.CreateCheckbox(category, grid, "While frames are unlocked, draw a faint grid over the screen with "
-        .. "the center lines in red, so you can line frames up.")
+    -- With Dyre's Toolkit, its own page has the unlock switch and the grid, for
+    -- every Dyre's AddOn (author-approved: no second switch here); /wtf unlock
+    -- and /wtf lock still work.
+    if not WTF.toolkit then
+        local unlocked = Proxy(category, "WTF_UNLOCKED", Settings.VarType.Boolean, "Unlock frames to move them",
+            false,
+            function() return not WTF.db.locked end,
+            function(value)
+                if value == true then
+                    WTF.Unlock()
+                else
+                    WTF.Lock()
+                end
+            end)
+        Settings.CreateCheckbox(category, unlocked,
+            "Outline the Stones bar and the shard counter, and show sample DoT tracker rows, so you can drag "
+                .. "them; untick to lock them again. /wtf unlock and /wtf lock do the same, and /wtf reset moves "
+                .. "them back.")
+        local grid = Proxy(category, "WTF_GRID", Settings.VarType.Boolean, "Show a grid while unlocked", true,
+            function() return WTF.db.grid end,
+            function(value)
+                WTF.db.grid = value == true
+                WTF.RefreshGrid()
+            end)
+        Settings.CreateCheckbox(category, grid, "While frames are unlocked, draw a faint grid over the screen "
+            .. "with the center lines in red, so you can line frames up.")
+    end
     AddShardPage(category)
     AddStonesPage(category)
     AddTrackerPage(category)
@@ -793,12 +815,19 @@ function WTF.InitializeOptions()
     local announcePage = CreateAnnouncePage()
     WTF.announcePage = announcePage
     Settings.RegisterCanvasLayoutSubcategory(category, announcePage, ANNOUNCE_TITLE)
-    Settings.RegisterAddOnCategory(category)
+    if not home then
+        Settings.RegisterAddOnCategory(category)
+    end
 end
 
 function WTF.OpenSettings()
     if not category then
         WTF.Report(UNAVAILABLE)
+        return
+    end
+    -- The toolkit opens it out of combat only, and says so.
+    if WTF.toolkit then
+        WTF.toolkit.OpenSettings(category)
         return
     end
     Settings.OpenToCategory(category:GetID())

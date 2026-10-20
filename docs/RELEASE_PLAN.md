@@ -61,7 +61,9 @@ No sound files: every sound comes from the library AddOn Dyre's Sounds
 (author-approved, so players keep one copy). The TOC lists it as
 `## OptionalDeps: DyresSounds`, and the CurseForge upload names it a required
 dependency (`RELATIONS` in `scripts/publish_curseforge.py`, slug
-`dyres-sounds`), so the CurseForge app installs it with WTF.
+`dyres-sounds`), so the CurseForge app installs it with WTF. Dyre's Toolkit is
+the same: `## OptionalDeps` lists `DyresToolkit` too, `## Group: DyresToolkit`
+nests WTF under it in the AddOn list, and `RELATIONS` has slug `dyres-toolkit`.
 
 The validator permits one optional empty root directory entry. Additional files
 or directories are not permitted. Exclude

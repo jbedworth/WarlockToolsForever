@@ -70,6 +70,67 @@ function WTF.SoundLibrary()
     return library, "ok"
 end
 
+-- When the client refuses AddOn item moves and deletion, also from a key
+-- press (found in client: DeleteCursorItem raised ADDON_ACTION_BLOCKED in a
+-- dungeon, BugGrabber 6x): in combat, while the player affects combat (a secret
+-- answer counts), or under a Combat, Encounter, ChallengeMode, PvPMatch, or
+-- Map AddOn restriction. Shard deletion and the Healthstone trade check it at
+-- each call and wait instead.
+local MOVE_RESTRICTIONS = {"Combat", "Encounter", "ChallengeMode", "PvPMatch", "Map"}
+
+function WTF.MoveRestricted()
+    if InCombatLockdown() then
+        return true
+    end
+    if type(UnitAffectingCombat) == "function" then
+        local affecting = UnitAffectingCombat("player")
+        if WTF.IsSecret(affecting) or affecting then
+            return true
+        end
+    end
+    local kinds = type(Enum) == "table" and Enum.AddOnRestrictionType
+    if type(C_RestrictedActions) ~= "table" or type(C_RestrictedActions.IsAddOnRestrictionActive) ~= "function"
+        or type(kinds) ~= "table" then
+        return false
+    end
+    for _, name in ipairs(MOVE_RESTRICTIONS) do
+        if kinds[name] ~= nil and C_RestrictedActions.IsAddOnRestrictionActive(kinds[name]) == true then
+            return true
+        end
+    end
+    return false
+end
+
+-- Dyre's Toolkit (author-approved, 2026-10-19): one layout mode, grid, and
+-- settings home for every Dyre's AddOn, and frames that snap across AddOns.
+-- The TOC lists it as OptionalDeps, so it loads first when installed; without
+-- it WTF keeps its own Layout.lua, grid, and top-level settings page.
+local TOOLKIT_CONTRACT = 1
+local TOOLKIT_FUNCTIONS = {"RegisterAddOn", "RegisterSettingsCategory", "RegisterMovable", "BeginDrag",
+    "EndDrag", "ScaleKeepingCenter", "IsLocked", "Lock", "Unlock", "OpenSettings"}
+local TOOLKIT_MESSAGES = {
+    missing = "Install Dyre's Toolkit from CurseForge for one layout mode and settings home for all Dyre's AddOns.",
+    old = "Update Dyre's Toolkit from CurseForge: this version is too old for WTF, so WTF uses its own layout.",
+}
+
+-- Dyre's Toolkit with the contract and functions WTF uses, else nil and why.
+function WTF.Toolkit()
+    local toolkit = rawget(_G, "DyresToolkit")
+    if type(toolkit) ~= "table" or type(toolkit.RequireContract) ~= "function" then
+        return nil, "missing"
+    end
+    toolkit = toolkit.RequireContract(TOOLKIT_CONTRACT)
+    if type(toolkit) ~= "table" then
+        return nil, "old"
+    end
+    for _, name in ipairs(TOOLKIT_FUNCTIONS) do
+        if type(toolkit[name]) ~= "function" then
+            return nil, "old"
+        end
+    end
+    return toolkit, "ok"
+end
+
 -- Says once per session what to install when a sound is wanted but missing.
 local soundsReported = false
 
@@ -612,7 +673,8 @@ local function BuildGrid()
 end
 
 function WTF.RefreshGrid()
-    local wanted = not WTF.db.locked and WTF.db.grid
+    -- With Dyre's Toolkit, its grid shows for every Dyre's AddOn.
+    local wanted = not WTF.toolkit and not WTF.db.locked and WTF.db.grid
     if not grid then
         if not wanted then
             return
@@ -643,8 +705,13 @@ function WTF.InitializeShield()
     if WTF.ShieldStandAside() then
         return
     end
+    -- With Dyre's Toolkit the ring drags, snaps, and saves through its layout;
+    -- without it the ring moves freely, as before.
+    local toolkit = WTF.toolkit
     WTF.ShieldDisplay.Initialize({settings = function() return WTF.db.shield end, report = WTF.Report,
-        unlockHint = "Drag to move · /wtf lock when done", missingSounds = WTF.ReportMissingSounds})
+        unlockHint = "Drag to move · /wtf lock when done", missingSounds = WTF.ReportMissingSounds,
+        layout = toolkit and {register = toolkit.RegisterMovable, beginDrag = toolkit.BeginDrag,
+            endDrag = toolkit.EndDrag} or nil})
 end
 
 function WTF.RefreshShield()
@@ -660,13 +727,18 @@ function WTF.ReportShieldDebug()
     WTF.ShieldDisplay.ReportDebug(WTF.Report)
 end
 
-function WTF.SetFramesLocked(locked)
+local function SetLockFlags(locked)
     WTF.db.locked = locked
     WTF.db.stones.locked = locked
     WTF.db.tracker.locked = locked
     WTF.db.tracker.placeholders = not locked
     WTF.db.shards.counterLocked = locked
     WTF.db.shield.locked = locked
+end
+
+-- quiet: Dyre's Toolkit locks every Dyre's AddOn and says one line for all.
+function WTF.SetFramesLocked(locked, quiet)
+    SetLockFlags(locked)
     WTF.RefreshTracker()
     WTF.RefreshStonesMover()
     WTF.RefreshShardCounter()
@@ -674,6 +746,9 @@ function WTF.SetFramesLocked(locked)
     WTF.RefreshReminders()
     WTF.RefreshControl()
     WTF.RefreshGrid()
+    if quiet then
+        return
+    end
     if locked then
         WTF.Report("All WTF frames locked.")
     else
@@ -682,12 +757,49 @@ function WTF.SetFramesLocked(locked)
     end
 end
 
+-- With Dyre's Toolkit, one layout mode for every Dyre's AddOn: the toolkit
+-- calls WTF.SetFramesLocked back, quietly.
 function WTF.Unlock()
-    WTF.SetFramesLocked(false)
+    if WTF.toolkit then
+        WTF.toolkit.Unlock()
+    else
+        WTF.SetFramesLocked(false)
+    end
 end
 
 function WTF.Lock()
-    WTF.SetFramesLocked(true)
+    if WTF.toolkit then
+        WTF.toolkit.Lock()
+    else
+        WTF.SetFramesLocked(true)
+    end
+end
+
+-- Before any module registers a frame: with Dyre's Toolkit, its layout moves
+-- WTF's frames (they snap to other Dyre's AddOns' frames and to its grid),
+-- and WTF's lock follows the toolkit's (locked at login). Else Layout.lua's.
+local function UseToolkit()
+    local toolkit, state = WTF.Toolkit()
+    WTF.toolkit = toolkit
+    if not toolkit then
+        WTF.Report(TOOLKIT_MESSAGES[state])
+        return
+    end
+    WTF.RegisterMovable = toolkit.RegisterMovable
+    WTF.BeginDrag = toolkit.BeginDrag
+    WTF.EndDrag = toolkit.EndDrag
+    WTF.ScaleKeepingCenter = toolkit.ScaleKeepingCenter
+    SetLockFlags(toolkit.IsLocked() ~= false)
+end
+
+-- After the settings exist, so the toolkit's menu can open them.
+local function JoinToolkit()
+    if not WTF.toolkit then
+        return
+    end
+    WTF.toolkit.RegisterAddOn({addon = addonName, title = DEFAULT_TITLE,
+        setLocked = function(locked) WTF.SetFramesLocked(locked == true, true) end,
+        openSettings = WTF.OpenSettings})
 end
 
 -- /wtf reset: the Stones bar, the DoT tracker, and the shard counter back to their default places.
@@ -751,6 +863,7 @@ events:SetScript("OnEvent", function(self, event, loadedName)
     end
     -- Called directly rather than from each file's own PLAYER_LOGIN handler,
     -- so startup never depends on event handler order.
+    UseToolkit()
     InstallInputHooks()
     WTF.InitializeShards()
     WTF.InitializeStones()
@@ -763,5 +876,6 @@ events:SetScript("OnEvent", function(self, event, loadedName)
     WTF.InitializeChimes()
     WTF.InitializeReminders()
     WTF.InitializeOptions()
+    JoinToolkit()
     WTF.RefreshGrid()
 end)

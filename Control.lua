@@ -41,7 +41,7 @@ WTF.CONTROL_SPELLS = {
     {key = "enslave", label = "Enslave Demon", ids = {1098, 11725, 11726}},
     {key = "howl", label = "Howl of Terror", ids = {5484, 17928}, untargeted = true},
 }
--- Raid markers by index, as SetRaidTarget numbers them, and their chat codes.
+-- Raid markers by index, as /tm numbers them, and their chat codes.
 WTF.RAID_MARKERS = {
     {index = 0, label = "None"},
     {index = 1, label = "Star", code = "{star}"},
@@ -252,17 +252,25 @@ end
 
 -- Display ----------------------------------------------------------------------
 
+-- A row whose mob is gone while its secure click slot still shows (a slot
+-- changes only out of combat) stays, dimmed, so no click area is invisible.
+local SPENT_ALPHA = 0.45
+
 local function Layout()
     local settings = WTF.db.control
     local sample = not WTF.db.locked
     anchor.mover:SetShown(sample)
     for index, row in ipairs(control.rows) do
-        if not settings.enabled then
-            row:Hide()
-        elseif row.guid then
+        local holder = row.holder
+        local spent = not row.guid and holder:IsVisible() and holder.mobName ~= nil
+        row:SetAlpha(spent and SPENT_ALPHA or 1)
+        if row.guid then
             row.name:SetText(row.mobName)
+            row:SetShown(settings.enabled)
+        elseif spent then
+            row.name:SetText(holder.mobName)
             row:Show()
-        elseif sample and SAMPLES[index] then
+        elseif settings.enabled and sample and SAMPLES[index] then
             row.name:SetText(SAMPLES[index])
             row:Show()
         else
@@ -287,7 +295,8 @@ local function ApplyClicks()
         local holder, name, spell = row.holder, row.clickName, row.clickSpell
         if name and spell then
             holder:SetAttribute("type1", "macro")
-            holder:SetAttribute("macrotext1", WTF.RecastMacro(spell, name))
+            holder:SetAttribute("macrotext1", WTF.RecastMacro(spell, name,
+                row.clickKey and WTF.db.control.markers[row.clickKey]))
         else
             holder:SetAttribute("type1", nil)
             holder:SetAttribute("macrotext1", nil)
@@ -296,6 +305,7 @@ local function ApplyClicks()
         -- A click area only where there is something to recast, or to drag by.
         holder:SetShown((name ~= nil and spell ~= nil) or not WTF.db.locked)
     end
+    Layout()
 end
 
 local function Forget(row)
@@ -305,11 +315,35 @@ local function Forget(row)
     ApplyClicks()
 end
 
+-- The game's /tm for a unit, or nothing for no marker. A macro's /tm runs
+-- from your key press, untainted, so it marks also in combat; AddOn code may
+-- not call SetRaidTarget at all. "!" keeps a second press from toggling the
+-- marker off.
+function WTF.MarkLine(unit, marker)
+    if type(marker) ~= "number" or marker <= 0 then
+        return nil
+    end
+    return "/tm [@" .. unit .. ",harm,nodead,exists] !" .. marker
+end
+
 -- A recast on your focus, or with no focus on the mob by name: a missing mob
--- leaves no target, so nothing else is cast on.
-function WTF.RecastMacro(spell, name)
-    return "/cast [@focus,harm,nodead] " .. spell .. "\n/stopmacro [@focus,exists]\n/cleartarget\n/targetexact "
-        .. name .. "\n/cast [@target,harm,nodead] " .. spell .. "\n/targetlasttarget"
+-- leaves no target, so nothing else is cast on. Each cast marks its mob first.
+function WTF.RecastMacro(spell, name, marker)
+    local lines = {}
+    local function Add(line)
+        if line then
+            lines[#lines + 1] = line
+        end
+    end
+    Add(WTF.MarkLine("focus", marker))
+    Add("/use [@focus,exists,harm,nodead] " .. spell)
+    Add("/stopmacro [@focus,exists]")
+    Add("/cleartarget")
+    Add("/targetexact " .. name)
+    Add(WTF.MarkLine("target", marker))
+    Add("/use [@target,harm,nodead] " .. spell)
+    Add("/targetlasttarget")
+    return table.concat(lines, "\n")
 end
 
 local function RowFor(guid, name)
@@ -331,7 +365,7 @@ end
 local function Track(row, guid, mobName, spell, spellName)
     row.guid, row.mobName = guid, mobName
     if spell.click then
-        row.clickName, row.clickSpell = mobName, spellName
+        row.clickName, row.clickSpell, row.clickKey = mobName, spellName, spell.key
     end
     local token = {}
     row.token = token
@@ -416,6 +450,7 @@ local function CreateRow(index)
     holder:RegisterForDrag("LeftButton")
     holder:SetScript("OnDragStart", StartDrag)
     holder:SetScript("OnDragStop", StopDrag)
+    holder:SetScript("PreClick", function() control.rowClickAt = GetTime() end)
     holder:SetScript("OnEnter", ShowTooltip)
     holder:SetScript("OnLeave", function() GameTooltip:Hide() end)
     holder:Hide()
@@ -458,7 +493,21 @@ end
 
 -- Casts --------------------------------------------------------------------------
 
+-- WTF never calls SetRaidTarget: in client it raised ADDON_ACTION_FORBIDDEN
+-- for AddOn code also out of combat (MTF's same guarded call, BugGrabber and
+-- the taint log), so markers come only from the game's /tm in "! Banish" and
+-- the row click (WTF.MarkLine), which run from your key press or click.
+-- A row click names its marker in the message: its PreClick shows WTF the
+-- click, and the cast it starts is sent within this many seconds. A cast from
+-- "! Banish" or the spell button tells WTF nothing, so it names none.
+local ROW_CLICK_WINDOW = 0.5
+
+-- %M: the marker's chat code after a row click, else nothing.
 local function MarkerCode(spell)
+    local clicked = control.rowClickAt
+    if not clicked or GetTime() - clicked > ROW_CLICK_WINDOW then
+        return ""
+    end
     local index = spell.marker and WTF.db.control.markers[spell.key] or 0
     for _, marker in ipairs(WTF.RAID_MARKERS) do
         if marker.index == index then
@@ -517,41 +566,11 @@ local function OnCastSent(target, castGUID, spellID)
     if spell.click and not InCombatLockdown() then
         local row = RowFor(guid, target)
         if row and not row.guid then
-            row.clickName, row.clickSpell = target, C_Spell.GetSpellName(spellID)
+            row.clickName, row.clickSpell, row.clickKey = target, C_Spell.GetSpellName(spellID), spell.key
             control.casts[castGUID].row = row
             ApplyClicks()
         end
     end
-end
-
--- The unit to mark: your target or focus when it is this mob (as TankHelper
--- marks your target), else the unit that shows it. SetRaidTarget toggles: a
--- unit that already has the marker loses it (the pinned /tm code's "!" prefix
--- exists to skip that). GetRaidTargetIndex returns a secret to AddOn code in
--- combat (pinned RaidMarkersDocumentation: SecretReturns), so WTF cannot
--- always ask. It skips the mark when the index is readable and already
--- equal, or, when it is not, when it marked this mob with it before.
-local function Mark(spell, guid, unit)
-    local index = WTF.db.control.markers[spell.key]
-    if not index or index == 0 or type(SetRaidTarget) ~= "function" then
-        return
-    end
-    for _, candidate in ipairs({"target", "focus"}) do
-        if ReadGUID(candidate) == guid then
-            unit = candidate
-            break
-        end
-    end
-    local current = GetRaidTargetIndex(unit)
-    local unreadable = WTF.IsSecret(current)
-    control.marked = control.marked or {}
-    if (not unreadable and current == index) or (unreadable and control.marked[guid] == index) then
-        control.marked[guid] = index
-        return
-    end
-    SetRaidTarget(unit, index)
-    control.marked[guid] = index
-    control.lastMark = unit .. (unreadable and " (marker unreadable)" or "")
 end
 
 local function OnCastSucceeded(castGUID)
@@ -569,7 +588,7 @@ local function OnCastSucceeded(castGUID)
         guid = unit and ReadGUID(unit)
     end
     -- A cast on the mob under the mouse (as "! Fear" does) counts: mouseover
-    -- checks the cast and takes the marker, though rows never bind to it.
+    -- checks the cast, though rows never bind to it.
     local unit = FindUnit(guid)
     if not unit and guid and ReadGUID("mouseover") == guid then
         unit = "mouseover"
@@ -578,7 +597,6 @@ local function OnCastSucceeded(castGUID)
         return
     end
     local spell = control.kinds[cast.spellID]
-    Mark(spell, guid, unit)
     local row = RowFor(guid, cast.target)
     if row then
         Track(row, guid, cast.target, spell, C_Spell.GetSpellName(cast.spellID))
@@ -607,17 +625,24 @@ end
 -- macro appears once your summoned demon knows it (the pet spellbook, by ID
 -- or by name, so either demon counts), stays after you dismiss it, and does
 -- nothing unless your pet is a Succubus or an Incubus.
--- The moon comes from WTF when the cast lands, so the macros do not /tm
--- (a second mark would toggle it off). "! Fear" is the author's own juggling
--- macro: no focus (a focus holds one mob), it Fears the mob under the mouse,
--- such as a feared mob's nameplate as its timer runs out, else your target.
+-- "! Banish" marks its focus with the game's /tm before the cast (with "!",
+-- so a second press never toggles it off): AddOn code may not call
+-- SetRaidTarget, and a macro's /tm runs from your key press. Its marker is the
+-- Banish marker setting; set to None, the line goes. "! Fear" is the author's
+-- own juggling macro: it Fears your focus when you have one, else the mob
+-- under the mouse (a feared mob's nameplate as its timer runs out), else your
+-- target (author-approved). It sets the focus only with Shift held (the mob
+-- under the mouse, else your target), so a plain press keeps the focus you
+-- chose. Fear has no marker setting, so the macro has no /tm.
 
 local CONTROL_MACROS = {
     {name = "! Fear", spell = 5782, known = {5782, 6213, 6215}, mouseover = true},
-    {name = "! Banish", spell = 710, known = {710, 18647}},
+    {name = "! Banish", spell = 710, known = {710, 18647}, marker = "banish"},
     {name = "! Seduction", spell = 6358, pet = true, condition = ",pet:Succubus/Incubus"},
 }
 local FOCUS_LINE = "/focus [@mouseover,harm,nodead][nocombat,harm,nodead]"
+-- "! Fear": with Shift, the mob under the mouse, else your target, becomes the focus.
+local SHIFT_FOCUS_LINE = "/focus [mod:shift,@mouseover,harm,nodead][mod:shift,harm,nodead]"
 
 local function KnowsAnyOf(ids)
     if type(C_SpellBook) ~= "table" or type(C_SpellBook.IsSpellKnown) ~= "function" then
@@ -668,10 +693,13 @@ function WTF.ControlMacroBody(macro)
         return nil
     end
     if macro.mouseover then
-        return "#showtooltip " .. spell .. "\n/cast [@mouseover,harm,nodead][harm,nodead] " .. spell
+        return "#showtooltip " .. spell .. "\n" .. SHIFT_FOCUS_LINE
+            .. "\n/use [@focus,exists,harm,nodead][@mouseover,harm,nodead][harm,nodead] " .. spell
     end
-    return table.concat({"#showtooltip " .. spell, FOCUS_LINE,
-        "/cast [@focus,harm,nodead" .. (macro.condition or "") .. "] " .. spell}, "\n")
+    local lines = {"#showtooltip " .. spell, FOCUS_LINE}
+    lines[#lines + 1] = WTF.MarkLine("focus", macro.marker and WTF.db.control.markers[macro.marker])
+    lines[#lines + 1] = "/use [@focus,exists,harm,nodead" .. (macro.condition or "") .. "] " .. spell
+    return table.concat(lines, "\n")
 end
 
 -- Out of combat only; turning the macros off deletes them.
@@ -950,8 +978,8 @@ function WTF.ReportControlDebug()
     for _ in pairs(plates.byUnit) do
         attached = attached + 1
     end
-    WTF.Report(string.format("debug_control marked=%s plateTimers=%s attached=%d", tostring(control.lastMark),
-        tostring(WTF.db.control.plateTimers), attached))
+    WTF.Report(string.format("debug_control plateTimers=%s attached=%d", tostring(WTF.db.control.plateTimers),
+        attached))
     -- For the Seduction macro: your demon's family and whether it knows Seduction.
     local family = type(UnitCreatureFamily) == "function" and UnitCreatureFamily("pet")
     WTF.Report(string.format("debug_control pet=%s seduction=%s", tostring(family), tostring(PetKnows(6358))))
