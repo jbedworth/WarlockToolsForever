@@ -857,6 +857,8 @@ local function fixture(options)
             if state.combat and self.protected then error("SetScale in combat") end
             self.scale = value
         end
+        function object:GetScale() return self.scale or 1 end
+        function object:GetNumPoints() return #self.points end
         function object:GetWidth() return self.width or 0 end
         function object:GetHeight() return self.height or 0 end
         function object:GetEffectiveScale()
@@ -3254,13 +3256,13 @@ end)
 
 test("a copy registered first whose AddOn stays off does not keep WTF's display away", function()
     -- MTF loads first (folder order) but stays off on a Warlock.
-    local state = fixture({shieldCopies = {{addon = "MageToolsForever", version = 9, before = true}}})
+    local state = fixture({shieldCopies = {{addon = "MageToolsForever", version = 11, before = true}}})
     equal(state.wtf.ShieldDisplay.IsOwner(), true, "only running copies take part")
     equal(state.wtf.ShieldDisplay.frame ~= nil, true, "WTF draws the ring")
     state.clear()
     state.slash("debug_shield")
     contains(table.concat(state.messages, "|"),
-        "owner=WarlockToolsForever copies=MageToolsForever v9, WarlockToolsForever v9 (running)")
+        "owner=WarlockToolsForever copies=MageToolsForever v11, WarlockToolsForever v11 (running)")
     equal(table.concat(state.messages, "|"):find("failed", 1, true), nil, "every debug step ran")
 end)
 test("with Dyre's Shields Up loaded, WTF draws no shield and greys out its shield settings", function()
@@ -3294,7 +3296,7 @@ test("with Dyre's Shields Up loaded, WTF draws no shield and greys out its shiel
     equal(#fixture().categories.Shield.headings, 0, "no heading without Dyre's Shields Up")
 end)
 test("a newer running copy takes over, and WTF says which AddOn shows the display", function()
-    local state = fixture({shieldCopies = {{addon = "ShieldForever", version = 10}}})
+    local state = fixture({shieldCopies = {{addon = "ShieldForever", version = 12}}})
     equal(state.wtf.ShieldDisplay.frame ~= nil, true, "drawing while it is the only one running")
     local function shieldGreyed(want)
         local seen = 0
@@ -3335,12 +3337,16 @@ end)
 test("a bubble drains in the innermost crescent; in combat the display stays up for one", function()
     local state = fixture({spellbook = {}})
     local ring = state.wtf.ShieldDisplay.frame
-    local bubble = ring.iconButtons.blessingofprotection
+    -- Shield v11: the timed crescent is a slot of its own container.
+    local bubble
+    for _, slot in ipairs(ring.crescents.slots) do
+        if slot.key == "blessingofprotection" then bubble = slot.button end
+    end
     local bar = bubble.display.bar
     contains(bar.statusBarTexture, "ShieldArcInnermost")
     equal(bar.barColor[1], 1, "gold")
     equal(bubble.display.barOptions.direction, 1, "drains with its time left")
-    equal(ring.timedBars.blessingofprotection, bar)
+    equal(ring.iconButtons.blessingofprotection.display.icon ~= nil, true, "its icon in the icon row")
     equal(ring.shown, false, "nothing up out of combat")
     -- In combat, a Blessing of Protection from a Paladin cannot be read, so
     -- the display stays shown and the engine draws the bubble when it is up.

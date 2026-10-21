@@ -4,6 +4,11 @@ Player-facing changes for each Warlock Tools Forever release, newest first. The
 release builder copies the section for the TOC version into the GitHub release
 notes and the CurseForge changelog, and fails if that section is missing.
 
+## 1.1.1
+
+### Fixes
+- The shield display grows and shrinks around its middle and stays where you put it; its number and icons keep their size.
+
 ## 1.1.0
 
 ### Features

@@ -28,7 +28,15 @@ local addonName, ns = ...
 -- 10-20 points, used up at once, so the ring flickered). The absorb cannot be
 -- compared, so a hidden gate bar does it: its range is one point wide, ending
 -- at the minimum, so its fill is empty below the minimum and full from it. A
--- clipping frame spans that fill, and everything visible sits inside it.
+-- clipping frame spans that fill, and the crescent sits inside it; the number
+-- has a gate of its own.
+--
+-- The size setting scales the crescents only (author-approved: large arcs
+-- with large text were disconcerting). The number and the icon row keep their
+-- own sizes (textScale, iconScale): each sits in a frame scaled against the
+-- crescents' scale, anchored with no offsets so it follows the crescent's
+-- foot. The engine's slots are never resized: the icons and the timed
+-- crescents are separate slots in two containers, one under each frame.
 --
 -- Shields with no absorb amount drain with time instead (see `timed` below):
 -- Mana Shield in the inner crescent, and bubbles (Divine Shield, Divine
@@ -55,7 +63,7 @@ local addonName, ns = ...
 -- other copy says which AddOn shows it. Version 1 copies elect among every
 -- registered copy, so a version 1 copy stands down for any newer one.
 
-local VERSION = 9
+local VERSION = 11
 local REGISTRY_NAME = "ShieldForeverRegistry"
 
 local ARC_TEXTURE = "Interface\\AddOns\\" .. addonName .. "\\Textures\\ShieldArc"
@@ -75,6 +83,8 @@ local INNERMOST_SPAN = 70 / 128
 -- The crescent sits in the right part of the square texture, so the frame
 -- centered a little right of your character puts it beside you.
 local DEFAULT_POINT = {"CENTER", "CENTER", 20, -20}
+-- Scale changes smaller than this are none (the client returns floats).
+local SCALE_EPSILON = 0.01
 -- Where the number goes: under the crescent's foot, in texture fractions.
 local TEXT_X = 0.8
 local TEXT_Y = 0.02
@@ -85,7 +95,10 @@ local BACKGROUND_ALPHA = 0.35
 local MIN_ABSORB = 25
 local MIN_ABSORB_SHARE = 0.05
 -- How far below the frame the gate reaches, so the number under it shows.
-local GATE_TEXT_ROOM = 40
+-- The number's gate and clip, in the number's own units: room for the widest
+-- abbreviated absorb.
+local TEXT_BOX_WIDTH = 120
+local TEXT_BOX_HEIGHT = 24
 local GATE_TEXTURE = "Interface\\Buttons\\WHITE8X8"
 -- Seconds after your shield cast during which an absorb change is that shield
 -- landing, so its total is the shield's size.
@@ -201,6 +214,11 @@ ShieldDisplay.SCALE_MIN = 50
 ShieldDisplay.SCALE_MAX = 150
 ShieldDisplay.SCALE_STEP = 5
 ShieldDisplay.DEFAULT_SCALE = 100
+-- The ring's size at 100% and its default place, for a host that makes it a
+-- widget (layout.adopt).
+ShieldDisplay.SIZE = ARC_SIZE
+ShieldDisplay.DEFAULT_PLACE = {point = DEFAULT_POINT[1], relativePoint = DEFAULT_POINT[2], x = DEFAULT_POINT[3],
+    y = DEFAULT_POINT[4]}
 -- The break sound a player starts with, a Dyre's Sounds key.
 ShieldDisplay.DEFAULT_BREAK_SOUND = DEFAULT_BREAK_SOUND
 
@@ -278,6 +296,8 @@ function ShieldDisplay.Sanitize(settings)
         breakSound = settings.breakSound == true,
         breakSoundKey = ShieldDisplay.SanitizeBreakSound(settings.breakSoundKey),
         scale = ShieldDisplay.SanitizeScale(settings.scale),
+        textScale = ShieldDisplay.SanitizeScale(settings.textScale),
+        iconScale = ShieldDisplay.SanitizeScale(settings.iconScale),
     }
 end
 
@@ -316,6 +336,8 @@ local function UpdateFill()
         frame.visible:SetAlpha(1)
         frame.gate:SetMinMaxValues(0, 1)
         frame.gate:SetValue(1)
+        frame.textGate:SetMinMaxValues(0, 1)
+        frame.textGate:SetValue(1)
         frame.bar:SetMinMaxValues(0, 1)
         frame.bar:SetValue(SAMPLE_FILL)
         frame.text:SetText(SAMPLE_TEXT)
@@ -326,6 +348,8 @@ local function UpdateFill()
     local minimum = MinimumAbsorb()
     frame.gate:SetMinMaxValues(minimum - 1, minimum)
     frame.gate:SetValue(absorb)
+    frame.textGate:SetMinMaxValues(minimum - 1, minimum)
+    frame.textGate:SetValue(absorb)
     -- Against the shield's size when it landed; your health until one is known.
     frame.bar:SetMinMaxValues(0, shield.size or UnitHealthMax("player"))
     frame.bar:SetValue(absorb)
@@ -364,6 +388,29 @@ local function ActiveShields()
     return anyUp, nil
 end
 
+-- A plain frame, so it can resize also in combat. A bare SetScale grows a
+-- frame away from its anchor (found in client: anchored to UIParent's
+-- corner, it moved right and up), so a placed ring keeps its center, saved
+-- as {CENTER, BOTTOMLEFT, x, y} against UIParent, as the host's layout saves it.
+local function ScaleFromCenter(scale)
+    if math.abs(frame:GetScale() - scale) < SCALE_EPSILON then
+        return
+    end
+    local x, y = frame:GetCenter()
+    if frame:GetNumPoints() == 0 or not x then
+        frame:SetScale(scale)
+        return
+    end
+    local before = frame:GetEffectiveScale() / UIParent:GetEffectiveScale()
+    x, y = x * before, y * before
+    frame:SetScale(scale)
+    local after = UIParent:GetEffectiveScale() / frame:GetEffectiveScale()
+    local position = {point = "CENTER", relativePoint = "BOTTOMLEFT", x = x * after, y = y * after}
+    frame:ClearAllPoints()
+    frame:SetPoint(position.point, UIParent, position.relativePoint, position.x, position.y)
+    Config().position = position
+end
+
 function ShieldDisplay.Refresh()
     if not frame then
         return
@@ -372,12 +419,19 @@ function ShieldDisplay.Refresh()
     local up, color = ActiveShields()
     local shown = color or SHIELDS[1].color
     frame.bar:SetStatusBarColor(shown[1], shown[2], shown[3])
-    -- A plain frame, so it can resize also in combat.
-    frame:SetScale(settings.scale / 100)
-    frame:EnableMouse(not settings.locked)
-    frame.mover:SetShown(not settings.locked)
+    -- An adopted ring is the host's to place, size, and outline.
+    if not frame.adopted then
+        ScaleFromCenter(settings.scale / 100)
+        frame:EnableMouse(not settings.locked)
+        frame.mover:SetShown(not settings.locked)
+    end
+    -- The number and the icon row keep their own sizes, whatever the crescents'.
+    local arcs = frame:GetScale()
+    frame.textHolder:SetScale(settings.textScale / 100 / arcs)
+    frame.iconHolder:SetScale(settings.iconScale / 100 / arcs)
     if frame.sample then
         frame.sample:SetShown(not settings.locked)
+        frame.sampleIcons:SetShown(not settings.locked)
     end
     -- In combat, buffs others cast on you cannot be read (Blessing of
     -- Protection), so the display stays shown: the outer crescent's opacity
@@ -573,6 +627,12 @@ local function PlaceRing()
 end
 
 function ShieldDisplay.ResetPosition()
+    if frame and frame.adopted then
+        if host.layout.resetPosition then
+            host.layout.resetPosition(frame)
+        end
+        return
+    end
     Config().position = nil
     if frame then
         PlaceRing()
@@ -632,91 +692,97 @@ local function NoMouse(region)
     region:EnableMouse(false)
 end
 
--- An icon in its spot, with a cooldown swipe for the time left.
-local function AddIcon(button, parent, spot)
-    local holder = CreateFrame("Frame", nil, button)
-    holder:SetSize(ICON_SIZE, ICON_SIZE)
-    PlaceIcon(holder, spot)
-    local icon = holder:CreateTexture(nil, "ARTWORK")
-    icon:SetAllPoints()
-    icon:SetTexCoord(0.07, 0.93, 0.07, 0.93)
-    local cooldown = CreateFrame("Cooldown", nil, holder, "CooldownFrameTemplate")
-    cooldown:SetAllPoints(holder)
-    cooldown:SetHideCountdownNumbers(true)
-    button:SetIcon(icon)
-    button:SetDurationCooldown(cooldown)
-    return holder
-end
-
 -- The engine shows each slot's frame while its buff is up and hides it the
--- moment the buff goes. A timed shield's frame covers the whole display and
--- holds the inner crescent, which the engine drains with the buff's time
--- left; it never takes the mouse, so it cannot block clicks on the world.
+-- moment the buff goes. Neither kind takes the mouse, so neither can block
+-- clicks on the world.
+
+-- An icon in its spot, with a cooldown swipe for the time left.
 local function IconInitializer(entry)
     return function(button)
         frame.iconButtons[entry.key] = button
         NoMouse(button)
-        if entry.timed then
-            local texture = entry.innermost and INNERMOST_ARC_TEXTURE or INNER_ARC_TEXTURE
-            local span = entry.innermost and INNERMOST_SPAN or INNER_SPAN
-            button:SetAllPoints(frame)
-            local track = button:CreateTexture(nil, "BACKGROUND")
-            FitCrescent(track, span)
-            track:SetTexture(texture)
-            track:SetVertexColor(0, 0, 0)
-            track:SetAlpha(BACKGROUND_ALPHA)
-            local bar = CreateFrame("StatusBar", nil, button)
-            FitCrescent(bar, span)
-            bar:SetStatusBarTexture(texture)
-            bar:SetOrientation("VERTICAL")
-            bar:SetStatusBarColor(entry.color[1], entry.color[2], entry.color[3])
-            local direction = Enum.StatusBarTimerDirection and Enum.StatusBarTimerDirection.RemainingTime
-            button:SetDurationBar(bar, {direction = direction})
-            frame.timedBars = frame.timedBars or {}
-            frame.timedBars[entry.key] = bar
-            AddIcon(button, frame, shield.spots[entry.key])
-        else
-            button:SetSize(ICON_SIZE, ICON_SIZE)
-            PlaceIcon(button, shield.spots[entry.key])
-            local icon = button:CreateTexture(nil, "ARTWORK")
-            icon:SetAllPoints()
-            icon:SetTexCoord(0.07, 0.93, 0.07, 0.93)
-            local cooldown = CreateFrame("Cooldown", nil, button, "CooldownFrameTemplate")
-            cooldown:SetAllPoints(button)
-            cooldown:SetHideCountdownNumbers(true)
-            button:SetIcon(icon)
-            button:SetDurationCooldown(cooldown)
-        end
+        button:SetSize(ICON_SIZE, ICON_SIZE)
+        PlaceIcon(button, shield.spots[entry.key])
+        local icon = button:CreateTexture(nil, "ARTWORK")
+        icon:SetAllPoints()
+        icon:SetTexCoord(0.07, 0.93, 0.07, 0.93)
+        local cooldown = CreateFrame("Cooldown", nil, button, "CooldownFrameTemplate")
+        cooldown:SetAllPoints(button)
+        cooldown:SetHideCountdownNumbers(true)
+        button:SetIcon(icon)
+        button:SetDurationCooldown(cooldown)
     end
 end
 
+-- A timed shield's slot covers the whole display and holds the inner
+-- crescent, which the engine drains with the buff's time left.
+local function CrescentInitializer(entry)
+    return function(button)
+        NoMouse(button)
+        local texture = entry.innermost and INNERMOST_ARC_TEXTURE or INNER_ARC_TEXTURE
+        local span = entry.innermost and INNERMOST_SPAN or INNER_SPAN
+        button:SetAllPoints(frame)
+        local track = button:CreateTexture(nil, "BACKGROUND")
+        FitCrescent(track, span)
+        track:SetTexture(texture)
+        track:SetVertexColor(0, 0, 0)
+        track:SetAlpha(BACKGROUND_ALPHA)
+        local bar = CreateFrame("StatusBar", nil, button)
+        FitCrescent(bar, span)
+        bar:SetStatusBarTexture(texture)
+        bar:SetOrientation("VERTICAL")
+        bar:SetStatusBarColor(entry.color[1], entry.color[2], entry.color[3])
+        local direction = Enum.StatusBarTimerDirection and Enum.StatusBarTimerDirection.RemainingTime
+        button:SetDurationBar(bar, {direction = direction})
+    end
+end
+
+-- includeSpellIDs is a set, {[spellID] = true}, not a list: a list matched
+-- nothing in client.
+local function SpellSet(entry)
+    local ids = {}
+    for _, spellID in ipairs(entry.ranks) do
+        ids[spellID] = true
+    end
+    return ids
+end
+
+local function NewContainer(parent)
+    local container = CreateFrame("AuraContainer", nil, parent, CONTAINER_TEMPLATE)
+    container:SetPoint("TOPLEFT", frame, "TOPLEFT")
+    container:SetSize(1, 1)
+    return container
+end
+
 -- Outside the opacity frame, so a shield the absorb total leaves out still
--- shows its icon.
+-- shows its icon: the icons under the icon row's frame, the timed crescents
+-- in the ring itself, so they grow with the outer one.
 local function CreateIcons()
     frame.iconButtons = {}
     if not HasAuraContainer() then
         return
     end
-    local container = CreateFrame("AuraContainer", nil, frame, CONTAINER_TEMPLATE)
-    container:SetPoint("TOPLEFT", frame, "TOPLEFT")
-    container:SetSize(1, 1)
+    local icons = NewContainer(frame.iconHolder)
+    local crescents = NewContainer(frame)
     for _, entry in ipairs(SHIELDS) do
         if shield.spots[entry.key] then
-            -- includeSpellIDs is a set, {[spellID] = true}, not a list: a list
-            -- matched nothing in client.
-            local ids = {}
-            for _, spellID in ipairs(entry.ranks) do
-                ids[spellID] = true
-            end
-            container:AddAuraSlot(entry.key, AURA_FILTER, {
-                candidateFilters = {includeSpellIDs = ids},
+            icons:AddAuraSlot(entry.key, AURA_FILTER, {
+                candidateFilters = {includeSpellIDs = SpellSet(entry)},
                 initializeFrame = IconInitializer(entry),
             })
+            if entry.timed then
+                crescents:AddAuraSlot(entry.key, AURA_FILTER, {
+                    candidateFilters = {includeSpellIDs = SpellSet(entry)},
+                    initializeFrame = CrescentInitializer(entry),
+                })
+            end
         end
     end
-    container:SetUnit("player")
-    container:UpdateAllAuras()
-    frame.icons = container
+    for _, container in ipairs({icons, crescents}) do
+        container:SetUnit("player")
+        container:UpdateAllAuras()
+    end
+    frame.icons, frame.crescents = icons, crescents
 end
 
 -- While unlocked, a sample of every part: the inner crescent and an icon in
@@ -734,10 +800,13 @@ local function CreateSample()
     innermost:SetTexture(INNERMOST_ARC_TEXTURE)
     local gold = SHIELDS[#SHIELDS].color
     innermost:SetVertexColor(gold[1], gold[2], gold[3])
+    -- The sample's icons are the icon row's size.
+    frame.sampleIcons = CreateFrame("Frame", nil, frame.iconHolder)
+    frame.sampleIcons:SetAllPoints(frame.iconHolder)
     for _, entry in ipairs(SHIELDS) do
         local spot = shield.spots[entry.key]
         if spot then
-            local icon = frame.sample:CreateTexture(nil, "ARTWORK")
+            local icon = frame.sampleIcons:CreateTexture(nil, "ARTWORK")
             icon:SetSize(ICON_SIZE, ICON_SIZE)
             icon:SetTexCoord(0.07, 0.93, 0.07, 0.93)
             local texture = type(C_Spell.GetSpellTexture) == "function" and C_Spell.GetSpellTexture(entry.spell)
@@ -746,6 +815,7 @@ local function CreateSample()
         end
     end
     frame.sample:Hide()
+    frame.sampleIcons:Hide()
 end
 
 -- A plain frame, not a secure one, so it updates and moves in combat. It takes
@@ -754,9 +824,15 @@ local function CreateRing()
     frame = CreateFrame("Frame", nil, UIParent)
     ShieldDisplay.frame = frame
     frame:SetSize(ARC_SIZE, ARC_SIZE)
-    frame:SetClampedToScreen(true)
-    frame:SetMovable(true)
-    frame:RegisterForDrag("LeftButton")
+    local layout = host.layout
+    -- A widget host (Dyre's Toolkit) adopts the ring once it is built: it
+    -- places, drags, sizes, outlines, and saves it.
+    local adopting = layout and type(layout.adopt) == "function"
+    if not adopting then
+        frame:SetClampedToScreen(true)
+        frame:SetMovable(true)
+        frame:RegisterForDrag("LeftButton")
+    end
     -- Everything visible sits in one frame whose opacity follows the absorb.
     frame.visible = CreateFrame("Frame", nil, frame)
     frame.visible:SetAllPoints()
@@ -769,7 +845,7 @@ local function CreateRing()
     frame.gated = CreateFrame("Frame", nil, frame.visible)
     frame.gated:SetClipsChildren(true)
     frame.gated:SetPoint("TOPLEFT", frame, "TOPLEFT")
-    frame.gated:SetPoint("BOTTOMRIGHT", frame.gate:GetStatusBarTexture(), "BOTTOMRIGHT", 0, -GATE_TEXT_ROOM)
+    frame.gated:SetPoint("BOTTOMRIGHT", frame.gate:GetStatusBarTexture(), "BOTTOMRIGHT")
     frame.background = frame.gated:CreateTexture(nil, "BACKGROUND")
     FitCrescent(frame.background, OUTER_SPAN)
     frame.background:SetTexture(ARC_TEXTURE)
@@ -779,13 +855,40 @@ local function CreateRing()
     FitCrescent(frame.bar, OUTER_SPAN)
     frame.bar:SetStatusBarTexture(ARC_TEXTURE)
     frame.bar:SetOrientation("VERTICAL")
-    frame.text = frame.bar:CreateFontString(nil, "OVERLAY", "NumberFontNormal")
-    frame.text:SetPoint("TOP", frame, "BOTTOMLEFT", ARC_SIZE * TEXT_X, ARC_SIZE * TEXT_Y)
+    -- The number: under the crescent's foot, in the opacity frame, at its own
+    -- size, behind a gate of its own. The anchor point is in the ring, so the
+    -- number follows the foot as the crescents grow; no offsets, since they
+    -- would be in the number's units.
+    frame.foot = frame:CreateTexture(nil, "ARTWORK")
+    frame.foot:SetSize(1, 1)
+    frame.foot:SetPoint("CENTER", frame, "BOTTOMLEFT", ARC_SIZE * TEXT_X, ARC_SIZE * TEXT_Y)
+    frame.textHolder = CreateFrame("Frame", nil, frame.visible)
+    frame.textHolder:SetSize(TEXT_BOX_WIDTH, TEXT_BOX_HEIGHT)
+    frame.textHolder:SetPoint("TOP", frame.foot, "CENTER")
+    frame.textGate = CreateFrame("StatusBar", nil, frame.textHolder)
+    frame.textGate:SetAllPoints()
+    frame.textGate:SetStatusBarTexture(GATE_TEXTURE)
+    frame.textGate:SetOrientation("HORIZONTAL")
+    frame.textGate:SetAlpha(0)
+    frame.textGated = CreateFrame("Frame", nil, frame.textHolder)
+    frame.textGated:SetClipsChildren(true)
+    frame.textGated:SetPoint("TOPLEFT", frame.textHolder, "TOPLEFT")
+    frame.textGated:SetPoint("BOTTOMRIGHT", frame.textGate:GetStatusBarTexture(), "BOTTOMRIGHT")
+    frame.text = frame.textGated:CreateFontString(nil, "OVERLAY", "NumberFontNormal")
+    frame.text:SetPoint("TOP", frame.textHolder, "TOP")
     frame.text:SetShadowColor(0, 0, 0, 1)
     frame.text:SetShadowOffset(1, -1)
+    -- The icon row's frame: icons anchor to the number, at their own size.
+    frame.iconHolder = CreateFrame("Frame", nil, frame)
+    frame.iconHolder:SetSize(1, 1)
+    frame.iconHolder:SetPoint("CENTER", frame, "CENTER")
+    if adopting then
+        frame.adopted = true
+        frame:Hide()
+        return
+    end
     -- A host's layout (Dyre's Toolkit) drags, snaps, and saves the ring;
     -- without one it moves freely.
-    local layout = host.layout
     if layout then
         layout.register(frame, function(position) Config().position = position end)
     end
@@ -818,6 +921,9 @@ local function CreateRing()
     frame.mover.hint:SetText(host.unlockHint or "Drag to move")
     frame.mover:Hide()
     frame:Hide()
+    -- Sized before it is placed, so a saved place (in the ring's own scaled
+    -- units, as it was saved) lands where it was.
+    frame:SetScale(Config().scale / 100)
     PlaceRing()
 end
 
@@ -863,6 +969,9 @@ local function Start()
     CreateRing()
     CreateIcons()
     CreateSample()
+    if frame.adopted then
+        host.layout.adopt(frame)
+    end
     for _, event in ipairs({"UNIT_SPELLCAST_SUCCEEDED", "UNIT_ABSORB_AMOUNT_CHANGED", "UNIT_MAXHEALTH",
         "UNIT_AURA"}) do
         events:RegisterUnitEvent(event, "player")
@@ -924,7 +1033,12 @@ end
 -- layout = optional {register(frame, save), beginDrag(frame), endDrag(frame)}
 -- that moves the ring with the host's other frames (Dyre's Toolkit's
 -- RegisterMovable, BeginDrag, EndDrag); save(position) stores
--- {point, relativePoint, x, y} against UIParent.
+-- {point, relativePoint, x, y} against UIParent. Or (version 10)
+-- layout = {adopt(frame), resetPosition(frame)}: the host makes the built ring
+-- its own (a Dyre's Toolkit widget, sized SIZE at DEFAULT_PLACE, with the
+-- settings table as its store), and the display then never places, drags,
+-- scales, outlines, or saves it, nor changes its mouse; it still fills it,
+-- shows or hides it, and shows the sample while the settings say unlocked.
 -- An AddOn calls this only when it runs, so only running AddOns take part.
 function ShieldDisplay.Initialize(options)
     host = options

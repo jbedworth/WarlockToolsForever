@@ -525,6 +525,20 @@ module only after the author agrees its behavior.
   before. WTF passes Dyre's Toolkit's `RegisterMovable`, `BeginDrag`, and
   `EndDrag` only when it uses the toolkit (`WTF.toolkit`); without it, no
   layout.
+- Version 10 (DSU): the host table may instead give `layout = {adopt(frame),
+  resetPosition(frame)}`, for a host that makes the built ring its own Dyre's
+  Toolkit widget; the display then never places, drags, scales, or saves it.
+  WTF does not adopt the ring (coordinator: not now) and keeps the version 9
+  layout table.
+- Version 11 (DSU 1.1.0, coordinator-approved; WTF 1.1.1): the ring scales
+  from its center (`ScaleFromCenter`; a bare SetScale moved it away from its
+  anchor, found in client), so it stays where it was put; `shield.scale`
+  sizes only the crescents, the number and icons stay at 100% (new sanitized
+  keys `textScale` and `iconScale`); the icon row and the timed crescents are
+  two AuraContainers (`ring.icons`, `ring.crescents`), each set up only in its
+  own `initializeFrame`. No host change for a version 9 host. The copy's
+  sha256 is pinned in tests/test_release.py and compared with DSU's copy when
+  it is next to WTF.
 
 ### Demon Armor reminder (built)
 

@@ -279,6 +279,17 @@ class ReleaseTests(unittest.TestCase):
         for name in arc.CRESCENTS:
             self.assertEqual((ROOT / "Textures" / name).read_bytes(), arc.build(name), name)
 
+    def test_shield_lua_is_the_shared_copy(self):
+        # Shield.lua is shared byte for byte with Dyre's Shields Up (its owner)
+        # and Mage Tools Forever; a change goes through Dyre's Shields Up and the
+        # coordinator, and moves this hash. Version 11, from Dyre's Shields Up 1.1.0.
+        source = (ROOT / "Shield.lua").read_bytes()
+        self.assertEqual(hashlib.sha256(source).hexdigest(),
+                         "0d09d196498024d8c6725914f2b47af4185071aa4fbfea70d2dae35aed68fa13")
+        owner = ROOT.parent / "DyresShieldsUp" / "Shield.lua"
+        if owner.exists():
+            self.assertEqual(source, owner.read_bytes(), "the same bytes as Dyre's Shields Up's copy")
+
     def test_shield_lua_draws_each_crescent_at_its_height(self):
         spec = importlib.util.spec_from_file_location("build_arc", ROOT / "scripts" / "build_arc.py")
         arc = importlib.util.module_from_spec(spec)
