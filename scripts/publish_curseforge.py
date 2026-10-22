@@ -31,8 +31,9 @@ RECEIPT_NAME = "curseforge-upload.json"
 # installs them with WTF; the TOC lists them as OptionalDeps, so WTF still
 # loads without them. Weapon Skills Forever is an optional companion (as set on
 # the project); WTF does not use it, so the TOC does not name it.
-RELATIONS = {"projects": [{"slug": "dyres-sounds", "type": "requiredDependency"},
-                          {"slug": "dyres-toolkit", "type": "requiredDependency"},
+RELATIONS = {"projects": [{"slug": "dyres-toolkit", "type": "requiredDependency"},
+                          {"slug": "dyres-shields-up", "type": "requiredDependency"},
+                          {"slug": "dyres-buff-reminders", "type": "requiredDependency"},
                           {"slug": "weapon-skills-forever", "type": "optionalDependency"}]}
 
 

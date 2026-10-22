@@ -25,7 +25,7 @@ local function contains(actual, fragment, context)
 end
 
 local RUNTIME_FILES = {"Commands.lua", "Core.lua", "Layout.lua", "Shards.lua", "Stones.lua", "Announce.lua", "Tracker.lua",
-    "Dots.lua", "Control.lua", "Alerts.lua", "Shield.lua", "Chimes.lua", "Reminders.lua", "Probe.lua", "Options.lua"}
+    "Dots.lua", "Control.lua", "Probe.lua", "Options.lua"}
 local SHARD = 6265
 local SPELLS = {[1120] = "Drain Soul", [11675] = "Drain Soul", [8288] = "Drain Soul", [686] = "Shadow Bolt", [172] = "Corruption",
     [6222] = "Corruption", [980] = "Curse of Agony", [698] = "Ritual of Summoning",
@@ -200,6 +200,12 @@ local function fixture(options)
     -- options.loadedAddOns: other AddOns already loaded, as {DyresBuffReminders = true}.
     state.loadedAddOns = options.loadedAddOns
     env.C_AddOns.IsAddOnLoaded = function(name) return state.loadedAddOns and state.loadedAddOns[name] end
+    -- options.installedAddOns: installed but not loaded, as {DyresShieldsUp = "DISABLED"}.
+    env.C_AddOns.GetAddOnInfo = function(name)
+        local reason = (options.installedAddOns or {})[name]
+        if reason then return name, name, "", false, reason end
+        return name, nil, nil, false, "MISSING"
+    end
     env.C_AddOns.LoadAddOn = function(name)
         state.loadedAddOns = state.loadedAddOns or {}
         state.loadedAddOns[name] = true
@@ -454,6 +460,14 @@ local function fixture(options)
         function toolkit.Lock() toolkit.SetLocked(true) end
         function toolkit.Unlock() toolkit.SetLocked(false) end
         function toolkit.OpenSettings(category) toolkit.opened[#toolkit.opened + 1] = category; return true end
+        -- Toolkit 2.3.0: a button that opens another AddOn's settings.
+        toolkit.links = {}
+        function toolkit.AddSettingsLink(category, layout, opts)
+            local initializer = {name = opts.name, buttonText = opts.button, tooltip = opts.tooltip}
+            toolkit.links[#toolkit.links + 1] = {category = category, opts = opts}
+            layout:AddInitializer(initializer)
+            return initializer
+        end
         if options.toolkitMissing then toolkit[options.toolkitMissing] = nil end
         env.DyresToolkit = toolkit
         state.toolkit = toolkit
@@ -1054,30 +1068,12 @@ local function fixture(options)
     end
 
     for _, name in ipairs(options.remove or {}) do env[name] = nil end
-    -- Other AddOns shipping Shield.lua, as MTF does: {addon, version, before};
-    -- each gets its own namespace, and a test initializes it or not.
-    state.copies = {}
-    local function loadShieldCopy(spec)
-        local source = assert(io.open("Shield.lua")):read("*a")
-        source = source:gsub("local VERSION = %d+", "local VERSION = " .. spec.version)
-        local chunk = assert(loadstring(source, "=" .. spec.addon .. "/Shield.lua"))
-        setfenv(chunk, env)
-        local namespace = {}
-        chunk(spec.addon, namespace)
-        state.copies[spec.addon] = namespace
-    end
-    for _, spec in ipairs(options.shieldCopies or {}) do
-        if spec.before then loadShieldCopy(spec) end
-    end
     state.wtf = {}
     for _, path in ipairs(options.files or RUNTIME_FILES) do
         local chunk, message = loadfile(path)
         if not chunk then error(message) end
         setfenv(chunk, env)
         chunk("WarlockToolsForever", state.wtf)
-    end
-    for _, spec in ipairs(options.shieldCopies or {}) do
-        if not spec.before then loadShieldCopy(spec) end
     end
     env.WarlockToolsForeverDB = options.db
     state.env = env
@@ -1238,9 +1234,126 @@ test("a missing client API disables WTF with one message naming it", function()
 end)
 test("a mixed install of old and new files is reported at login", function()
     local state = fixture({files = {"Commands.lua", "Core.lua", "Layout.lua", "Shards.lua", "Stones.lua", "Announce.lua",
-        "Tracker.lua", "Dots.lua", "Control.lua", "Alerts.lua", "Shield.lua", "Chimes.lua", "Reminders.lua", "Options.lua"}})
+        "Tracker.lua", "Dots.lua", "Control.lua", "Options.lua"}})
     equal(state.wtf.available, false)
     contains(state.last(), "missing ReportRestrictions")
+end)
+
+-- Features that moved out in 1.3.0 ---------------------------------------------
+
+local MOVED_LINES = {
+    shield = "Install Dyre's Shields Up from CurseForge for the shield display: it moved there from WTF.",
+    reminders = "Install Dyre's Buff Reminders from CurseForge for the cooldown chimes, the Nightfall sound, "
+        .. "and the Demon Armor reminder: it moved there from WTF.",
+}
+
+test("without Dyre's Shields Up or Dyre's Buff Reminders, login says once to install them", function()
+    local state = fixture()
+    contains(table.concat(state.messages, "\n"), "WTF: " .. MOVED_LINES.shield)
+    contains(table.concat(state.messages, "\n"), "WTF: " .. MOVED_LINES.reminders)
+    local count = #state.messages
+    state.slash("shards")
+    state.emit("PLAYER_ENTERING_WORLD")
+    for index = count + 1, #state.messages do
+        equal(state.messages[index]:find("moved there from WTF", 1, true), nil, "once per session")
+    end
+end)
+test("an installed but disabled AddOn is to be enabled; a loaded one says nothing", function()
+    local state = fixture({installedAddOns = {DyresShieldsUp = "DISABLED"},
+        loadedAddOns = {DyresBuffReminders = true}})
+    local all = table.concat(state.messages, "\n")
+    contains(all, "WTF: Enable Dyre's Shields Up in the AddOn list for the shield display: it moved there from WTF.")
+    equal(all:find("Install Dyre's Shields Up", 1, true), nil, "nothing to install")
+    equal(all:find("Dyre's Buff Reminders", 1, true), nil, "Dyre's Buff Reminders is loaded")
+    local quiet = fixture({loadedAddOns = {DyresShieldsUp = true, DyresBuffReminders = true}})
+    equal(table.concat(quiet.messages, "\n"):find("moved there from WTF", 1, true), nil)
+end)
+test("other classes get no moved-feature lines", function()
+    local state = fixture({class = "MAGE"})
+    equal(table.concat(state.messages, "\n"):find("moved there from WTF", 1, true), nil)
+end)
+test("the old shield, chime, Nightfall, and reminder settings stay exactly as saved", function()
+    local shield = {enabled = false, scale = 80, position = {point = "LEFT", relativePoint = "LEFT", x = 3, y = 4},
+        breakSoundKey = "pickglass", extra = "kept"}
+    local chimes = {enabled = false, lead = 7, spells = {deathcoil = false}, sounds = {howl = "tts"}}
+    local alerts = {nightfall = true, nightfallSound = "not a sound"}
+    local reminders = {enabled = false, spells = {armor = false}, last = {armor = 706}}
+    local state = fixture({db = {shield = shield, chimes = chimes, alerts = alerts, reminders = reminders}})
+    local db = state.wtf.db
+    equal(db.shield, shield, "the same tables, for the new AddOns to copy")
+    equal(db.chimes, chimes)
+    equal(db.alerts, alerts)
+    equal(db.reminders, reminders)
+    equal(db.shield.scale, 80)
+    equal(db.shield.extra, "kept")
+    equal(db.shield.locked, nil, "no lock flag added")
+    equal(db.alerts.nightfallSound, "not a sound", "not repaired: WTF no longer reads it")
+    equal(db.chimes.lead, 7)
+    equal(db.reminders.last.armor, 706)
+    state.slash("unlock")
+    state.slash("lock")
+    equal(db.shield.locked, nil, "the lock leaves them alone too")
+    local fresh = fixture()
+    equal(fresh.wtf.db.shield, nil, "nothing new is saved")
+    equal(fresh.wtf.db.chimes, nil)
+    equal(fresh.wtf.db.alerts, nil)
+    equal(fresh.wtf.db.reminders, nil)
+end)
+test("WTF draws no shield, plays no sounds, and shows no Demon Armor icon of its own", function()
+    local state = fixture()
+    equal(state.wtf.ShieldDisplay, nil)
+    equal(state.env.WarlockToolsForeverReminder_armor, nil)
+    for _, variable in ipairs({"WTF_SHIELD_ENABLED", "WTF_CHIMES_ENABLED", "WTF_REMINDERS_ENABLED",
+        "WTF_ALERTS_NIGHTFALL", "WTF_SHIELD_SCALE", "WTF_CHIMES_LEAD"}) do
+        equal(state.settings[variable], nil, variable .. " is gone")
+    end
+    for _, command in ipairs({"debug_shield", "debug_chimes", "debug_reminders"}) do
+        state.clear()
+        state.slash(command)
+        contains(state.last(), "WTF: Use /wtf", command .. " is gone")
+    end
+    state.units.player.auras = {{name = "Shadow Trance", spellId = 17941}}
+    state.emit("UNIT_AURA", "player")
+    equal(state.auraSounds, nil, "no Nightfall sound registered")
+    equal(state.played, nil, "no sound played")
+end)
+test("the Shield, Cooldown Chimes, Alerts, and Demon Armor pages link to the AddOns that have them", function()
+    local state = fixture({toolkit = true})
+    local cases = {
+        {"Shield", "DyresShieldsUp", "Shield display", "Open Shield settings",
+            "Install Dyre's Shields Up from CurseForge for the shield display."},
+        {"Cooldown Chimes", "DyresBuffReminders", "Cooldown chimes", "Open Chime settings",
+            "Install Dyre's Buff Reminders from CurseForge for the cooldown chimes."},
+        {"Alerts", "DyresBuffReminders", "Nightfall sound", "Open Proc settings",
+            "Install Dyre's Buff Reminders from CurseForge for the Nightfall sound (Proc Sounds)."},
+        {"Demon Armor", "DyresBuffReminders", "Demon Armor reminder", "Open Reminder settings",
+            "Install Dyre's Buff Reminders from CurseForge for the Demon Armor reminder."},
+    }
+    equal(#state.toolkit.links, #cases)
+    for index, case in ipairs(cases) do
+        local link = state.toolkit.links[index]
+        local page = state.categories[case[1]]
+        equal(page.parent, state.categories["Warlock Tools Forever"], case[1] .. " is under WTF's page")
+        equal(link.category, page, case[1] .. ": the link is on its page")
+        equal(link.opts.addon, case[2])
+        equal(link.opts.name, case[3])
+        equal(link.opts.button, case[4])
+        equal(link.opts.missing, case[5])
+        contains(link.opts.tooltip, "moved to")
+        equal(#page.initializers, 0, case[1] .. ": nothing but the link")
+        equal(page.headings[1].buttonText, case[4])
+    end
+end)
+test("without the toolkit's link, each moved page says where its feature went", function()
+    for _, options in ipairs({{}, {toolkit = true, toolkitMissing = "AddSettingsLink"}}) do
+        local state = fixture(options)
+        local page = state.categories.Shield
+        equal(#page.initializers, 1)
+        local note = page.initializers[1]
+        equal(note.setting.name, "Shield display (moved to Dyre's Shields Up)")
+        contains(note.tooltip, "Install Dyre's Shields Up from CurseForge")
+        equal(note.modifyPredicates[1](), false, "greyed: it only says something")
+    end
 end)
 
 -- Saved settings ---------------------------------------------------------------
@@ -2774,77 +2887,6 @@ test("unlocked, the control bar shows samples to drag; debug_control reports the
     contains(state.messages[1], "debug_control available=true known=true")
 end)
 
--- Demon Armor reminder ---------------------------------------------------------------
-
-local DEMON_SKIN, DEMON_ARMOR = 687, 706
-
-test("with Dyre's Buff Reminders loaded, WTF's Demon Armor icon stays hidden and keeps its setting", function()
-    local state = fixture({known = {[DEMON_SKIN] = true, [DEMON_ARMOR] = true},
-        loadedAddOns = {DyresBuffReminders = true}})
-    local icon = state.env.WarlockToolsForeverReminder_armor
-    equal(icon.shown, false, "no second icon beside Dyre's Buff Reminders'")
-    state.slash("unlock")
-    equal(icon.shown, false, "not even to drag")
-    equal(state.wtf.db.reminders.enabled, true, "the saved switch is untouched")
-    equal(state.settings.WTF_REMINDERS_ENABLED.name, "Demon Armor reminder (shown by Dyre's Buff Reminders)")
-end)
-test("the Demon Armor icon pulses while it is missing; a click casts your armor", function()
-    local state = fixture({known = {[DEMON_SKIN] = true, [DEMON_ARMOR] = true}})
-    local icon = state.env.WarlockToolsForeverReminder_armor
-    equal(icon.shown, true)
-    equal(icon.glow.animation.playing, true, "the border pulses")
-    equal(icon.protected, true, "a secure button")
-    equal(icon.attributes.type1, "spell")
-    equal(icon.attributes.spell1, "Demon Armor", "your best")
-    equal(icon.attributes.unit1, "player")
-    state.emit("UNIT_SPELLCAST_SUCCEEDED", "player", "cast-1", DEMON_SKIN)
-    state.emit("UNIT_AURA", "player")
-    equal(icon.attributes.spell1, "Demon Skin", "the armor you used last")
-    equal(state.wtf.db.reminders.last.armor, "Demon Skin")
-    state.buffs = {["Demon Skin"] = {name = "Demon Skin"}}
-    state.emit("UNIT_AURA", "player")
-    equal(icon.shown, false, "Demon Skin counts")
-    equal(icon.attributes.type1, nil)
-end)
-test("the reminder hides for combat, reads no buffs then, and follows its switch", function()
-    local state = fixture({known = {[DEMON_ARMOR] = true}})
-    local icon, holder = state.env.WarlockToolsForeverReminder_armor, state.env.WarlockToolsForeverReminders
-    equal(state.drivers[holder], "[combat] hide; show")
-    state.combat = true
-    state.applyDrivers()
-    equal(holder.shown, false)
-    state.emit("UNIT_AURA", "player")
-    state.combat = false
-    state.applyDrivers()
-    state.emit("PLAYER_REGEN_ENABLED")
-    equal(holder.shown, true)
-    state.settings.WTF_REMINDERS_ENABLED:SetValue(false)
-    equal(icon.shown, false)
-    local unknown = fixture()
-    equal(unknown.env.WarlockToolsForeverReminder_armor.shown, false, "not before you learn Demon Skin")
-end)
-test("unlocked, the reminder drags, snaps, and resizes with the mouse wheel", function()
-    local state = fixture()
-    state.slash("unlock")
-    local icon = state.env.WarlockToolsForeverReminder_armor
-    equal(icon.shown, true, "a sample to place")
-    equal(icon.attributes.type1, nil, "dragging never casts")
-    local x, y = state.absCenter(icon)
-    icon.scripts.OnMouseWheel(icon, 1)
-    equal(state.wtf.db.reminders.icons.armor.scale, 110)
-    local nx, ny = state.absCenter(icon)
-    equal(math.floor(nx + 0.5), math.floor(x + 0.5), "resizing keeps the center")
-    equal(math.floor(ny + 0.5), math.floor(y + 0.5))
-    state.slash("lock")
-    icon.scripts.OnMouseWheel(icon, 1)
-    equal(state.wtf.db.reminders.icons.armor.scale, 110, "locked icons do not resize")
-    state.slash("reset")
-    equal(state.wtf.db.reminders.icons.armor.scale, 100)
-    state.clear()
-    state.slash("debug_reminders")
-    contains(state.messages[1], "debug_reminders armor on=true known=false")
-end)
-
 -- Dyre's Toolkit ----------------------------------------------------------------------
 
 local TOOLKIT_INSTALL = "WTF: Install Dyre's Toolkit from CurseForge for one layout mode and settings home for "
@@ -2873,8 +2915,7 @@ test("with Dyre's Toolkit WTF joins its layout mode, quietly, and starts locked"
     equal(db.locked, true, "frames start locked, as the toolkit's do")
     equal(countMessages(state, "Dyre's Toolkit"), 0, "nothing to install")
     for _, frame in ipairs({state.wtf.shardCounter, state.env.WarlockToolsForeverStones,
-        state.env.WarlockToolsForeverTracker, state.env.WarlockToolsForeverControl,
-        state.env.WarlockToolsForeverReminder_armor}) do
+        state.env.WarlockToolsForeverTracker, state.env.WarlockToolsForeverControl}) do
         equal(registeredMovable(state, frame), true, "every movable frame snaps through the toolkit")
     end
     state.clear()
@@ -2887,15 +2928,6 @@ test("with Dyre's Toolkit WTF joins its layout mode, quietly, and starts locked"
     equal(countMessages(state, "All WTF frames"), 0, "the toolkit says one line for all")
     equal(state.last(), "Dyre: Frames unlocked.")
     equal(state.wtf.grid, nil, "the toolkit draws the grid")
-    local icon = state.env.WarlockToolsForeverReminder_armor
-    icon.scripts.OnDragStart(icon)
-    icon.scripts.OnDragStop(icon)
-    equal(toolkit.calls[#toolkit.calls - 1][1], "BeginDrag")
-    equal(toolkit.calls[#toolkit.calls - 1][2], icon)
-    equal(toolkit.calls[#toolkit.calls][1], "EndDrag")
-    icon.scripts.OnMouseWheel(icon, 1)
-    equal(toolkit.calls[#toolkit.calls][1], "ScaleKeepingCenter", "resizing goes through the toolkit")
-    equal(state.wtf.db.reminders.icons.armor.scale, 110)
     state.slash("lock")
     equal(toolkit.locked, true, "/wtf lock locks every Dyre's AddOn")
     equal(db.locked, true)
@@ -2948,30 +2980,6 @@ test("without Dyre's Toolkit WTF keeps its own layout and pages and says once to
     state.slash("lock")
     equal(countMessages(state, TOOLKIT_INSTALL), 1, "once")
 end)
-test("with Dyre's Toolkit the shield ring drags and snaps through its layout", function()
-    local state = fixture({toolkit = true})
-    local toolkit, ring = state.toolkit, state.wtf.ShieldDisplay.frame
-    equal(registeredMovable(state, ring), true, "the ring is one of the toolkit's frames")
-    ring.scripts.OnDragStart(ring)
-    equal(#toolkit.calls, 0, "locked: no drag")
-    state.slash("unlock")
-    ring.scripts.OnDragStart(ring)
-    ring.scripts.OnDragStop(ring)
-    equal(toolkit.calls[#toolkit.calls - 1][1], "BeginDrag")
-    equal(toolkit.calls[#toolkit.calls - 1][2], ring)
-    equal(toolkit.calls[#toolkit.calls][1], "EndDrag")
-    equal(ring.moving, nil, "the toolkit moves it, not the ring itself")
-end)
-test("without Dyre's Toolkit the shield ring drags itself, as before", function()
-    local state = fixture()
-    local ring = state.wtf.ShieldDisplay.frame
-    state.slash("unlock")
-    ring.scripts.OnDragStart(ring)
-    equal(ring.moving, true)
-    ring.scripts.OnDragStop(ring)
-    equal(ring.moving, false)
-    equal(type(state.wtf.db.shield.position), "table", "its place is saved")
-end)
 test("an unusable Dyre's Toolkit leaves WTF on its own layout", function()
     for _, options in ipairs({{toolkit = "old"}, {toolkit = true, toolkitMissing = "ScaleKeepingCenter"}}) do
         local state = fixture(options)
@@ -3003,35 +3011,6 @@ local function dropAt(state, frame, x, y, handle)
     handle.scripts.OnDragStop(handle)
 end
 
-test("a tiny absorb stays hidden: a gate bar ending at the minimum clips the ring", function()
-    local state = fixture()
-    local ring = state.wtf.ShieldDisplay.frame
-    state.emit("UNIT_ABSORB_AMOUNT_CHANGED", "player")
-    equal(ring.gate.value, state.absorb, "the secret absorb, passed on unread")
-    equal(ring.gate.minValue, 74, "one point wide, so the fill is empty or full")
-    equal(ring.gate.maxValue, 75, "5% of 1500 health beats 25 points")
-    equal(ring.gated.clips, true)
-    equal(ring.gated.points[2][2], ring.gate:GetStatusBarTexture(), "the clip ends where the gate's fill ends")
-    equal(ring.bar.parent, ring.gated)
-    equal(ring.gated.parent, ring.visible, "the opacity still follows the absorb")
-    state.slash("unlock")
-    equal(ring.gate.value, 1, "unlocked, the gate is open for the sample")
-end)
-test("WTF ships the shield display: it follows its switch and the lock", function()
-    local state = fixture()
-    local ring = state.wtf.ShieldDisplay.frame
-    equal(state.settings.WTF_SHIELD_ENABLED:GetValue(), true, "on by default")
-    state.slash("unlock")
-    equal(ring.shown, true, "a sample to drag")
-    equal(state.wtf.db.shield.locked, false)
-    state.slash("lock")
-    equal(state.wtf.db.shield.locked, true)
-    state.settings.WTF_SHIELD_ENABLED:SetValue(false)
-    equal(state.wtf.db.shield.enabled, false)
-    state.clear()
-    state.slash("debug_shield")
-    contains(state.messages[1], "debug_shield UnitGetTotalAbsorbs=function")
-end)
 local function initializerFor(page, variable)
     for _, initializer in ipairs(page.initializers) do
         if initializer.setting.variable == variable then return initializer end
@@ -3040,8 +3019,7 @@ end
 
 test("size sliders are labeled without (%): their values show the % sign", function()
     local state = fixture()
-    for _, case in ipairs({{"Shield", "WTF_SHIELD_SCALE", "Display size"},
-        {"Control", "WTF_CONTROL_SCALE", "Bar size"}}) do
+    for _, case in ipairs({{"Control", "WTF_CONTROL_SCALE", "Bar size"}}) do
         local slider = initializerFor(state.categories[case[1]], case[2])
         equal(slider.setting.name, case[3])
         equal(slider.options.label, "right")
@@ -3056,341 +3034,12 @@ test("size sliders are labeled without (%): their values show the % sign", funct
         end
     end
 end)
-test("the shield break sound comes from Dyre's Sounds, chosen under its switch", function()
-    local state = fixture()
-    equal(state.wtf.db.shield.breakSoundKey, "fadingslow", "the default")
-    local dropdown = initializerFor(state.categories.Shield, "WTF_SHIELD_BREAK_SOUND_CHOICE")
-    equal(dropdown.parentInitializer.setting.variable, "WTF_SHIELD_BREAK_SOUND", "under the sound switch")
-    equal(dropdown.soundMenu, "aura", "Dyre's Sounds' nested menu of aura sounds")
-    local labels = {}
-    for _, choice in ipairs(dropdown.choices()) do labels[#labels + 1] = choice.label end
-    equal(table.concat(labels, ", "), "Dyre's Picks: Fading slow disappear, Dyre's Picks: Disappear blow swoosh, "
-        .. "Dyre's Picks: Cartoon vanish, Dyre's Picks: Magical disappear, Dyre's Picks: Slow swoosh, "
-        .. "Imp: Laugh 1, Imp: Spell chirp", "no sound kits or Text to Speech")
-    state.settings.WTF_SHIELD_BREAK_SOUND:SetValue(true)
-    equal(state.lastSound().key, "fadingslow", "turning it on plays it once")
-    local live
-    for _, sound in pairs(state.auraSounds) do live = sound end
-    equal(live.info.soundFileName, "Interface\\AddOns\\DyresSounds\\Sounds\\FadingSlowDisappear.mp3",
-        "Dyre's Sounds' file: WTF ships no sounds")
-    state.settings.WTF_SHIELD_BREAK_SOUND_CHOICE:SetValue("blowswoosh")
-    equal(state.lastSound().key, "blowswoosh", "previewed")
-    equal(state.wtf.db.shield.breakSoundKey, "blowswoosh")
-    state.settings.WTF_SHIELD_BREAK_SOUND_CHOICE:SetValue("talent")
-    equal(state.wtf.db.shield.breakSoundKey, "fadingslow", "a sound kit cannot be an aura sound")
-end)
-test("without Dyre's Sounds the shield display keeps its sound choice and says what to install", function()
-    local state = fixture({noSounds = true, db = {shield = {breakSoundKey = "magical", breakSound = true}}})
-    equal(state.wtf.db.shield.breakSoundKey, "magical", "a missing library never resets a choice")
-    equal(state.auraSoundCount, nil, "no sound to register")
-    local found = 0
-    for _, message in ipairs(state.messages) do
-        if message:find("Install Dyre's Sounds", 1, true) then
-            found = found + 1
-            contains(message, "the shield sound", "WTF's one line covers the shield sound")
-        end
-    end
-    equal(found, 1, "one line for all of WTF's sounds")
-    equal(#initializerFor(state.categories.Shield, "WTF_SHIELD_BREAK_SOUND_CHOICE").choices(), 0, "an empty list")
-end)
-
--- Cooldown chimes ----------------------------------------------------------------
-
-local DEATH_COIL = 6789
-local SHADOW_TRANCE = 17941
-
 local function wait(state, seconds)
     state.now = state.now + seconds
     state.runTimers()
 end
 
 -- The registered Nightfall aura sounds.
-local function liveNightfall(state)
-    local list = {}
-    for _, sound in pairs(state.auraSounds or {}) do
-        if sound.info.spellID == SHADOW_TRANCE then list[#list + 1] = sound end
-    end
-    return list
-end
-
-test("a chime plays just before Death Coil is ready again, also in combat", function()
-    local state = fixture()
-    state.combat = true
-    state.emit("UNIT_SPELLCAST_SUCCEEDED", "player", "cast-1", DEATH_COIL)
-    wait(state, 0.1)
-    wait(state, 119)
-    equal(#state.sounds, 0, "not yet")
-    wait(state, 0.5)
-    equal(#state.soundsPlayed, 1, "half a second early")
-    equal(state.soundsPlayed[1].key, "talent", "Talent ready by default, through Dyre's Sounds")
-    equal(state.soundsPlayed[1].speech, "Death Coil ready", "the text Text to Speech would say")
-    equal(state.played, nil, "WTF plays no file of its own")
-    equal(#state.sounds, 0, "and no sound kit of its own")
-end)
-test("a chime can use one of Dyre's Picks; an old WTF key is mapped by Dyre's Sounds", function()
-    local state = fixture()
-    state.settings.WTF_CHIME_SOUND_DEATHCOIL:SetValue("effectcartoonvanish")
-    equal(state.wtf.db.chimes.sounds.deathcoil, "cartoonvanish", "saved in the library's spelling")
-    equal(state.lastSound().key, "cartoonvanish", "previewed")
-    state.combat = true
-    state.emit("UNIT_SPELLCAST_SUCCEEDED", "player", "cast-1", DEATH_COIL)
-    wait(state, 0.1)
-    wait(state, 120)
-    equal(#state.soundsPlayed, 2, "the chime plays, also in combat")
-    equal(state.lastSound().key, "cartoonvanish")
-end)
-test("Text to Speech says the spell; without a voice the chime falls back to the default", function()
-    local state = fixture()
-    state.settings.WTF_CHIME_SOUND_HOWL:SetValue("voice")
-    equal(state.lastSound().key, "voice")
-    equal(state.lastSound().speech, "Howl of Terror ready", "the preview says it too")
-    state.noVoice = true
-    state.wtf.PreviewChime("howl")
-    equal(state.lastSound().key, "talent", "no voice: the default plays instead")
-    equal(state.lastSound().speech, "Howl of Terror ready")
-    equal(state.wtf.db.chimes.sounds.howl, "voice", "the choice stays")
-end)
-test("saved chime and Nightfall keys: mapped with Dyre's Sounds, kept without it", function()
-    local db = {chimes = {sounds = {deathcoil = "effectmagical", howl = "popclick", shadowward = "bogus",
-        soulstone = 5}}, alerts = {nightfall = false, nightfallSound = "pickslowswoosh"}}
-    local mapped = fixture({db = db})
-    equal(mapped.wtf.db.chimes.sounds.deathcoil, "magical")
-    equal(mapped.wtf.db.chimes.sounds.howl, "impactspopclick")
-    equal(mapped.wtf.db.chimes.sounds.shadowward, "talent", "an unknown key: the default")
-    equal(mapped.wtf.db.chimes.sounds.soulstone, "talent", "a damaged value: the default")
-    equal(mapped.wtf.db.alerts.nightfallSound, "slowswoosh")
-    db = {chimes = {sounds = {deathcoil = "effectmagical", howl = "bogus", soulstone = 5}},
-        alerts = {nightfallSound = "pickslowswoosh"}}
-    local kept = fixture({noSounds = true, db = db})
-    equal(kept.wtf.db.chimes.sounds.deathcoil, "effectmagical", "kept as saved")
-    equal(kept.wtf.db.chimes.sounds.howl, "bogus", "the library decides later what it means")
-    equal(kept.wtf.db.chimes.sounds.soulstone, "talent", "a damaged value still is repaired")
-    equal(kept.wtf.db.alerts.nightfallSound, "pickslowswoosh")
-    local old = fixture({oldSounds = true, db = {chimes = {sounds = {deathcoil = "effectmagical"}}}})
-    equal(old.wtf.db.chimes.sounds.deathcoil, "effectmagical", "an older library counts as missing")
-end)
-test("without Dyre's Sounds chimes still time, play nothing, and WTF says once what to install", function()
-    local state = fixture({noSounds = true})
-    local function count()
-        local found = 0
-        for _, message in ipairs(state.messages) do
-            if message == "WTF: Install Dyre's Sounds to hear WTF's sounds (the chimes, the Nightfall sound, and "
-                .. "the shield sound). Get it from CurseForge." then
-                found = found + 1
-            end
-        end
-        return found
-    end
-    equal(count(), 1, "said at login, since the chimes are on")
-    state.emit("UNIT_SPELLCAST_SUCCEEDED", "player", "cast-1", DEATH_COIL)
-    wait(state, 0.1)
-    equal(state.wtf.db.chimes.learned.deathcoil, nil)
-    wait(state, 120)
-    equal(#state.sounds, 0, "nothing plays")
-    equal(state.played, nil)
-    state.settings.WTF_ALERTS_NIGHTFALL:SetValue(true)
-    equal(count(), 1, "once per session")
-    equal(state.settings.WTF_CHIME_SOUND_DEATHCOIL, nil, "no sound menus without sounds")
-    equal(state.settings.WTF_ALERTS_NIGHTFALL_SOUND, nil)
-    contains(initializerFor(state.categories["Cooldown Chimes"], "WTF_CHIME_DEATHCOIL").tooltip,
-        "Install Dyre's Sounds")
-    local old = fixture({oldSounds = true})
-    contains(table.concat(old.messages, "|"), "Update Dyre's Sounds")
-    local quiet = fixture({noSounds = true, db = {chimes = {enabled = false}}})
-    equal(table.concat(quiet.messages, "|"):find("Dyre's Sounds", 1, true), nil, "nothing wants a sound")
-end)
--- Plays no chime, keeps the saved settings, and names `title` and `slash` in the settings.
-local function checkChimesStandAside(loaded, addon, title, slash)
-    local saved = {chimes = {enabled = true, lead = 1, spells = {inferno = true}, sounds = {howl = "voice"},
-        learned = {deathcoil = 90}}}
-    local state = fixture({loadedAddOns = loaded, db = saved})
-    state.emit("UNIT_SPELLCAST_SUCCEEDED", "player", "cast-1", DEATH_COIL)
-    wait(state, 200)
-    equal(#state.soundsPlayed, 0, "no chime")
-    state.wtf.PreviewChime("deathcoil")
-    equal(#state.soundsPlayed, 0, "not even a preview")
-    local db = state.wtf.db.chimes
-    equal(db.enabled, true)
-    equal(db.lead, 1)
-    equal(db.spells.inferno, true)
-    equal(db.sounds.howl, "voice")
-    equal(db.learned.deathcoil, 90, "kept for the other AddOn to copy")
-    equal(state.categories["Cooldown Chimes"], nil, "the list name says who runs them")
-    local page = state.categories["Cooldown Chimes (" .. title .. ")"]
-    equal(page.headings[1].heading, "Cooldown chimes are now managed by " .. title)
-    contains(page.headings[1].tooltip, slash)
-    equal(#page.initializers, 1, "the page only says who plays them")
-    equal(page.initializers[1].setting.name, "Played by " .. title)
-    contains(page.initializers[1].tooltip, slash)
-    equal(page.initializers[1].modifyPredicates[1](), false, "greyed out")
-    local main = initializerFor(state.categories["Warlock Tools Forever"], "WTF_CHIMES_ENABLED")
-    equal(main.setting.name, "Cooldown chimes (played by " .. title .. ")")
-    contains(main.tooltip, title .. " plays your cooldown chimes")
-    main.setting:SetValue(false)
-    equal(state.wtf.db.chimes.enabled, true, "the main page's switch changes nothing")
-    state.settings.WTF_ALERTS_NIGHTFALL:SetValue(true)
-    equal(#liveNightfall(state), 1, "the Nightfall sound stays in WTF")
-    state.clear()
-    state.slash("debug_chimes")
-    contains(table.concat(state.messages, "|"), "playedBy=" .. addon)
-end
-test("with Dyre's Buff Reminders installed WTF plays no chimes and keeps its settings", function()
-    checkChimesStandAside({DyresBuffReminders = true}, "DyresBuffReminders", "Dyre's Buff Reminders", "/dbr")
-end)
-test("Dyre's Cooldown Chimes, while still installed, plays the chimes instead of WTF and DBR", function()
-    checkChimesStandAside({DyresCooldownChimes = true}, "DyresCooldownChimes", "Dyre's Cooldown Chimes", "/dcc")
-    checkChimesStandAside({DyresCooldownChimes = true, DyresBuffReminders = true}, "DyresCooldownChimes",
-        "Dyre's Cooldown Chimes", "/dcc")
-end)
-test("without a chimes AddOn WTF plays its own chimes", function()
-    local state = fixture()
-    equal(state.wtf.ChimesStandAside(), nil)
-    state.slash("debug_chimes")
-    contains(table.concat(state.messages, "|"), "playedBy=WTF")
-end)
-test("out of combat the real cooldown is read and learned; switches turn chimes off", function()
-    local state = fixture()
-    state.cooldowns[DEATH_COIL] = {start = state.now, duration = 90}
-    state.emit("UNIT_SPELLCAST_SUCCEEDED", "player", "cast-1", DEATH_COIL)
-    wait(state, 0.1)
-    equal(state.wtf.db.chimes.learned.deathcoil, 90, "Forever's own cooldown")
-    wait(state, 89.5)
-    equal(#state.soundsPlayed, 1)
-    state.settings.WTF_CHIME_DEATHCOIL:SetValue(false)
-    state.emit("UNIT_SPELLCAST_SUCCEEDED", "player", "cast-2", DEATH_COIL)
-    wait(state, 100)
-    equal(#state.soundsPlayed, 1, "its switch")
-    state.settings.WTF_CHIME_DEATHCOIL:SetValue(true)
-    state.settings.WTF_CHIMES_ENABLED:SetValue(false)
-    state.emit("UNIT_SPELLCAST_SUCCEEDED", "player", "cast-3", DEATH_COIL)
-    wait(state, 100)
-    equal(#state.soundsPlayed, 1, "the module switch")
-end)
-test("each chime has its own sound from Dyre's Sounds, and choosing one plays it", function()
-    local state = fixture()
-    local sound = state.settings.WTF_CHIME_SOUND_HOWL
-    equal(sound:GetValue(), "talent")
-    sound:SetValue("impactspopclick")
-    equal(state.wtf.db.chimes.sounds.howl, "impactspopclick")
-    equal(state.lastSound().key, "impactspopclick", "previewed: the Cooldown Manager's Pop click")
-    equal(state.wtf.db.chimes.sounds.deathcoil, "talent", "Death Coil keeps its own")
-    sound:SetValue("nonsense")
-    equal(state.wtf.db.chimes.sounds.howl, "impactspopclick", "unknown keys are ignored")
-    local saved = fixture({db = {chimes = {sounds = {howl = "bogus"}, lead = 7, spells = {inferno = true}}}})
-    equal(saved.wtf.db.chimes.sounds.howl, "talent")
-    equal(saved.wtf.db.chimes.lead, 3, "clamped")
-    equal(saved.wtf.db.chimes.spells.inferno, true)
-    state.clear()
-    state.slash("debug_chimes")
-    contains(state.messages[1], "debug_chimes deathcoil name=Death Coil")
-end)
-
-test("a copy registered first whose AddOn stays off does not keep WTF's display away", function()
-    -- MTF loads first (folder order) but stays off on a Warlock.
-    local state = fixture({shieldCopies = {{addon = "MageToolsForever", version = 11, before = true}}})
-    equal(state.wtf.ShieldDisplay.IsOwner(), true, "only running copies take part")
-    equal(state.wtf.ShieldDisplay.frame ~= nil, true, "WTF draws the ring")
-    state.clear()
-    state.slash("debug_shield")
-    contains(table.concat(state.messages, "|"),
-        "owner=WarlockToolsForever copies=MageToolsForever v11, WarlockToolsForever v11 (running)")
-    equal(table.concat(state.messages, "|"):find("failed", 1, true), nil, "every debug step ran")
-end)
-test("with Dyre's Shields Up loaded, WTF draws no shield and greys out its shield settings", function()
-    local state = fixture({loadedAddOns = {DyresShieldsUp = true}, db = {shield = {scale = 80, breakSound = true}}})
-    equal(state.wtf.ShieldDisplay.frame, nil, "no ring of its own: Dyre's Shields Up draws it")
-    equal(state.wtf.ShieldDisplay.IsOwner(), false, "not even a candidate")
-    state.emit("UNIT_ABSORB_AMOUNT_CHANGED", "player")
-    state.slash("unlock")
-    state.slash("lock")
-    for _, message in ipairs(state.messages) do
-        equal(message:find("shown by", 1, true), nil, "no election message")
-    end
-    equal(state.wtf.db.shield.scale, 80, "its saved shield settings stay as they are")
-    equal(state.wtf.db.shield.breakSound, true)
-    local seen = 0
-    for _, page in pairs(state.categories) do
-        for _, initializer in ipairs(page.initializers) do
-            local variable = initializer.setting and initializer.setting.variable or ""
-            if variable:find("^WTF_SHIELD_") then
-                seen = seen + 1
-                equal(initializer.modifyPredicates[1](), false, variable .. " is greyed out")
-                contains(initializer.tooltip, "Dyre's Shields Up shows the shield display now")
-            end
-        end
-    end
-    equal(seen, 5, "the switch, number, sound, its choice, and the size")
-    equal(state.categories.Shield, nil, "the list name says who runs it")
-    local page = state.categories["Shield (Dyre's Shields Up)"]
-    equal(page.headings[1].heading, "Shields are now managed by Dyre's Shields Up")
-    contains(page.headings[1].tooltip, "/dsu")
-    equal(#fixture().categories.Shield.headings, 0, "no heading without Dyre's Shields Up")
-end)
-test("a newer running copy takes over, and WTF says which AddOn shows the display", function()
-    local state = fixture({shieldCopies = {{addon = "ShieldForever", version = 12}}})
-    equal(state.wtf.ShieldDisplay.frame ~= nil, true, "drawing while it is the only one running")
-    local function shieldGreyed(want)
-        local seen = 0
-        for _, page in pairs(state.categories) do
-            for _, initializer in ipairs(page.initializers) do
-                local variable = initializer.setting and initializer.setting.variable or ""
-                if variable:find("^WTF_SHIELD_") then
-                    seen = seen + 1
-                    equal(initializer.modifyPredicates[1](), not want, variable .. (want and " is greyed out" or " is not greyed"))
-                end
-            end
-        end
-        equal(seen, 5, "the switch, number, sound, its choice, and the size")
-    end
-    shieldGreyed(false)
-    local other = state.copies.ShieldForever.ShieldDisplay
-    other.Initialize({settings = function() return other.Sanitize({}) end, report = function() end})
-    equal(state.wtf.ShieldDisplay.frame, nil, "WTF stood down")
-    shieldGreyed(true)
-    equal(other.frame ~= nil, true, "the newer copy draws")
-    contains(state.last(), "The shield display is shown by ShieldForever")
-end)
-test("a Warlock's icon row holds Shadow Ward, Sacrifice, and Power Word: Shield, one spot each", function()
-    local state = fixture()
-    local ring = state.wtf.ShieldDisplay.frame
-    local keys = {}
-    for _, slot in ipairs(ring.icons.slots) do keys[#keys + 1] = slot.key end
-    table.sort(keys)
-    equal(table.concat(keys, ","), "blessingofprotection,powerwordshield,sacrifice,shadowward",
-        "no Mage or Paladin-only shields")
-    local ward, sacrifice, shield = ring.iconButtons.shadowward, ring.iconButtons.sacrifice,
-        ring.iconButtons.powerwordshield
-    local x1, x2, x3 = ward.points[1][4], sacrifice.points[1][4], shield.points[1][4]
-    equal(x2 - x1, x3 - x2, "evenly spaced")
-    equal(x1 < x2, true, "never on top of each other; your own shields first")
-end)
-
-test("a bubble drains in the innermost crescent; in combat the display stays up for one", function()
-    local state = fixture({spellbook = {}})
-    local ring = state.wtf.ShieldDisplay.frame
-    -- Shield v11: the timed crescent is a slot of its own container.
-    local bubble
-    for _, slot in ipairs(ring.crescents.slots) do
-        if slot.key == "blessingofprotection" then bubble = slot.button end
-    end
-    local bar = bubble.display.bar
-    contains(bar.statusBarTexture, "ShieldArcInnermost")
-    equal(bar.barColor[1], 1, "gold")
-    equal(bubble.display.barOptions.direction, 1, "drains with its time left")
-    equal(ring.iconButtons.blessingofprotection.display.icon ~= nil, true, "its icon in the icon row")
-    equal(ring.shown, false, "nothing up out of combat")
-    -- In combat, a Blessing of Protection from a Paladin cannot be read, so
-    -- the display stays shown and the engine draws the bubble when it is up.
-    state.combat = true
-    state.emit("PLAYER_REGEN_DISABLED")
-    equal(ring.shown, true)
-    state.combat = false
-    state.emit("PLAYER_REGEN_ENABLED")
-    equal(ring.shown, false, "hidden again once buffs can be read")
-    state.slash("unlock")
-    contains(ring.sample.children[2].texture, "ShieldArcInnermost", "the sample shows it too")
-end)
-
 test("a frame dropped near another snaps beside it, 20 apart and lined up", function()
     local state = stonesFixture()
     state.slash("unlock")
@@ -3802,145 +3451,6 @@ test("reminders can be turned off, and need a known rank", function()
     novice.clear()
     novice.emit("PLAYER_REGEN_ENABLED")
     equal(#novice.messages, 0, "no rank known yet")
-end)
-
--- Alerts: the Nightfall sound ------------------------------------------------------
-
-local function liveSounds(state)
-    local list = {}
-    for _, sound in pairs(state.auraSounds or {}) do list[#list + 1] = sound end
-    return list
-end
-
-test("the Nightfall sound is off by default", function()
-    local state = fixture()
-    equal(state.wtf.db.alerts.nightfall, false)
-    equal(#liveSounds(state), 0)
-end)
-test("turned on, the game plays the chosen sound from Dyre's Sounds when Shadow Trance appears", function()
-    local state = fixture()
-    state.settings.WTF_ALERTS_NIGHTFALL:SetValue(true)
-    local sounds = liveSounds(state)
-    equal(#sounds, 1)
-    equal(sounds[1].trigger, 0, "on the buff appearing")
-    equal(sounds[1].info.spellID, 17941)
-    equal(sounds[1].info.unitToken, "player")
-    equal(sounds[1].info.outputChannel, "master")
-    equal(sounds[1].info.soundFileID, 639156, "the Imp spell chirp by file ID")
-    equal(sounds[1].info.soundFileName, nil)
-    state.settings.WTF_ALERTS_NIGHTFALL_SOUND:SetValue("magical")
-    sounds = liveSounds(state)
-    equal(#sounds, 1, "the old sound is replaced")
-    equal(sounds[1].info.soundFileName, "Interface\\AddOns\\DyresSounds\\Sounds\\MagicalDisappear.mp3",
-        "one of Dyre's Picks, Dyre's Sounds' file")
-    equal(sounds[1].info.soundFileID, nil)
-    equal(state.lastSound().key, "magical", "choosing a sound previews it")
-    equal(state.played, nil, "WTF plays no file of its own")
-    state.settings.WTF_ALERTS_NIGHTFALL_SOUND:SetValue("talent")
-    equal(state.wtf.db.alerts.nightfallSound, "magical", "a sound kit cannot be an aura sound")
-    state.settings.WTF_ALERTS_NIGHTFALL:SetValue(false)
-    equal(#liveSounds(state), 0)
-end)
-test("a sound change during an encounter waits until it ends", function()
-    local state = fixture()
-    state.encounter = true
-    state.settings.WTF_ALERTS_NIGHTFALL:SetValue(true)
-    equal(#liveSounds(state), 0)
-    state.encounter = false
-    state.emit("ADDON_RESTRICTION_STATE_CHANGED", 1, 0)
-    equal(#liveSounds(state), 1)
-end)
-test("the Nightfall setting survives a reload and bad saved values are repaired", function()
-    local state = fixture({db = {alerts = {nightfall = true, nightfallSound = "pickslowswoosh"}}})
-    equal(state.wtf.db.alerts.nightfallSound, "slowswoosh", "an old WTF key, mapped by Dyre's Sounds")
-    equal(liveSounds(state)[1].info.soundFileName, "Interface\\AddOns\\DyresSounds\\Sounds\\SlowSwoosh.wav")
-    local former = fixture({db = {alerts = {nightfall = true, nightfallSound = "talent"}}})
-    equal(former.wtf.db.alerts.nightfallSound, "impspell", "a sound kit falls back to the default")
-    local repaired = fixture({db = {alerts = {nightfall = "yes", nightfallSound = "kazoo"}}})
-    equal(repaired.wtf.db.alerts.nightfall, false)
-    equal(repaired.wtf.db.alerts.nightfallSound, "impspell")
-end)
-test("without Dyre's Sounds the Nightfall sound registers nothing and keeps its choice", function()
-    local state = fixture({noSounds = true, db = {chimes = {enabled = false},
-        alerts = {nightfall = true, nightfallSound = "implaugh1"}}})
-    equal(#liveSounds(state), 0)
-    equal(state.wtf.db.alerts.nightfallSound, "implaugh1")
-    contains(table.concat(state.messages, "|"), "Install Dyre's Sounds to hear WTF's sounds")
-    local page = state.categories.Alerts
-    equal(#page.initializers, 1, "the switch, without a sound menu")
-    contains(page.initializers[1].tooltip, "Install Dyre's Sounds")
-    state.wtf.PreviewNightfallSound()
-    equal(state.played, nil)
-end)
-test("with Dyre's Buff Reminders 0.3.0 or later WTF plays no Nightfall sound and keeps its settings", function()
-    local saved = {chimes = {enabled = false}, alerts = {nightfall = true, nightfallSound = "implaugh1"}}
-    for _, version in ipairs({"0.3.0-beta", "0.3.1", "0.10.0-beta", "1.0.0"}) do
-        local state = fixture({loadedAddOns = {DyresBuffReminders = true},
-            addOnVersions = {DyresBuffReminders = version}, db = saved})
-        equal(#liveSounds(state), 0, "no aura sound with DBR " .. version)
-        state.wtf.ApplyNightfallSound()
-        equal(#liveSounds(state), 0, "nothing registers later either")
-        state.wtf.PreviewNightfallSound()
-        equal(#state.soundsPlayed, 0, "no preview")
-        equal(state.wtf.db.alerts.nightfall, true, "kept for DBR to copy")
-        equal(state.wtf.db.alerts.nightfallSound, "implaugh1")
-        equal(state.categories.Alerts, nil, "the list name says who plays it")
-        local page = state.categories["Alerts (Dyre's Buff Reminders)"]
-        equal(page.headings[1].heading, "The Nightfall sound is now managed by Dyre's Buff Reminders")
-        contains(page.headings[1].tooltip, "/dbr")
-        equal(#page.initializers, 1, "the page only says who plays it")
-        local notice = page.initializers[1]
-        equal(notice.setting.name, "Nightfall sound (played by Dyre's Buff Reminders)")
-        contains(notice.tooltip, "Dyre's Buff Reminders plays your Nightfall sound")
-        contains(notice.tooltip, "/dbr")
-        equal(notice.modifyPredicates[1](), false, "greyed out")
-        notice.setting:SetValue(false)
-        equal(state.wtf.db.alerts.nightfall, true, "the greyed switch changes nothing")
-    end
-end)
-test("with an older or unreadable Dyre's Buff Reminders version WTF still plays Nightfall", function()
-    local saved = {chimes = {enabled = false}, alerts = {nightfall = true}}
-    for _, version in ipairs({"0.2.0-beta", "0.2.9", "beta", "", false}) do
-        local state = fixture({loadedAddOns = {DyresBuffReminders = true},
-            addOnVersions = {DyresBuffReminders = version or nil}, db = saved})
-        equal(#liveSounds(state), 1, "WTF plays it with DBR " .. tostring(version))
-        equal(state.categories["Alerts (Dyre's Buff Reminders)"], nil)
-        equal(state.categories.Alerts.initializers[1].setting.variable, "WTF_ALERTS_NIGHTFALL")
-    end
-    local alone = fixture({addOnVersions = {DyresBuffReminders = "0.3.0-beta"}, db = saved})
-    equal(#liveSounds(alone), 1, "a version alone, without DBR loaded, changes nothing")
-end)
-test("the missing-sounds line leaves out a Nightfall sound that DBR plays", function()
-    local state = fixture({noSounds = true, loadedAddOns = {DyresBuffReminders = true},
-        addOnVersions = {DyresBuffReminders = "0.3.0-beta"},
-        db = {chimes = {enabled = false}, alerts = {nightfall = true}}})
-    equal(table.concat(state.messages, "|"):find("Dyre's Sounds", 1, true), nil, "nothing WTF plays wants a sound")
-end)
-test("the Alerts page has the switch and Dyre's Sounds' aura sounds under it", function()
-    local state = fixture()
-    local page = state.categories.Alerts
-    equal(page.initializers[1].setting.variable, "WTF_ALERTS_NIGHTFALL")
-    local dropdown = page.initializers[2]
-    equal(dropdown.parentInitializer, page.initializers[1])
-    equal(dropdown.soundMenu, "aura", "Dyre's Sounds' nested menu, aura sounds only")
-    local labels = {}
-    for _, choice in ipairs(dropdown.choices()) do labels[#labels + 1] = choice.label end
-    equal(table.concat(labels, ", "), "Dyre's Picks: Fading slow disappear, Dyre's Picks: Disappear blow swoosh, "
-        .. "Dyre's Picks: Cartoon vanish, Dyre's Picks: Magical disappear, Dyre's Picks: Slow swoosh, "
-        .. "Imp: Laugh 1, Imp: Spell chirp", "no sound kits or Text to Speech")
-end)
-test("each chime's sound dropdown uses Dyre's Sounds' full menu; WTF builds no menu of its own", function()
-    local state = fixture()
-    local page = state.categories["Cooldown Chimes"]
-    local dropdown = initializerFor(page, "WTF_CHIME_SOUND_DEATHCOIL")
-    equal(dropdown.soundMenu, "all", "every sound, also sound kits and Text to Speech")
-    equal(dropdown.parentInitializer.setting.variable, "WTF_CHIME_DEATHCOIL", "under its switch")
-    local values = {}
-    for _, choice in ipairs(dropdown.choices()) do values[#values + 1] = choice.value end
-    contains(table.concat(values, ","), "talent,impactspopclick")
-    contains(table.concat(values, ","), "voice")
-    equal(initializerFor(state.categories["DoT Tracker"], "WTF_TRACKER_THEME").soundMenu, nil,
-        "other dropdowns are left alone")
 end)
 
 -- Announce ---------------------------------------------------------------------

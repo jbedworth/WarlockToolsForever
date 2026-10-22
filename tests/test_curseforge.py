@@ -155,9 +155,11 @@ class CurseForgeTests(unittest.TestCase):
         metadata = json.loads(parts[0].get_payload(decode=True))
         self.assertEqual(metadata, {"gameVersions": [12345], "releaseType": "beta",
                                    "changelog": notes, "changelogType": "markdown",
-                                   "relations": {"projects": [{"slug": "dyres-sounds",
+                                   "relations": {"projects": [{"slug": "dyres-toolkit",
                                                                "type": "requiredDependency"},
-                                                              {"slug": "dyres-toolkit",
+                                                              {"slug": "dyres-shields-up",
+                                                               "type": "requiredDependency"},
+                                                              {"slug": "dyres-buff-reminders",
                                                                "type": "requiredDependency"},
                                                               {"slug": "weapon-skills-forever",
                                                                "type": "optionalDependency"}]}})
@@ -198,8 +200,9 @@ class CurseForgeTests(unittest.TestCase):
         # Required, so the CurseForge app installs the sounds and the toolkit with
         # WTF; Weapon Skills Forever is optional.
         types = {p["slug"]: p["type"] for p in publisher.RELATIONS["projects"]}
-        self.assertEqual(types, {"dyres-sounds": "requiredDependency",
-                                 "dyres-toolkit": "requiredDependency",
+        self.assertEqual(types, {"dyres-toolkit": "requiredDependency",
+                                 "dyres-shields-up": "requiredDependency",
+                                 "dyres-buff-reminders": "requiredDependency",
                                  "weapon-skills-forever": "optionalDependency"})
 
     def test_strict_tag(self):

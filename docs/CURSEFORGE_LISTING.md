@@ -18,11 +18,11 @@ tested.
 | Source | https://github.com/jbedworth/WarlockToolsForever |
 | Issues | https://github.com/jbedworth/WarlockToolsForever/issues |
 | Donation | Ko-fi, https://ko-fi.com/dyre_janelle (the project's Donation field) |
-| Relations | Dyre's Sounds (`dyres-sounds`) and Dyre's Toolkit (`dyres-toolkit`), Required Dependency; Weapon Skills Forever (`weapon-skills-forever`), Optional Dependency. Each CI upload sends them (`RELATIONS` in scripts/publish_curseforge.py); set them on the project too if the form asks. |
+| Relations | Dyre's Toolkit (`dyres-toolkit`), Dyre's Shields Up (`dyres-shields-up`), and Dyre's Buff Reminders (`dyres-buff-reminders`), Required Dependency (1.3.0: the shield display, cooldown chimes, Nightfall sound, and Demon Armor reminder moved there; Dyre's Sounds is no longer needed); Weapon Skills Forever (`weapon-skills-forever`), Optional Dependency. Each CI upload sends them (`RELATIONS` in scripts/publish_curseforge.py); set them on the project too if the form asks. |
 
 ## Summary
 
-Quality-of-life tools for Warlocks in World of Warcraft: Forever: Soul Shard management, Soulstone and Healthstone buttons, a multi-mob DoT tracker, a Fear and Banish bar, cooldown chimes, and customizable announcements with flavor.
+Quality-of-life tools for Warlocks in World of Warcraft: Forever: Soul Shard management, Soulstone and Healthstone buttons, a multi-mob DoT tracker, a Fear and Banish bar, and customizable announcements with flavor.
 
 ## Description
 
@@ -69,14 +69,14 @@ Per-file changelogs need no manual text: each CI upload uses the version's
 - No popups, no forced layouts. Everything has an off switch.
 
 ### Also included
-- **Cooldown chimes** just before Death Coil, Howl of Terror, Shadow Ward, your Soulstone, and Fel Domination are ready, with a sound (or text-to-speech) for each.
-- **Nightfall sound** when Shadow Trance procs.
-- **Shield display:** a crescent that drains as your Shadow Ward, Sacrifice, or any absorb takes damage.
-- **Demon Armor reminder** you can click to cast.
 - **Announcements with flavor:** summons, Soulstones, and Healthstone trades tell your group or whisper the target. Every message can be edited or turned off.
 
-### Sounds: Dyre's Sounds (required)
-WTF's sounds come from **Dyre's Sounds**, which holds the sounds for all of Dyre's AddOns, so your computer keeps one copy. The CurseForge app installs it with WTF. Without it, WTF works but plays no sounds, and says so once in chat. With **Dyre's Buff Reminders** installed, WTF leaves the cooldown chimes and the Nightfall sound to it, so you never hear one twice.
+### Comes with Dyre's Shields Up and Dyre's Buff Reminders
+The CurseForge app installs both with WTF, and they work on every class:
+- **Dyre's Shields Up:** the shield display, a crescent that drains as your Shadow Ward, Sacrifice, or any absorb takes damage.
+- **Dyre's Buff Reminders:** cooldown chimes for Death Coil, Howl of Terror, Shadow Ward, your Soulstone, and more; the Nightfall sound when Shadow Trance procs; and a Demon Armor reminder you can click to cast.
+
+These lived in WTF until 1.3.0. Your WTF settings for them are copied over the first time each AddOn runs.
 
 ### Commands
 - `/wtf` opens the settings. `/wtf shards` shows your shards and limit.

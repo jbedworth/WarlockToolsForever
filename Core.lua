@@ -37,39 +37,6 @@ function WTF.Describe(value)
     return tostring(value)
 end
 
--- Sounds come from the library AddOn Dyre's Sounds (author-approved: one copy
--- of the sound files for all of Dyre's AddOns). The TOC lists it as
--- OptionalDeps, so it loads first when installed, and WTF still loads and
--- works without it, playing no sounds.
-local SOUNDS_CONTRACT = 1
-local SOUNDS_FUNCTIONS = {"Resolve", "Label", "List", "Groups", "Play", "AuraSound", "Choices", "SetupMenu"}
--- Dyre's Sounds is unlisted on CurseForge, so the message says where to get it.
-local SOUNDS_WHERE = " Get it from CurseForge."
-local SOUNDS_MESSAGES = {
-    missing = "Install Dyre's Sounds to hear WTF's sounds (the chimes, the Nightfall sound, and the shield "
-        .. "sound)." .. SOUNDS_WHERE,
-    old = "Update Dyre's Sounds to hear WTF's sounds. This version is too old for WTF."
-        .. SOUNDS_WHERE,
-}
-
--- Dyre's Sounds with the contract and functions WTF uses, else nil and why.
-function WTF.SoundLibrary()
-    local library = rawget(_G, "DyresSounds")
-    if type(library) ~= "table" or type(library.RequireContract) ~= "function" then
-        return nil, "missing"
-    end
-    library = library.RequireContract(SOUNDS_CONTRACT)
-    if type(library) ~= "table" then
-        return nil, "old"
-    end
-    for _, name in ipairs(SOUNDS_FUNCTIONS) do
-        if type(library[name]) ~= "function" then
-            return nil, "old"
-        end
-    end
-    return library, "ok"
-end
-
 -- When the client refuses AddOn item moves and deletion, also from a key
 -- press (found in client: DeleteCursorItem raised ADDON_ACTION_BLOCKED in a
 -- dungeon, BugGrabber 6x): in combat, while the player affects combat (a secret
@@ -131,97 +98,46 @@ function WTF.Toolkit()
     return toolkit, "ok"
 end
 
--- Says once per session what to install when a sound is wanted but missing.
-local soundsReported = false
-
-function WTF.ReportMissingSounds()
-    local library, state = WTF.SoundLibrary()
-    if library or soundsReported then
-        return
-    end
-    soundsReported = true
-    WTF.Report(SOUNDS_MESSAGES[state])
-end
-
--- Dyre's Buff Reminders plays the chimes when it is installed (author-
--- approved; it took in Dyre's Cooldown Chimes, never released, which then
--- plays them instead while still installed), so WTF plays none; WTF's chime
--- settings stay as they are, since the other AddOn copies them on its first
--- run. The first one loaded is the one that plays.
-WTF.CHIMES_ADDONS = {
-    {addon = "DyresCooldownChimes", title = "Dyre's Cooldown Chimes", slash = "/dcc"},
-    {addon = "DyresBuffReminders", title = "Dyre's Buff Reminders", slash = "/dbr"},
+-- Features that moved out of WTF in 1.3.0 (author-approved): the shield
+-- display to Dyre's Shields Up; the cooldown chimes, the Nightfall sound,
+-- and the Demon Armor reminder to Dyre's Buff Reminders. CurseForge lists both
+-- as required, so the app installs them; the TOC keeps them optional, so WTF
+-- loads without them and says once per session, at login, what to install
+-- or enable (CurseForge only).
+WTF.MOVED_TO = {
+    {addon = "DyresShieldsUp", title = "Dyre's Shields Up", what = "the shield display"},
+    {addon = "DyresBuffReminders", title = "Dyre's Buff Reminders",
+        what = "the cooldown chimes, the Nightfall sound, and the Demon Armor reminder"},
 }
 
--- Dyre's Buff Reminders shows buff reminders for every class (author-approved
--- two-step move): while it is loaded, WTF's own reminder icons stay hidden and
--- WTF's saved reminder settings stay as they are.
-function WTF.RemindersStandAside()
-    if type(C_AddOns) ~= "table" or type(C_AddOns.IsAddOnLoaded) ~= "function" then
-        return false
+-- "loaded", "disabled" (installed but not enabled), or "missing".
+local function AddOnState(addon)
+    if type(C_AddOns) ~= "table" then
+        return "missing"
     end
-    local loaded = C_AddOns.IsAddOnLoaded("DyresBuffReminders")
-    return loaded == true
-end
-
--- The stand-alone Dyre's AddOn wins when it is installed (author-approved rule
--- for every shared feature): while Dyre's Shields Up is loaded, WTF starts no
--- shield display of its own and its shield settings stay as they are.
-function WTF.ShieldStandAside()
-    if type(C_AddOns) ~= "table" or type(C_AddOns.IsAddOnLoaded) ~= "function" then
-        return false
+    if type(C_AddOns.IsAddOnLoaded) == "function" and C_AddOns.IsAddOnLoaded(addon) == true then
+        return "loaded"
     end
-    local loaded = C_AddOns.IsAddOnLoaded("DyresShieldsUp")
-    return loaded == true
-end
-
--- The entry of WTF.CHIMES_ADDONS that plays the chimes, or nil when WTF does.
-function WTF.ChimesStandAside()
-    if type(C_AddOns) ~= "table" or type(C_AddOns.IsAddOnLoaded) ~= "function" then
-        return nil
-    end
-    for _, other in ipairs(WTF.CHIMES_ADDONS) do
-        if C_AddOns.IsAddOnLoaded(other.addon) == true then
-            return other
+    if type(C_AddOns.GetAddOnInfo) == "function" then
+        local name, _, _, _, reason = C_AddOns.GetAddOnInfo(addon)
+        if type(name) == "string" and reason ~= "MISSING" then
+            return "disabled"
         end
     end
+    return "missing"
 end
 
--- Dyre's Buff Reminders plays the Nightfall sound from 0.3.0 on (its Proc
--- Sounds; author-approved), so WTF registers none; WTF's Nightfall settings
--- stay as they are, since DBR copies them on its first run. Older DBR has no
--- Nightfall sound, so its version is checked.
-WTF.NIGHTFALL_ADDON = {addon = "DyresBuffReminders", title = "Dyre's Buff Reminders", slash = "/dbr",
-    from = {0, 3, 0}}
-
--- Whether another AddOn's TOC version (major.minor.patch) is at least `from`.
--- A version that cannot be read counts as older.
-local function VersionAtLeast(addon, from)
-    if type(C_AddOns.GetAddOnMetadata) ~= "function" then
-        return false
-    end
-    local version = C_AddOns.GetAddOnMetadata(addon, "Version")
-    local major, minor, patch = (type(version) == "string" and version or ""):match("^(%d+)%.(%d+)%.(%d+)")
-    if not major then
-        return false
-    end
-    local found = {tonumber(major), tonumber(minor), tonumber(patch)}
-    for index = 1, 3 do
-        if found[index] ~= from[index] then
-            return found[index] > from[index]
+function WTF.ReportMovedFeatures()
+    for _, other in ipairs(WTF.MOVED_TO) do
+        local state = AddOnState(other.addon)
+        if state == "disabled" then
+            WTF.Report("Enable " .. other.title .. " in the AddOn list for " .. other.what
+                .. ": it moved there from WTF.")
+        elseif state == "missing" then
+            WTF.Report("Install " .. other.title .. " from CurseForge for " .. other.what
+                .. ": it moved there from WTF.")
         end
     end
-    return true
-end
-
--- WTF.NIGHTFALL_ADDON when it is loaded and plays the Nightfall sound, else nil.
-function WTF.NightfallStandAside()
-    local other = WTF.NIGHTFALL_ADDON
-    if type(C_AddOns) ~= "table" or type(C_AddOns.IsAddOnLoaded) ~= "function"
-        or C_AddOns.IsAddOnLoaded(other.addon) ~= true then
-        return nil
-    end
-    return VersionAtLeast(other.addon, other.from) and other or nil
 end
 
 -- Reads TOC fields so the banner follows the packaged version; never gates operations.
@@ -259,25 +175,17 @@ local REQUIRED_NAMESPACE = {
     "CheckStoneCapabilities", "InitializeStones", "ResetStonesPosition", "ReportStoneDebug", "RefreshStonesMover",
     "ReportStoneStatus", "RemindStones", "ApplyStoneMacros", "AddInputHandler", "RunOnNextInput", "ReportClickDebug",
     "Warn", "RegisterMovable", "BeginDrag", "EndDrag", "ScaleKeepingCenter",
-    "InitializeReminders", "RefreshReminders", "ResetRemindersPosition", "ReportRemindersDebug",
-    "SanitizeReminders", "SendGroupAnnouncement", "CharacterMacrosAvailable", "WriteCharacterMacro",
+    "SendGroupAnnouncement", "CharacterMacrosAvailable", "WriteCharacterMacro",
     "DeleteCharacterMacro", "ApplyControlMacros",
     "InitializeControl", "RefreshControl", "ResetControlPosition", "ReportControlDebug", "SanitizeControl", "InitializeAnnounce", "FormatAnnouncement", "ReportAnnounceDebug", "DebugEmote", "FriendlyTargetNames",
     "WhisperHealthstoneGift",
     "CheckTrackerCapabilities", "InitializeTracker", "ResetTrackerPosition", "RefreshTracker",
     "ReportTrackerDebug", "TrackerCandidateFilters", "TrackerKnowsSlot", "SetTrackerTheme",
     "InitializePlateDots", "RefreshPlateDots", "HasTrackableDots", "ApplyTrackerColors", "ApplyDotColors",
-    "InitializeAlerts", "ApplyNightfallSound", "PreviewNightfallSound", "HasNightfallSound",
-    "InitializeChimes", "PreviewChime", "ReportChimesDebug", "SanitizeChimes", "SanitizeChimeSound",
-    "ReportRestrictions", "InitializeShield", "RefreshShield", "ResetShieldPosition", "ReportShieldDebug",
-    "InitializeOptions", "OpenSettings",
+    "ReportRestrictions", "InitializeOptions", "OpenSettings",
 }
 
 local function CheckInstalledFiles()
-    if type(WTF.ShieldDisplay) ~= "table" or type(WTF.ShieldDisplay.Initialize) ~= "function" then
-        return false, "AddOn files are from different versions (missing Shield.lua). Reinstall every "
-            .. "Warlock Tools Forever file, then restart the client."
-    end
     for _, name in ipairs(REQUIRED_NAMESPACE) do
         if type(WTF[name]) ~= "function" then
             return false, "AddOn files are from different versions (missing " .. name
@@ -559,28 +467,6 @@ function WTF.SanitizeTrackerSizes(theme, saved)
     return sizes
 end
 
--- The Nightfall sound (Alerts) is one of Dyre's Sounds' aura sounds: a file
--- (Dyre's Picks) or a game sound by file ID (the imp chirps). The game's aura
--- sounds take only sound files, not sound kits. The default is the author's
--- pick after auditioning, Imp: Spell chirp.
-WTF.DEFAULT_NIGHTFALL_SOUND = "impspell"
-
--- A saved Nightfall sound in the library's spelling when it can be an aura
--- sound (the library maps the "pick..." keys WTF saved), else the default.
--- Without the library a saved key is kept, so a missing library never resets
--- a choice.
-function WTF.SanitizeNightfallSound(key)
-    if type(key) ~= "string" then
-        return WTF.DEFAULT_NIGHTFALL_SOUND
-    end
-    local library = WTF.SoundLibrary()
-    if not library then
-        return key
-    end
-    local resolved = library.Resolve(key)
-    return resolved and library.AuraSound(resolved) and resolved or WTF.DEFAULT_NIGHTFALL_SOUND
-end
-
 local ANNOUNCE_SWITCHES = {"summonGroup", "summonWhisper", "soulstoneGroup", "soulstoneWhisper",
     "healthstoneWhisper", "healthstoneEmote", "soulstoneEmote", "fearGroup", "banishGroup", "enslaveGroup",
     "howlGroup"}
@@ -668,9 +554,6 @@ function WTF.SanitizeDB(db)
             db.tracker.onPlates[slot.key] = true
         end
     end
-    local alerts = type(db.alerts) == "table" and db.alerts or {}
-    db.alerts = {nightfall = alerts.nightfall == true,
-        nightfallSound = WTF.SanitizeNightfallSound(alerts.nightfallSound)}
     local announce = type(db.announce) == "table" and db.announce or {}
     local cleanAnnounce = {
         enabled = announce.enabled ~= false,
@@ -690,24 +573,14 @@ function WTF.SanitizeDB(db)
     -- One lock for every frame (author-approved, as MTF), locked by default;
     -- each frame reads its own copy, and the tracker shows its sample rows
     -- while unlocked, since it can only be dragged while it shows.
-    if WTF.SanitizeChimes then
-        db.chimes = WTF.SanitizeChimes(db.chimes)
-    end
-    if WTF.SanitizeReminders then
-        db.reminders = WTF.SanitizeReminders(db.reminders, SanitizePosition)
-    end
+    -- db.shield, db.chimes, db.alerts, and db.reminders stay exactly as saved
+    -- for one release (author-approved): Dyre's Shields Up and Dyre's Buff
+    -- Reminders copy them once, and a downgrade still finds them.
     if WTF.SanitizeControl then
         db.control = WTF.SanitizeControl(db.control, SanitizePosition)
     end
-    -- The shield display is a self-contained component; it owns its defaults.
-    if WTF.ShieldDisplay then
-        db.shield = WTF.ShieldDisplay.Sanitize(db.shield)
-    end
     db.locked = db.locked ~= false
     db.grid = db.grid ~= false
-    if type(db.shield) == "table" then
-        db.shield.locked = db.locked
-    end
     db.stones.locked = db.locked
     db.tracker.locked = db.locked
     db.tracker.placeholders = not db.locked
@@ -855,43 +728,12 @@ end
 
 -- /wtf unlock and /wtf lock, and the main page's "Unlock frames to move them":
 -- every movable WTF frame together (author-approved, as MTF does).
--- The shield display (Shield.lua) is a component MTF ships too; WTF hands it
--- WTF's settings and chat, and it decides whether this copy draws. With both
--- AddOns installed, one display shows, from the newest copy.
-function WTF.InitializeShield()
-    -- Not even a candidate in the display's election: Dyre's Shields Up draws it.
-    if WTF.ShieldStandAside() then
-        return
-    end
-    -- With Dyre's Toolkit the ring drags, snaps, and saves through its layout;
-    -- without it the ring moves freely, as before.
-    local toolkit = WTF.toolkit
-    WTF.ShieldDisplay.Initialize({settings = function() return WTF.db.shield end, report = WTF.Report,
-        unlockHint = "Drag to move · /wtf lock when done", missingSounds = WTF.ReportMissingSounds,
-        layout = toolkit and {register = toolkit.RegisterMovable, beginDrag = toolkit.BeginDrag,
-            endDrag = toolkit.EndDrag} or nil})
-end
-
-function WTF.RefreshShield()
-    WTF.ShieldDisplay.Refresh()
-    WTF.ShieldDisplay.ApplyBreakSound()
-end
-
-function WTF.ResetShieldPosition()
-    WTF.ShieldDisplay.ResetPosition()
-end
-
-function WTF.ReportShieldDebug()
-    WTF.ShieldDisplay.ReportDebug(WTF.Report)
-end
-
 local function SetLockFlags(locked)
     WTF.db.locked = locked
     WTF.db.stones.locked = locked
     WTF.db.tracker.locked = locked
     WTF.db.tracker.placeholders = not locked
     WTF.db.shards.counterLocked = locked
-    WTF.db.shield.locked = locked
 end
 
 -- quiet: Dyre's Toolkit locks every Dyre's AddOn and says one line for all.
@@ -900,8 +742,6 @@ function WTF.SetFramesLocked(locked, quiet)
     WTF.RefreshTracker()
     WTF.RefreshStonesMover()
     WTF.RefreshShardCounter()
-    WTF.RefreshShield()
-    WTF.RefreshReminders()
     WTF.RefreshControl()
     WTF.RefreshGrid()
     if quiet then
@@ -965,8 +805,6 @@ function WTF.ResetPositions()
     WTF.ResetShardCounterPosition()
     WTF.ResetStonesPosition()
     WTF.ResetTrackerPosition()
-    WTF.ResetShieldPosition()
-    WTF.ResetRemindersPosition()
     WTF.ResetControlPosition()
     if InCombatLockdown() then
         WTF.Report("WTF frames move back to their default places after combat.")
@@ -1015,10 +853,7 @@ events:SetScript("OnEvent", function(self, event, loadedName)
         WTF.Report(message)
         return
     end
-    if (WTF.db.chimes.enabled and not WTF.ChimesStandAside())
-            or (WTF.db.alerts.nightfall and not WTF.NightfallStandAside()) then
-        WTF.ReportMissingSounds()
-    end
+    WTF.ReportMovedFeatures()
     -- Called directly rather than from each file's own PLAYER_LOGIN handler,
     -- so startup never depends on event handler order.
     UseToolkit()
@@ -1029,10 +864,6 @@ events:SetScript("OnEvent", function(self, event, loadedName)
     WTF.InitializeTracker()
     WTF.InitializeControl()
     WTF.InitializePlateDots()
-    WTF.InitializeAlerts()
-    WTF.InitializeShield()
-    WTF.InitializeChimes()
-    WTF.InitializeReminders()
     WTF.InitializeOptions()
     JoinToolkit()
     WTF.RefreshGrid()

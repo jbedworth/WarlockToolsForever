@@ -44,26 +44,21 @@ WarlockToolsForever/
     Tracker.lua
     Dots.lua
     Control.lua
-    Alerts.lua
-    Shield.lua
-    Chimes.lua
-    Reminders.lua
     Probe.lua
     Options.lua
     LICENSE
-    Textures/
-        ShieldArc.tga
-        ShieldArcInner.tga
-        ShieldArcInnermost.tga
 ```
 
-No sound files: every sound comes from the library AddOn Dyre's Sounds
-(author-approved, so players keep one copy). The TOC lists it as
-`## OptionalDeps: DyresSounds`, and the CurseForge upload names it a required
-dependency (`RELATIONS` in `scripts/publish_curseforge.py`, slug
-`dyres-sounds`), so the CurseForge app installs it with WTF. Dyre's Toolkit is
-the same: `## OptionalDeps` lists `DyresToolkit` too, `## Group: DyresToolkit`
-nests WTF under it in the AddOn list, and `RELATIONS` has slug `dyres-toolkit`.
+No textures and no sound files: since 1.3.0 the shield display is Dyre's
+Shields Up's, and the chimes, the Nightfall sound, and the Demon Armor
+reminder are Dyre's Buff Reminders'. The TOC lists `## OptionalDeps:
+DyresToolkit, DyresShieldsUp, DyresBuffReminders` (WTF loads without them),
+and the CurseForge upload names all three required dependencies (`RELATIONS`
+in `scripts/publish_curseforge.py`: slugs `dyres-toolkit`, `dyres-shields-up`,
+`dyres-buff-reminders`), so the CurseForge app installs them with WTF.
+`## Group: DyresToolkit` nests WTF under the toolkit in the AddOn list.
+Weapon Skills Forever (`weapon-skills-forever`) stays an optional
+dependency.
 
 The validator permits one optional empty root directory entry. Additional files
 or directories are not permitted. Exclude
@@ -72,14 +67,15 @@ agent guidance, generated logs, and all credentials/player data.
 
 Use an explicit file allowlist. Do not ZIP the checkout and maintain a growing
 list of exclusions. Keep `LICENSE` in the package, but do not load it in the TOC.
-The only media are the shield display's three crescent TGAs, which the
-builder validates (uncompressed 32-bit, square, power-of-two).
+There are no media since 1.3.0, when the shield display and its crescent
+textures moved to Dyre's Shields Up. A texture added later must pass the
+builder's check (uncompressed 32-bit, square, power-of-two TGA).
 
 Validate the actual archive, not only the staging folder:
 
 1. Check CRC/integrity, non-empty files, and the exact file list.
 2. Reject absolute paths, traversal paths, symlinks, and extra root folders.
-3. Verify the TOC name, Interface `16001`, and Commands/Core/Layout/Shards/Stones/Announce/Tracker/Dots/Control/Alerts/Shield/Chimes/Reminders/Probe/Options
+3. Verify the TOC name, Interface `16001`, and Commands/Core/Layout/Shards/Stones/Announce/Tracker/Dots/Control/Probe/Options
    load order. Every listed runtime file must exist inside the archive.
 4. Verify the packaged version matches the selected tag, with one leading `v`
    removed. Verify the packaged MIT copyright/permission notice is intact.

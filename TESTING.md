@@ -191,10 +191,6 @@ the automated test method, and the in-client checklist.
   `UNIT_SPELLCAST_SUCCEEDED` (spell ID) stay readable: Corruption 6222 and
   Drain Life 699, the Classic spell IDs. Nameplate units and their GUIDs are
   readable too.
-- The minimum-absorb gate (shield display v5) works: a frame anchored to a
-  StatusBar's fill texture follows a secret value, and its clipping hides the
-  crescent while the fill is empty. A Paladin's Seal of Righteousness shield
-  no longer flickers the ring (confirmed on a Paladin).
 
 ### Open client questions
 
@@ -226,7 +222,7 @@ From the Git Bash repository root:
 
 ```sh
 .tools/luarocks-3.13.0-win32/win32/lua5.1/bin/lua5.1.exe tests/run.lua
-.tools/luarocks-3.13.0-win32/win32/lua5.1/bin/luac5.1.exe -p Commands.lua Core.lua Layout.lua Shards.lua Stones.lua Announce.lua Tracker.lua Dots.lua Control.lua Alerts.lua Shield.lua Chimes.lua Reminders.lua Probe.lua Options.lua tests/run.lua
+.tools/luarocks-3.13.0-win32/win32/lua5.1/bin/luac5.1.exe -p Commands.lua Core.lua Layout.lua Shards.lua Stones.lua Announce.lua Tracker.lua Dots.lua Control.lua Probe.lua Options.lua tests/run.lua
 .tools/python-3.13.7/python.exe -m unittest discover -s tests -p 'test_*.py'
 ```
 
@@ -438,39 +434,24 @@ and printing.
       before the pull, then click its row in combat after it breaks: it
       recasts on that mob and returns to your target; with the mob gone,
       nothing is cast. `/wtf debug_control` lists the IDs (check Forever's).
-- [ ] Demon Armor reminder: pulses while neither armor is on, a click casts
-      your armor, hides as combat starts and returns after; no taint.
-- [ ] Cooldown chimes: Death Coil chimes half a second before it is ready,
-      also in combat; each spell's sound menu is Dyre's Sounds' nested menu
-      (Dyre's Picks first, Text to Speech last); a sound saved by 0.2.x
-      (for example a Dyre's Picks one) is still selected; Text to Speech says
-      "Death Coil ready". The Nightfall sound menu has only file sounds
-      (Dyre's Picks, Imp, Hellish imp), and the shield's sound menu the same.
-- [ ] Sounds from Dyre's Sounds: with it installed, no "Install Dyre's
-      Sounds" line at login; every sound plays (chimes, Nightfall, shield
-      break). The installed WarlockToolsForever folder has no Sounds folder.
-- [ ] Without Dyre's Sounds (disable it in the AddOn list): one chat line at
-      login says to install it, and no second one later; WTF otherwise works;
-      chimes, Nightfall, and the shield break play nothing; the chime and
-      Nightfall switches show without sound menus. Enable it again: the
-      sounds you chose before are still selected.
-- [ ] With Dyre's Buff Reminders 0.2.0 or later enabled (and Dyre's
-      Cooldown Chimes disabled): WTF plays no chimes (you hear each chime
-      once, from DBR); the main page's Cooldown chimes switch and the page
-      "Cooldown Chimes (Dyre's Buff Reminders)" say, greyed out, that DBR
-      plays them, with `/dbr` in the tooltip; DBR's first run copied WTF's
-      chime choices and DBR does not warn that WTF also plays chimes. With
-      DBR 0.2.x, the Nightfall sound still plays from WTF. Disable DBR:
-      WTF's chimes and their saved choices are back.
-- [ ] With Dyre's Buff Reminders 0.3.0 or later enabled: a Nightfall proc
-      plays one sound, from DBR's Proc Sounds, not two; the page "Alerts
-      (Dyre's Buff Reminders)" says, greyed out, that DBR plays it, with
-      `/dbr` in the tooltip; DBR's first run copied WTF's Nightfall switch
-      and sound. Disable DBR: WTF's Nightfall sound and its saved choice are
-      back.
-- [ ] With Dyre's Cooldown Chimes still enabled (with or without DBR): the
-      settings name Dyre's Cooldown Chimes and `/dcc`, and WTF plays no
-      chimes.
+- [ ] Moved features (1.3.0), with Dyre's Shields Up and Dyre's Buff
+      Reminders enabled: no "moved there from WTF" line at login. The shield
+      display shows once, from Dyre's Shields Up, with the scale, number, and
+      place you had in WTF (its first run on this character); Cooldown
+      chimes, the Nightfall sound, and the Demon Armor icon come from Dyre's
+      Buff Reminders with your WTF choices; a Demon Armor icon click casts
+      the armor you used last. WTF plays no sound and draws no shield or
+      icon of its own.
+- [ ] WTF's Shield, Cooldown Chimes, Alerts, and Demon Armor pages each show
+      one button; it opens Dyre's Shields Up's or Dyre's Buff Reminders'
+      settings out of combat. In combat a click says it opens out of combat.
+- [ ] Disable Dyre's Shields Up, then Dyre's Buff Reminders, in the AddOn
+      list: at login one line each says to enable it, once per session;
+      the Shield (or other) page's button is greyed out, and its tooltip
+      says what to install. Delete one from the AddOns folder: the line says
+      to install it from CurseForge. WTF's own modules work in every case.
+- [ ] `/wtf debug_shield`, `/wtf debug_chimes`, and `/wtf debug_reminders`
+      show the usage line (they moved with the features).
 - [ ] Every WTF macro and row click works with `/use`: "! Healthstone" and
       "! Soulstone" (left-click uses, right-click creates the rank), "! Fear",
       "! Banish", "! Seduction", a pinned DoT slot click on the target and on
@@ -489,11 +470,6 @@ and printing.
       click slot is there, and both go when combat ends. Locked, click on the
       world through the DoT tracker rows and the Control bar's empty area:
       the clicks reach the world.
-- [ ] Shield display: Shadow Ward and Sacrifice fill the crescent, each icon
-      in its own spot; with MTF installed too, the display shows on both a
-      Warlock and a Mage. A Blessing of Protection from a Paladin, also in
-      combat, draws the gold innermost arc and its icon; `/wtf debug_shield`
-      confirms the bubble IDs.
 - [ ] "Unlock frames to move them" and `/wtf unlock` outline the Stones bar and
       the shard counter and show sample tracker rows; all three drag; unticking
       or `/wtf lock` locks them, and the switch and commands stay in step;
@@ -507,10 +483,8 @@ and printing.
       Dyre's AddOn's frames
       with one "Dyre:" chat line and no "WTF:" line; one grid shows (the
       toolkit's); a WTF frame dropped near another Dyre's AddOn's frame snaps
-      to it; with Snap to the grid on, it snaps to the grid; the shield ring
-      (unlocked) snaps to the other frames too; Shift-drag moves a snapped
-      group across AddOns; the Demon Armor icon resizes with the
-      mouse wheel; `/wtf lock` locks them all; places survive `/reload`;
+      to it; with Snap to the grid on, it snaps to the grid; Shift-drag moves
+      a snapped group across AddOns; `/wtf lock` locks them all; places survive `/reload`;
       frames start locked after `/reload`. No taint in combat.
 - [ ] Without Dyre's Toolkit (disable it): one chat line at login says to
       install it from CurseForge; WTF's own top-level page, unlock, and grid
@@ -524,6 +498,4 @@ and printing.
 - [ ] Soulstone a party member: `/wtf stones` names them; 30 minutes later a
       chat line says it ended. With no Soulstone up or no Healthstone, a
       reminder after a fight, at most every 10 minutes; the switches stop them.
-- [ ] Turn on the Nightfall sound: choosing a sound plays it; a Nightfall proc
-      plays it in combat.
 - [ ] No Lua errors or taint warnings in or out of combat.

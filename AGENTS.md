@@ -7,24 +7,44 @@ small, independent quality-of-life modules for Warlocks. Each module has an
 enable switch on the main settings page and its own settings subpage. Add a
 module only after the author agrees its behavior.
 
-### Sounds come from Dyre's Sounds (author-approved, mandatory)
+### Moved out in 1.3.0 (author-approved, 2026-10-22)
 
-- Only the library AddOn Dyre's Sounds (`src/DyresSounds`, CurseForge project
-  1753581, unlisted, slug `dyres-sounds`) ships sound files; MTF, WTF, and
-  Dyre's Shields Up depend on it, so players keep one copy. WTF ships no
-  sounds; add none.
-- The TOC lists it in `## OptionalDeps: DyresSounds, DyresToolkit` (never
-  `## Dependencies`, which stops WTF loading when it is missing), and
-  CurseForge as a required dependency (`RELATIONS` in
-  scripts/publish_curseforge.py), so the CurseForge app installs it.
-- Core's `WTF.SoundLibrary()` returns the library from
-  `DyresSounds.RequireContract(1)` when every function WTF uses (`Resolve`,
-  `Label`, `List`, `Groups`, `Play`, `AuraSound`, `Choices`, `SetupMenu`) is
-  there, else nil and "missing" or "old". Without it WTF still works and plays
-  no sounds, keeps saved sound keys as they are, and says once per session
-  in chat what to install or update (at login when chimes or the Nightfall
-  sound are on, or when one would play). The shield display says so for its
-  own sound.
+So that WTF stops duplicating Dyre's other AddOns, and players meet them on
+their other classes ("virality"):
+
+- The shield display (Shield.lua, its crescent textures, scripts/build_arc.py)
+  is Dyre's Shields Up's (DSU). The cooldown chimes (Chimes.lua), the Nightfall
+  sound (Alerts.lua), and the Demon Armor reminder (Reminders.lua) are Dyre's
+  Buff Reminders' (DBR). WTF ships none of them, and no sounds, so it no
+  longer uses Dyre's Sounds. Do not bring any of them back: changes go to DSU
+  or DBR through the coordinator.
+- TOC: `## OptionalDeps: DyresToolkit, DyresShieldsUp, DyresBuffReminders`
+  (never `## Dependencies`, so WTF loads without them; the toolkit stays
+  optional while WTF is not on toolkit widgets). CurseForge lists
+  `dyres-toolkit`, `dyres-shields-up`, and `dyres-buff-reminders` as required
+  dependencies (`RELATIONS` in scripts/publish_curseforge.py), so the app
+  installs them.
+- At login, on a Warlock with WTF available, Core's `WTF.ReportMovedFeatures`
+  says once per session for each of DSU and DBR that is not loaded: "Install
+  <title> from CurseForge for <features>: it moved there from WTF.", or
+  "Enable <title> in the AddOn list ..." when `C_AddOns.GetAddOnInfo` shows it
+  installed but not loadable (reason not "MISSING"). CurseForge only.
+- The Shield, Cooldown Chimes, Alerts, and Demon Armor pages are links, not
+  mirrors (author): each is one `DyresToolkit.AddSettingsLink` button (toolkit
+  2.3.0; greyed while that AddOn has not joined the toolkit, and a click then
+  says what to install; never in combat) that opens DSU's or DBR's settings.
+  Without the helper, the page is one greyed note saying where the feature
+  went. The main page has no shield, chime, or reminder switches.
+- WTF's saved `db.shield`, `db.chimes`, `db.alerts`, and `db.reminders` stay
+  exactly as saved for one release (no repair, no lock flag), so DSU and DBR
+  can copy them once on their first run on the character (DBR already copies
+  chimes, Nightfall, and the reminder: `enabled`, `spells.armor`,
+  `last.armor`), and a downgrade still finds them; a test checks it. Remove
+  them in a later release.
+- DBR's Demon Armor icon is a secure button that casts the armor you cast
+  last, else Demon Armor, else Demon Skin (`prefer = {706, 687}`), on you, as
+  WTF's did; the icon's place and size are not copied (DBR's author rule:
+  "start fresh").
 
 ### Soul Shards (built)
 
@@ -353,8 +373,8 @@ module only after the author agrees its behavior.
   and Percent) puts text after the name, in room taken from the name's width.
   Enemy health is secret in combat: WTF never reads, compares, or formats it
   as a string. The bar takes `UnitHealthMax`/`UnitHealth` through
-  `SetMinMaxValues`/`SetValue` (secret-accepting, as the shield display's
-  absorb, Shield.lua's header); the number is `AbbreviateNumbers(UnitHealth
+  `SetMinMaxValues`/`SetValue` (secret-accepting, as Dyre's Shields Up shows
+  its absorb); the number is `AbbreviateNumbers(UnitHealth
   (unit))`; the percent is `UnitHealthPercent(unit, true,
   CurveConstants.ScaleTo100)` formatted with `string.format("%d%%", ...)`,
   the API path EllesmereUI's unit frames use on this client
@@ -425,167 +445,6 @@ module only after the author agrees its behavior.
   the slider has a gold mark at the default, author-approved),
   as TankHelper's threat display does. They are pooled and rebuilt when the
   known DoTs change.
-
-### Alerts (built)
-
-- Nightfall sound (author-approved, off by default): `C_UnitAuras.AddAuraSound`
-  (trigger Added) on the player's Shadow Trance (spell 17941), as BigWigs
-  registers its aura sounds, with the fields of Dyre's Sounds'
-  `AuraSound(key)` (`soundFileName` for Dyre's Picks, `soundFileID` for the
-  imp laughs and chirps). Default `impspell`, Imp: Spell chirp (the author's
-  pick). The dropdown is `Choices("aura")` with `SetupMenu(dropdown,
-  "aura")`; choosing a sound previews it with `Play(key)`. Saved keys are
-  mapped with `Resolve` (the old "pick..." keys are aliases) and must be aura
-  sounds, else the default; without the library the saved key is kept. The
-  game plays it, also in combat. Registration waits out an Encounter
-  restriction (`ADDON_RESTRICTION_STATE_CHANGED`). `UnitAuraSoundInfo`
-  (pinned UnitConstantsDocumentation) takes only `soundFileName` or
-  `soundFileID`, not sound kits.
-- Stand aside for the Proc Sounds of Dyre's Buff Reminders (author-approved):
-  when DBR is loaded and its TOC Version (`C_AddOns.GetAddOnMetadata`) is
-  0.3.0 or later (`WTF.NIGHTFALL_ADDON`, `WTF.NightfallStandAside`; parsed as
-  major.minor.patch, as DBR's Chimes.lua compares `asideFrom`; a missing or
-  odd version counts as older, since DBR 0.2.x has no Nightfall sound), WTF
-  registers no aura sound and previews none; the Alerts page is listed as
-  "Alerts (Dyre's Buff Reminders)" and only says, greyed out, that DBR plays
-  it (`/dbr`). WTF's saved `alerts.nightfall` and `alerts.nightfallSound`
-  stay untouched: DBR copies them on its first run.
-
-### Cooldown chimes (built, ported from MTF)
-
-- A sound just before a chosen spell's cooldown ends, also in combat, timed
-  from your own cast (the combat log is closed and cooldowns are secret in
-  combat): the length last read out of combat (saved per character, 1.5 s to
-  1 h), else Classic's, minus the lead (0-3 s, default 0.5). Spells, on by
-  default: Death Coil, Howl of Terror, Shadow Ward, Soulstone Resurrection
-  (the Soulstone's use), Fel Domination; off: Shadowburn, Conflagrate,
-  Amplify Curse, Bane of Doom (Classic's Curse of Doom, 603), Inferno.
-- Each spell's sound comes from Dyre's Sounds: the dropdown under its switch
-  is `Choices()` with `SetupMenu(dropdown)` (the library's nested menu), and a
-  chime plays with `Play(key, "<Spell> ready")`, the text Text to Speech
-  says; a sound that cannot play (no voice) falls back to the default,
-  Interface: Talent ready (`talent`). Saved keys are mapped with `Resolve`
-  (the old "effect..." keys and "popclick" are aliases); without the library
-  the saved key is kept as it is. Without the library, or with an older
-  contract, chimes still time, play nothing, and the settings show the
-  switches without sound menus.
-- A settings page whose feature a stand-alone Dyre's AddOn runs is listed as
-  "<Page> (<AddOn>)" and starts with a heading "<Feature> are now managed by
-  <AddOn>" with a tooltip naming its slash command (author-approved; Options.lua
-  ManagedTitle and ManagedHeading).
-- The stand-alone Dyre's AddOn wins when installed (author's rule for every
-  shared feature until the class AddOns drop their copies). Dyre's Shields Up:
-  while `C_AddOns.IsAddOnLoaded("DyresShieldsUp")` is true (WTF.ShieldStandAside),
-  WTF never calls ShieldDisplay.Initialize, so its copy draws nothing and is
-  no candidate in the election; every shield setting is greyed out with a
-  tooltip pointing to `/dsu`; saved shield settings stay as they are.
-- Dyre's Buff Reminders (DBR, `src/DyresBuffReminders`) shows buff reminders for
-  every class (author-approved two-step move). While
-  `C_AddOns.IsAddOnLoaded("DyresBuffReminders")` is true, WTF's own reminder
-  icons stay hidden, also unlocked (WTF.RemindersStandAside), and the settings say DBR
-  shows them; WTF's saved reminder settings stay as they are. Later WTF drops
-  its reminders.
-- Stand aside for the chimes of Dyre's Buff Reminders (DBR 0.2.0 took in
-  Dyre's Cooldown Chimes, DCC, which was never released; the second step of
-  the move to shared AddOns, author-approved): when
-  `C_AddOns.IsAddOnLoaded("DyresBuffReminders")` or
-  `C_AddOns.IsAddOnLoaded("DyresCooldownChimes")` is true
-  (`WTF.CHIMES_ADDONS`; DCC first, since DBR plays none while DCC is loaded),
-  WTF registers no cast event and plays no chime or preview; the Cooldown
-  Chimes page and the main page's switch only say, greyed out, which AddOn
-  plays them and its slash command (`/dbr`, `/dcc`). WTF's saved chime
-  settings stay untouched: DBR copies them on its first run. DBR's
-  `OTHER_CHIMES` counts WTF as standing aside from version 0.3.2 on, so keep
-  this in every later version. Later WTF drops its chimes, with a CHANGELOG
-  note and a chat message.
-
-### Shield display (built, MTF's shared component)
-
-- Shield.lua is MTF's component, copied byte for byte with its textures and
-  scripts/build_arc.py (tests require the committed TGAs to match the build).
-  It already knows Shadow Ward and the Voidwalker's Sacrifice, and shields
-  others cast, like Power Word: Shield. With MTF and WTF both installed, one
-  display shows, from the newest copy (`ShieldForeverRegistry`); keep the
-  copies identical and bump its VERSION in both when it changes. WTF hands it
-  `WTF.db.shield`, its report function, and the unlock hint; a main-page
-  switch and a Shield page (absorb number, break sound, size) as in MTF. It
-  drags itself and does not snap.
-- Version 3 (author-approved): copies take part only once their AddOn
-  initializes them, so login order never decides; each class's own shields
-  get a spot each, then the shared ones; bubbles (Divine Shield, Divine
-  Protection: Paladin; Blessing of Protection: anyone) are timed, drawing a
-  gold innermost crescent that drains with their time left (Classic IDs;
-  check on Forever; Power Word: Shield's Classic IDs are confirmed there).
-  In combat the display stays shown, since buffs others cast cannot be read:
-  the outer crescent is invisible with no absorb, and the engine shows each
-  icon and timed crescent only while its buff is up.
-- Version 4: each crescent texture spans its own height (scripts/build_arc.py
-  stretches it; Shield.lua's `*_SPAN` constants match, checked by a Python
-  test), and every crescent texture and bar is drawn at that height. A
-  StatusBar fills its whole height, so across the full square a timed bar
-  emptied a segment or more before its buff ended (found in client; the
-  fix confirmed on a Mage).
-- Version 5 (with MTF and WTF; found in client): absorbs
-  under the larger of 25 points and 5% of max health (25 when max health is
-  secret) never show; a Paladin's Seal of Righteousness proc, 10-20 points,
-  flickered the ring. The absorb cannot be compared, so a hidden gate
-  StatusBar, one point wide and ending at the minimum, takes it as its value,
-  and a clipping frame anchored to the gate's fill holds the crescent and the
-  number (confirmed on a Paladin). Fixed constants, no setting.
-- Version 6 (with MTF and WTF; found in client): the break sound is one of
-  the AddOn's own files in Sounds/, byte-identical in all three, chosen in a
-  dropdown under the sound switch (author-approved: a default you can change,
-  Fading slow disappear). The client plays no game sound by path
-  (RaidWarning.ogg stayed silent), while an AddOn's file plays, also through
-  `C_UnitAuras.AddAuraSound` when a buff runs out. Turning the sound on, or
-  choosing one, plays it once. The sounds are licensed to Vertiso Corporation
-  from Envato (Elements and AudioJungle; the author keeps the license files,
-  not in Git); they are not under the MIT License.
-- Version 7 (with MTF and WTF; found in client): every crescent is anchored
-  to the display itself. In v5 and v6 the outer crescent was fitted to its
-  parent, the minimum-absorb clipping frame, which reaches 40 px below the
-  display for the number, so it was drawn lower and taller than the inner
-  crescents (seen on a Mage with Fire Ward and Mana Shield).
-- Version 8 (with MTF, WTF, and DSU): no AddOn ships sound files
-  (author-approved: one copy for all of Dyre's AddOns). The break sound comes
-  from Dyre's Sounds' aura sounds (Dyre's Picks and game file IDs). Interface:
-  `SoundChoices()` and `SetupSoundMenu(initializer)` replace `BREAK_SOUNDS`;
-  the Shield page builds the dropdown as DSU's Options.lua does. Without the
-  library the display works, a saved choice is kept, and turning the sound on
-  says once in chat to install Dyre's Sounds.
-  WTF passes `missingSounds = WTF.ReportMissingSounds` to `Initialize`, so the
-  shield sound and the chimes and Nightfall share one line (author-approved: one per AddOn).
-- Version 9 (with MTF, WTF, and DSU; coordinator-approved): `Initialize`'s
-  host table takes an optional `layout = {register(frame, save),
-  beginDrag(frame), endDrag(frame)}`; with it the ring registers, drags,
-  snaps, and saves through the host's layout, else it moves itself as
-  before. WTF passes Dyre's Toolkit's `RegisterMovable`, `BeginDrag`, and
-  `EndDrag` only when it uses the toolkit (`WTF.toolkit`); without it, no
-  layout.
-- Version 10 (DSU): the host table may instead give `layout = {adopt(frame),
-  resetPosition(frame)}`, for a host that makes the built ring its own Dyre's
-  Toolkit widget; the display then never places, drags, scales, or saves it.
-  WTF does not adopt the ring (coordinator: not now) and keeps the version 9
-  layout table.
-- Version 11 (DSU 1.1.0, coordinator-approved; WTF 1.1.1): the ring scales
-  from its center (`ScaleFromCenter`; a bare SetScale moved it away from its
-  anchor, found in client), so it stays where it was put; `shield.scale`
-  sizes only the crescents, the number and icons stay at 100% (new sanitized
-  keys `textScale` and `iconScale`); the icon row and the timed crescents are
-  two AuraContainers (`ring.icons`, `ring.crescents`), each set up only in its
-  own `initializeFrame`. No host change for a version 9 host. The copy's
-  sha256 is pinned in tests/test_release.py and compared with DSU's copy when
-  it is next to WTF.
-
-### Demon Armor reminder (built)
-
-- Author-approved: only Demon Armor (Demon Skin counts too; the other buffs
-  are situational). One secure icon, shown out of combat while neither is on
-  you, with a pulsing gold border; a click casts the armor last cast (saved
-  per character), else Demon Armor, else Demon Skin. It sits in a holder
-  hidden for combat by `RegisterStateDriver(holder, "visibility",
-  "[combat] hide; show")`, reads buffs only out of combat, snaps, and resizes
-  with the mouse wheel while unlocked (50-200%, keeping its center).
 
 ### Control bar and control announcements (built)
 
@@ -699,10 +558,6 @@ module only after the author agrees its behavior.
 - Without it (or with an older one), WTF works as before: Layout.lua, WTF's
   grid, its top-level page, and its own lock messages, and it says once at
   login to install (or update) Dyre's Toolkit, naming only CurseForge.
-- The shield display (Shield.lua, shared byte-identical, version 9) gets the
-  toolkit's layout through `Initialize`'s `layout` field, so the ring snaps
-  with the other frames too; any change to Shield.lua goes through the
-  coordinator.
 
 ### Macro text (author-approved)
 
@@ -736,8 +591,8 @@ module only after the author agrees its behavior.
 ### Slider labels (author-approved, family-wide)
 
 - A percent slider's value shows its % sign (Options' `SliderOptions(...,
-  true)` or a `"%d%%"` label formatter), so its label has no "(%)": "Display
-  size", "Bar size". A test fails on any WTF setting label with "(%)".
+  true)` or a `"%d%%"` label formatter), so its label has no "(%)": "Bar
+  size". A test fails on any WTF setting label with "(%)".
 
 ### Slot colors (author-approved)
 
@@ -814,15 +669,14 @@ general frameworks, or speculative modules without agreement.
 
 ## Project structure
 
-- Runtime files: WarlockToolsForever.toc, Commands.lua, Core.lua, Layout.lua, Shards.lua, Stones.lua, Announce.lua, Tracker.lua, Dots.lua, Control.lua, Alerts.lua, Shield.lua, Chimes.lua, Reminders.lua, Probe.lua, Options.lua, loaded in
-  that order, plus Textures/ShieldArc.tga, Textures/ShieldArcInner.tga, and
-  Textures/ShieldArcInnermost.tga. Core also owns the hardware-input hooks
+- Runtime files: WarlockToolsForever.toc, Commands.lua, Core.lua, Layout.lua, Shards.lua, Stones.lua, Announce.lua, Tracker.lua, Dots.lua, Control.lua, Probe.lua, Options.lua, loaded in
+  that order. Core also owns the hardware-input hooks
   (every key press and world click) that item deletion and trade placement
   wait for.
   Commands parses `/wtf`; Core owns saved settings and their defaults, the
   login banner, class and install checks, slash conflict reporting, and
-  startup; Layout owns snapping; Shards, Stones, Announce, Tracker, Dots, Control, Alerts, Shield,
-  Chimes, and Reminders own their modules; Probe owns
+  startup, and the moved-feature lines; Layout owns snapping; Shards, Stones,
+  Announce, Tracker, Dots, and Control own their modules; Probe owns
   `/wtf debug_restrictions`; Options owns the settings pages.
 - tests/run.lua holds the Lua 5.1 mock suite. tests/test_*.py cover the release
   helpers in scripts/. .github/workflows/ holds CI, opt-in publishing, and the
@@ -843,8 +697,8 @@ general frameworks, or speculative modules without agreement.
   `## Category: Warlock`, which groups WTF only when the toolkit is missing;
   keep it identical to the CurseForge main category, since the list groups by
   exact text.
-- WTF ships no runtime assets beyond the shield display's three crescent
-  textures, and no sound files; add none without agreement.
+- WTF ships no runtime assets and no sound files (the shield textures went
+  to Dyre's Shields Up in 1.3.0); add none without agreement.
 - Git origin: git@github.com:jbedworth/WarlockToolsForever.git. Inspect Git
   state before acting and preserve user work. Text is LF under .gitattributes.
 
@@ -926,9 +780,8 @@ general frameworks, or speculative modules without agreement.
   bullets under `### Features`, `### Fixes`, and `### Other changes`, in that
   order, leaving out an empty one. The builder's section ends only at the
   next `## `, so the `###` headings stay in the release notes.
-- Package only WarlockToolsForever.toc, Commands.lua, Core.lua, Layout.lua, Shards.lua, Stones.lua, Announce.lua, Tracker.lua, Dots.lua, Control.lua, Alerts.lua, Shield.lua, Chimes.lua, Reminders.lua, Probe.lua, Options.lua, LICENSE,
-  and Textures/ShieldArc.tga, Textures/ShieldArcInner.tga, Textures/ShieldArcInnermost.tga (no sound files)
-  under the top-level
+- Package only WarlockToolsForever.toc, Commands.lua, Core.lua, Layout.lua, Shards.lua, Stones.lua, Announce.lua, Tracker.lua, Dots.lua, Control.lua, Probe.lua, Options.lua, and LICENSE
+  (no textures, no sound files) under the top-level
   `WarlockToolsForever/` folder, named
   `WarlockToolsForever-<version>-forever.zip`, with the builder's
   BigWigs-format `release.json` (flavor `forever`) attached for WowUp.

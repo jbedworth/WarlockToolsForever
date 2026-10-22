@@ -4,6 +4,19 @@ Player-facing changes for each Warlock Tools Forever release, newest first. The
 release builder copies the section for the TOC version into the GitHub release
 notes and the CurseForge changelog, and fails if that section is missing.
 
+## 1.3.0
+
+Four features moved out of WTF into two of Dyre's AddOns that every class can use. The CurseForge app installs both with WTF, and each copies your WTF settings for its features once, the first time it runs on a character.
+
+### Other changes
+- The **shield display** moved to **Dyre's Shields Up** (`/dsu`).
+- The **cooldown chimes**, the **Nightfall sound**, and the **Demon Armor reminder** moved to **Dyre's Buff Reminders** (`/dbr`). Its Demon Armor icon casts the armor you used last when you click it, as WTF's did. Place the icon again: its place is not copied.
+- WTF's Shield, Cooldown Chimes, Alerts, and Demon Armor settings pages now have a button that opens the settings of the AddOn that has the feature. The main page no longer has the shield, chime, and reminder switches.
+- Without Dyre's Shields Up or Dyre's Buff Reminders, WTF still works and says once at login to install it from CurseForge, or to enable it in the AddOn list.
+- `/wtf debug_shield`, `/wtf debug_chimes`, and `/wtf debug_reminders` are gone with their features.
+- WTF no longer plays any sound, so it no longer needs Dyre's Sounds.
+- WTF keeps your old shield, chime, Nightfall, and reminder settings unchanged for one more release.
+
 ## 1.2.0
 
 Thanks to Myia and others for their feedback.

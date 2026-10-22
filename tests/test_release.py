@@ -8,7 +8,6 @@ import hashlib
 import importlib.util
 import json
 import os
-import re
 import shutil
 import stat
 import struct
@@ -258,48 +257,27 @@ class ReleaseTests(unittest.TestCase):
             with self.subTest(header=data[:18]), self.assertRaises(ValueError):
                 builder._validate_tga("icon.tga", data)
 
-    def test_package_ships_the_shield_arc_and_no_sounds(self):
-        # Sounds come from Dyre's Sounds, so only it ships sound files.
-        self.assertEqual(builder.MEDIA_FILES, ("Textures/ShieldArc.tga", "Textures/ShieldArcInner.tga",
-                                               "Textures/ShieldArcInnermost.tga"))
+    def test_package_ships_no_shield_files_and_no_sounds(self):
+        # 1.3.0: the shield display moved to Dyre's Shields Up, the sounds come
+        # from Dyre's Shields Up and Dyre's Buff Reminders.
+        self.assertEqual(builder.MEDIA_FILES, ())
+        for name in ("Shield.lua", "Chimes.lua", "Alerts.lua", "Reminders.lua"):
+            self.assertNotIn(name, builder.RUNTIME_FILES)
+            self.assertFalse((ROOT / name).exists(), name)
+        self.assertFalse((ROOT / "Textures").exists())
         self.assertFalse((ROOT / "Sounds").exists())
         path, _ = self.build()
         with zipfile.ZipFile(path) as archive:
-            self.assertIn("WarlockToolsForever/Textures/ShieldArc.tga", archive.namelist())
-            self.assertIn("WarlockToolsForever/Textures/ShieldArcInner.tga", archive.namelist())
-            self.assertIn("WarlockToolsForever/Textures/ShieldArcInnermost.tga", archive.namelist())
             self.assertFalse([name for name in archive.namelist()
-                              if name.lower().endswith((".mp3", ".wav", ".ogg"))])
+                              if name.lower().endswith((".tga", ".mp3", ".wav", ".ogg"))])
             self.assertEqual(len(archive.namelist()), len(builder.PACKAGE_FILES))
 
-    def test_committed_shield_arc_matches_the_build(self):
-        spec = importlib.util.spec_from_file_location("build_arc", ROOT / "scripts" / "build_arc.py")
-        arc = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(arc)
-        for name in arc.CRESCENTS:
-            self.assertEqual((ROOT / "Textures" / name).read_bytes(), arc.build(name), name)
-
-    def test_shield_lua_is_the_shared_copy(self):
-        # Shield.lua is shared byte for byte with Dyre's Shields Up (its owner)
-        # and Mage Tools Forever; a change goes through Dyre's Shields Up and the
-        # coordinator, and moves this hash. Version 11, from Dyre's Shields Up 1.1.0.
-        source = (ROOT / "Shield.lua").read_bytes()
-        self.assertEqual(hashlib.sha256(source).hexdigest(),
-                         "0d09d196498024d8c6725914f2b47af4185071aa4fbfea70d2dae35aed68fa13")
-        owner = ROOT.parent / "DyresShieldsUp" / "Shield.lua"
-        if owner.exists():
-            self.assertEqual(source, owner.read_bytes(), "the same bytes as Dyre's Shields Up's copy")
-
-    def test_shield_lua_draws_each_crescent_at_its_height(self):
-        spec = importlib.util.spec_from_file_location("build_arc", ROOT / "scripts" / "build_arc.py")
-        arc = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(arc)
-        source = (ROOT / "Shield.lua").read_text(encoding="utf-8")
-        for name, constant in (("ShieldArc.tga", "OUTER_SPAN"), ("ShieldArcInner.tga", "INNER_SPAN"),
-                               ("ShieldArcInnermost.tga", "INNERMOST_SPAN")):
-            match = re.search(r"local " + constant + r" = (\d+) / (\d+)$", source, re.MULTILINE)
-            self.assertIsNotNone(match, constant)
-            self.assertEqual(int(match.group(1)) / int(match.group(2)), arc.span(name), name)
+    def test_toc_lists_the_runtime_files_and_the_moved_features_addons(self):
+        toc = (ROOT / "WarlockToolsForever.toc").read_text(encoding="utf-8")
+        listed = [line for line in toc.splitlines() if line and not line.startswith("#")]
+        self.assertEqual(tuple(listed), builder.RUNTIME_FILES)
+        self.assertIn("## OptionalDeps: DyresToolkit, DyresShieldsUp, DyresBuffReminders", toc.splitlines())
+        self.assertNotIn("DyresSounds", toc)
 
     def test_release_notes_start_with_the_versions_changelog_section(self):
         changelog = self.source / builder.CHANGELOG_NAME

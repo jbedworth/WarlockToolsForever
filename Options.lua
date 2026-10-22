@@ -14,6 +14,7 @@ local DOTS_TITLE = "DoTs"
 local ALERTS_TITLE = "Alerts"
 local SHIELD_TITLE = "Shield"
 local CHIMES_TITLE = "Cooldown Chimes"
+local REMINDER_TITLE = "Demon Armor"
 local CONTROL_TITLE = "Control"
 local UNAVAILABLE = "The AddOn settings page is unavailable on this client. Use /wtf shards for status."
 local GOLD = {1, 0.82, 0}
@@ -26,14 +27,6 @@ local REQUIRED_SETTINGS = {
 }
 
 local category
-local SOUNDS_MISSING_TIP = " Install Dyre's Sounds to hear it and to choose its sound."
-local REMINDERS_ELSEWHERE_TIP = "Dyre's Buff Reminders shows your buff reminders now, so WTF's "
-    .. "Demon Armor icon stays hidden. Type /dbr to change it. WTF keeps its own setting as it is."
--- by: the WTF.CHIMES_ADDONS entry that plays the chimes.
-local function ChimesElsewhereTip(by)
-    return by.title .. " plays your cooldown chimes now, so WTF plays none. Type " .. by.slash
-        .. " to change them. WTF keeps its own chime settings as they are."
-end
 
 local function HasSettingsAPI()
     if type(Settings) ~= "table" or type(Settings.VarType) ~= "table" then
@@ -88,10 +81,6 @@ local function RefreshStones()
     end
 end
 
-local function RefreshShield()
-    WTF.RefreshShield()
-end
-
 -- A percent slider's value shows its % sign, so its label has no "(%)".
 local function Percent(value)
     return string.format("%d%%", value)
@@ -105,91 +94,6 @@ local function SliderOptions(minValue, maxValue, step, percent)
     return options
 end
 
--- A page whose feature a stand-alone Dyre's AddOn now runs (author-approved rule)
--- says so twice: its name in the settings list names that AddOn, and a heading
--- with a tooltip tops the page. Headings as Blizzard's Controls page adds them
--- (Blizzard_SettingControls.lua: CreateSettingsListSectionHeaderInitializer).
-local function ManagedTitle(title, addonTitle, managed)
-    return managed and (title .. " (" .. addonTitle .. ")") or title
-end
-
-local function ManagedHeading(layout, managed, heading, tooltip)
-    if managed and type(CreateSettingsListSectionHeaderInitializer) == "function" and type(layout) == "table"
-            and type(layout.AddInitializer) == "function" then
-        layout:AddInitializer(CreateSettingsListSectionHeaderInitializer(heading, tooltip))
-    end
-end
-
--- The shield display draws in one AddOn only (Shield.lua's election); in the
--- others its settings do nothing, so they are greyed out (author-approved) with
--- a note naming the AddOn that draws it. Checked each time the page shows.
-local SHIELD_ELSEWHERE = " Dyre's Shields Up shows the shield display now, so these settings do nothing "
-    .. "here. Type /dsu to change it. WTF keeps its own shield settings as they are."
-
-local function ShieldOwnerNote(display)
-    if WTF.ShieldStandAside() then
-        return SHIELD_ELSEWHERE
-    end
-    if display.IsOwner() then
-        return ""
-    end
-    local owner = display.OwnerAddOn()
-    local title = owner and type(C_AddOns) == "table" and type(C_AddOns.GetAddOnMetadata) == "function"
-        and C_AddOns.GetAddOnMetadata(owner, "Title")
-    if type(title) ~= "string" or title == "" then
-        title = tostring(owner)
-    end
-    return " " .. title .. " draws the shield display, so use its settings for it."
-end
-
-local function GreyUnlessOwner(initializer, display)
-    if type(initializer) == "table" and type(initializer.AddModifyPredicate) == "function" then
-        initializer:AddModifyPredicate(function() return not WTF.ShieldStandAside() and display.IsOwner() end)
-    end
-    return initializer
-end
-
-local function AddShieldPage(parent)
-    local aside = WTF.ShieldStandAside()
-    local page, layout = Settings.RegisterVerticalLayoutSubcategory(parent,
-        ManagedTitle(SHIELD_TITLE, "Dyre's Shields Up", aside))
-    ManagedHeading(layout, aside, "Shields are now managed by Dyre's Shields Up",
-        "Use /dsu to change the shield display. "
-            .. "WTF keeps its own settings as they are, and uses them again if you remove Dyre's Shields Up.")
-    local display = WTF.ShieldDisplay
-    local note = ShieldOwnerNote(display)
-    GreyUnlessOwner(Flag(page, "WTF_SHIELD_NUMBER", "Show the absorb amount", "shield", "number", true,
-        "Show your remaining absorb as a number beside the ring." .. note, RefreshShield), display)
-    local soundSwitch = GreyUnlessOwner(Flag(page, "WTF_SHIELD_BREAK_SOUND", "Sound when a shield ends",
-        "shield", "breakSound", false,
-        "Play a sound when your Shadow Ward, your Voidwalker's Sacrifice, or another shield on you ends or "
-            .. "breaks, also in combat." .. note, RefreshShield), display)
-    -- Which sound, under its switch (author-approved: a default you can change).
-    local sound = Proxy(page, "WTF_SHIELD_BREAK_SOUND_CHOICE", Settings.VarType.String, "Sound",
-        display.DEFAULT_BREAK_SOUND,
-        function() return WTF.db.shield.breakSoundKey end,
-        function(value)
-            WTF.db.shield.breakSoundKey = display.SanitizeBreakSound(value)
-            RefreshShield()
-            display.PreviewBreakSound()
-        end)
-    -- The sounds come from Dyre's Sounds; without it the list is empty.
-    local dropdown = Settings.CreateDropdown(page, sound, display.SoundChoices,
-        "The sound when a shield ends. Choosing one plays it once. The sounds come from Dyre's Sounds." .. note)
-    display.SetupSoundMenu(dropdown)
-    GreyUnlessOwner(dropdown, display)
-    dropdown:SetParentInitializer(soundSwitch, function() return WTF.db.shield.breakSound end)
-    local scale = Proxy(page, "WTF_SHIELD_SCALE", Settings.VarType.Number, "Display size", display.DEFAULT_SCALE,
-        function() return WTF.db.shield.scale end,
-        function(value)
-            WTF.db.shield.scale = display.SanitizeScale(value)
-            RefreshShield()
-        end)
-    GreyUnlessOwner(Settings.CreateSlider(page, scale,
-        SliderOptions(display.SCALE_MIN, display.SCALE_MAX, display.SCALE_STEP, true),
-        "How big the shield display is, in percent." .. note), display)
-end
-
 -- A greyed-out checkbox that only says something; never saved.
 local function Notice(page, variable, name, tooltip)
     local setting = Proxy(page, variable, Settings.VarType.Boolean, name, true,
@@ -201,54 +105,35 @@ local function Notice(page, variable, name, tooltip)
     return initializer
 end
 
--- Each spell's switch, and under it its sound from Dyre's Sounds (the nested
--- menu, author-approved as in MTF). With Dyre's Buff Reminders installed the
--- page only says that it plays the chimes.
-local function AddChimesPage(parent)
-    local by = WTF.ChimesStandAside()
-    local aside = by ~= nil
-    local page, layout = Settings.RegisterVerticalLayoutSubcategory(parent,
-        ManagedTitle(CHIMES_TITLE, by and by.title, aside))
-    if aside then
-        ManagedHeading(layout, true, "Cooldown chimes are now managed by " .. by.title,
-            "Use " .. by.slash .. " to change them. "
-                .. "WTF keeps its own settings as they are, and uses them again if you remove " .. by.title .. ".")
-        Notice(page, "WTF_CHIMES_ELSEWHERE", "Played by " .. by.title, ChimesElsewhereTip(by))
-        return
-    end
-    local library = WTF.SoundLibrary()
-    local lead = Proxy(page, "WTF_CHIMES_LEAD", Settings.VarType.Number, "Chime early (seconds)",
-        WTF.DEFAULT_CHIME_LEAD,
-        function() return WTF.db.chimes.lead end,
-        function(value)
-            WTF.db.chimes.lead = WTF.SanitizeChimeLead(value)
-        end)
-    Settings.CreateSlider(page, lead, SliderOptions(WTF.CHIME_LEAD_MIN, WTF.CHIME_LEAD_MAX, WTF.CHIME_LEAD_STEP),
-        "How long before a cooldown ends the chime plays, so you can act the moment it is ready.")
-    for _, chime in ipairs(WTF.CHIME_SPELLS) do
-        local setting = Proxy(page, "WTF_CHIME_" .. chime.key:upper(), Settings.VarType.Boolean, chime.label,
-            chime.on,
-            function() return WTF.db.chimes.spells[chime.key] end,
-            function(value) WTF.db.chimes.spells[chime.key] = value == true end)
-        local switch = Settings.CreateCheckbox(page, setting, "Chime when " .. chime.label .. " is ready again."
-            .. (library and "" or SOUNDS_MISSING_TIP))
-        -- Without the library there are no sounds to choose; saved choices stay.
-        if library then
-            local sound = Proxy(page, "WTF_CHIME_SOUND_" .. chime.key:upper(), Settings.VarType.String, "Sound",
-                WTF.DEFAULT_CHIME_SOUND,
-                function() return WTF.db.chimes.sounds[chime.key] end,
-                function(value)
-                    local key = library.Resolve(value)
-                    if key then
-                        WTF.db.chimes.sounds[chime.key] = key
-                        WTF.PreviewChime(chime.key)
-                    end
-                end)
-            local dropdown = Settings.CreateDropdown(page, sound, library.Choices(),
-                "The sound for " .. chime.label .. ". Choosing one plays it once. The sounds come from Dyre's Sounds.")
-            library.SetupMenu(dropdown)
-            dropdown:SetParentInitializer(switch, function() return WTF.db.chimes.spells[chime.key] end)
-        end
+-- Pages for the features that moved out of WTF in 1.3.0 (author-approved):
+-- each links to the AddOn that has it now (Dyre's Toolkit's AddSettingsLink,
+-- greyed while that AddOn is missing; a click then says what to install),
+-- instead of mirroring its settings.
+local MOVED_PAGES = {
+    {title = SHIELD_TITLE, variable = "WTF_MOVED_SHIELD", addon = "DyresShieldsUp", owner = "Dyre's Shields Up",
+        name = "Shield display", button = "Open Shield settings", what = "The shield display"},
+    {title = CHIMES_TITLE, variable = "WTF_MOVED_CHIMES", addon = "DyresBuffReminders",
+        owner = "Dyre's Buff Reminders", name = "Cooldown chimes", button = "Open Chime settings",
+        what = "The cooldown chimes"},
+    {title = ALERTS_TITLE, variable = "WTF_MOVED_NIGHTFALL", addon = "DyresBuffReminders",
+        owner = "Dyre's Buff Reminders", name = "Nightfall sound", button = "Open Proc settings",
+        what = "The Nightfall sound (Proc Sounds)"},
+    {title = REMINDER_TITLE, variable = "WTF_MOVED_REMINDER", addon = "DyresBuffReminders",
+        owner = "Dyre's Buff Reminders", name = "Demon Armor reminder", button = "Open Reminder settings",
+        what = "The Demon Armor reminder"},
+}
+
+local function AddMovedPage(parent, moved)
+    local page, layout = Settings.RegisterVerticalLayoutSubcategory(parent, moved.title)
+    local missing = "Install " .. moved.owner .. " from CurseForge for " .. moved.what:gsub("^The", "the") .. "."
+    local link = WTF.toolkit and type(WTF.toolkit.AddSettingsLink) == "function"
+        and WTF.toolkit.AddSettingsLink(page, layout, {addon = moved.addon, name = moved.name,
+            button = moved.button, missing = missing,
+            tooltip = moved.what .. " moved to " .. moved.owner .. " in WTF 1.3.0. This opens its settings."})
+    if not link then
+        -- Without Dyre's Toolkit 2.3.0 or later: the note only.
+        Notice(page, moved.variable, moved.name .. " (moved to " .. moved.owner .. ")",
+            moved.what .. " moved to " .. moved.owner .. " in WTF 1.3.0. " .. missing)
     end
 end
 
@@ -620,51 +505,6 @@ local function ApplyColors()
     if WTF.ApplyDotColors then
         WTF.ApplyDotColors()
     end
-end
-
-local function AddAlertsPage(parent)
-    local by = WTF.NightfallStandAside()
-    local page, layout = Settings.RegisterVerticalLayoutSubcategory(parent,
-        ManagedTitle(ALERTS_TITLE, by and by.title, by ~= nil))
-    if by then
-        ManagedHeading(layout, true, "The Nightfall sound is now managed by " .. by.title,
-            "Use " .. by.slash .. " to change it. "
-                .. "WTF keeps its own settings as they are, and uses them again if you remove " .. by.title .. ".")
-        Notice(page, "WTF_ALERTS_NIGHTFALL", "Nightfall sound (played by " .. by.title .. ")",
-            by.title .. " plays your Nightfall sound now (Proc Sounds), so WTF plays none. Type " .. by.slash
-                .. " to change it. WTF keeps its own Nightfall settings as they are.")
-        return
-    end
-    local library = WTF.SoundLibrary()
-    local nightfall = Flag(page, "WTF_ALERTS_NIGHTFALL", "Nightfall sound", "alerts", "nightfall", false,
-        "Play a sound when Nightfall procs (Shadow Trance: your next Shadow Bolt is instant), also in combat."
-            .. (library and "" or SOUNDS_MISSING_TIP),
-        WTF.ApplyNightfallSound)
-    if type(nightfall.AddModifyPredicate) == "function" then
-        nightfall:AddModifyPredicate(function() return WTF.HasNightfallSound() end)
-    end
-    -- Without the library there are no sounds to choose; the saved choice stays.
-    if not library then
-        return
-    end
-    local sound = Proxy(page, "WTF_ALERTS_NIGHTFALL_SOUND", Settings.VarType.String, "Sound",
-        WTF.DEFAULT_NIGHTFALL_SOUND,
-        function() return WTF.db.alerts.nightfallSound end,
-        function(value)
-            -- Only aura sounds: the game plays a sound file on a buff, not a sound kit.
-            local key = library.Resolve(value)
-            if key and library.AuraSound(key) then
-                WTF.db.alerts.nightfallSound = key
-                WTF.ApplyNightfallSound()
-                WTF.PreviewNightfallSound()
-            end
-        end)
-    local soundInitializer = Settings.CreateDropdown(page, sound, library.Choices("aura"),
-        "The sound to play. Choosing one plays it once. The sounds come from Dyre's Sounds.")
-    library.SetupMenu(soundInitializer, "aura")
-    soundInitializer:SetParentInitializer(nightfall, function()
-        return WTF.db.alerts.nightfall and WTF.HasNightfallSound()
-    end)
 end
 
 -- Announce page --------------------------------------------------------------
@@ -1108,31 +948,8 @@ function WTF.InitializeOptions()
     Flag(category, "WTF_TRACKER_ENABLED", "DoT tracker", "tracker", "enabled", true,
         "A row per mob you DoT, with the time left on your DoTs, Bane, Curse, and Fear.",
         RefreshTracker)
-    GreyUnlessOwner(Flag(category, "WTF_SHIELD_ENABLED", "Shield display", "shield", "enabled", true,
-        "A crescent beside your character that fills with your remaining shield: Shadow Ward, your "
-            .. "Voidwalker's Sacrifice, or a shield another player puts on you, like Power Word: Shield."
-            .. ShieldOwnerNote(WTF.ShieldDisplay), RefreshShield), WTF.ShieldDisplay)
     Flag(category, "WTF_CONTROL_ENABLED", "Control bar", "control", "enabled", true,
         "A bar per mob you Fear or Banish with its time left; click one to cast it again.", RefreshControl)
-    if WTF.RemindersStandAside() then
-        -- Dyre's Buff Reminders shows it; the saved switch stays as it is.
-        Notice(category, "WTF_REMINDERS_ENABLED", "Demon Armor reminder (shown by Dyre's Buff Reminders)",
-            REMINDERS_ELSEWHERE_TIP)
-    else
-        Flag(category, "WTF_REMINDERS_ENABLED", "Demon Armor reminder", "reminders", "enabled", true,
-            "An icon with a pulsing border while you lack Demon Armor (or Demon Skin), out of combat. Click it "
-                .. "to cast your armor.", function() WTF.RefreshReminders() end)
-    end
-    local chimesBy = WTF.ChimesStandAside()
-    if chimesBy then
-        -- Dyre's Buff Reminders plays them; the saved switch stays as it is.
-        Notice(category, "WTF_CHIMES_ENABLED", "Cooldown chimes (played by " .. chimesBy.title .. ")",
-            ChimesElsewhereTip(chimesBy))
-    else
-        Flag(category, "WTF_CHIMES_ENABLED", "Cooldown chimes", "chimes", "enabled", true,
-            "A sound just before Death Coil, Howl of Terror, and your other chosen spells are ready again."
-                .. (WTF.SoundLibrary() and "" or " Install Dyre's Sounds to hear them."))
-    end
     -- With Dyre's Toolkit, its own page has the unlock switch and the grid, for
     -- every Dyre's AddOn (author-approved: no second switch here); /wtf unlock
     -- and /wtf lock still work.
@@ -1166,13 +983,13 @@ function WTF.InitializeOptions()
     local dotsPage = CreateDotsPage()
     WTF.dotsPage = dotsPage
     Settings.RegisterCanvasLayoutSubcategory(category, dotsPage, DOTS_TITLE)
-    AddAlertsPage(category)
-    AddShieldPage(category)
-    AddChimesPage(category)
     AddControlPage(category)
     local announcePage = CreateAnnouncePage()
     WTF.announcePage = announcePage
     Settings.RegisterCanvasLayoutSubcategory(category, announcePage, ANNOUNCE_TITLE)
+    for _, moved in ipairs(MOVED_PAGES) do
+        AddMovedPage(category, moved)
+    end
     if not home then
         Settings.RegisterAddOnCategory(category)
     end

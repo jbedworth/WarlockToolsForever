@@ -4,7 +4,7 @@ Quality-of-life tools for Warlocks in World of Warcraft: Forever. Warlock Tools
 Forever (WTF) is a suite of small modules, each with its own switch and
 settings page: Soul Shard management, Soulstone and Healthstone buttons with
 trading and reminders, summon and Soulstone announcements, a DoT tracker for
-several mobs, and a Nightfall sound.
+several mobs, and a Fear and Banish control bar.
 
 ## Compatibility
 
@@ -14,15 +14,24 @@ change several times a week. At login it checks for the APIs it needs and
 disables itself with one message if any are missing. It runs on Warlocks only;
 on other classes it prints one message and stays off.
 
-## Sounds: Dyre's Sounds
+## Dyre's Shields Up and Dyre's Buff Reminders
 
-WTF's sounds (the cooldown chimes, the Nightfall sound, and the sound when a
-shield ends) come from **Dyre's Sounds**, a small AddOn that holds the sounds
-for all of Dyre's AddOns, so your computer keeps one copy of them. The
-CurseForge app installs it with WTF. Otherwise get it from CurseForge or
-[github.com/jbedworth/DyresSounds](https://github.com/jbedworth/DyresSounds).
-Without it, WTF works as usual but plays no sounds, and says so once in chat.
-The sounds you chose are kept.
+In version 1.3.0, four features moved out of WTF into two of Dyre's AddOns
+that every class can use:
+
+- The **shield display** (the crescent for Shadow Ward, Sacrifice, and
+  other shields) is in **Dyre's Shields Up** (`/dsu`).
+- The **cooldown chimes**, the **Nightfall sound**, and the **Demon Armor
+  reminder** are in **Dyre's Buff Reminders** (`/dbr`). Its Demon Armor icon
+  casts your armor when you click it, as WTF's did.
+
+The CurseForge app installs both with WTF. They copy your WTF settings for
+these features once, the first time they run on a character. If one is
+missing, WTF still works and says once at login to install it from
+CurseForge (or to enable it in the AddOn list). WTF's Shield, Cooldown
+Chimes, Alerts, and Demon Armor settings pages now have a button that opens
+that AddOn's settings. WTF no longer plays any sound, so it no longer needs
+Dyre's Sounds.
 
 ## Dyre's Toolkit
 
@@ -33,8 +42,8 @@ settings home. The CurseForge app installs it with WTF. With it:
   Tools Forever**, and WTF's own pages (Soul Shards, Stones, and the rest)
   are under that.
 - `/wtf unlock`, `/dyre unlock`, or the toolkit's minimap button unlock the
-  frames of every Dyre's AddOn at once. WTF's frames, the shield ring too,
-  snap to the frames of Dyre's other AddOns, and the toolkit draws the grid (with **Snap to the
+  frames of every Dyre's AddOn at once. WTF's frames snap to the frames of
+  Dyre's other AddOns, and the toolkit draws the grid (with **Snap to the
   grid** on its settings page).
 - In the game's AddOn list, WTF is in the Dyre's AddOns group.
 
@@ -226,16 +235,6 @@ while the dots are off. Raise the bubble with **Dot height
 above nameplates** if it overlaps your nameplate AddOn, and make it see-through
 with **Nameplate dot opacity** (100%, fully solid, by default).
 
-## Alerts
-
-**Nightfall sound** (off by default, on the Alerts settings page): a sound
-when Nightfall procs Shadow Trance, so your next Shadow Bolt is instant. Choose
-from Dyre's Sounds' Dyre's Picks or imp laughs and chirps (the default is the
-Imp spell chirp), in a menu grouped like the Cooldown Manager's; choosing one
-plays it once, so you can audition them. The game plays the sound itself, also
-in combat. With Dyre's Buff Reminders 0.3.0 or later installed, it plays the
-Nightfall sound instead (see below).
-
 ## Control bar
 
 A bar for each mob you **Fear** or **Banish**, with the mob's name and the time
@@ -274,46 +273,6 @@ breaks early, and goes when the mob dies.
   target, out of combat) and cast on your focus; "! Seduction" does nothing
   unless your pet is a Succubus or an Incubus. Turn them off on the Control settings page.
 
-## Cooldown chimes
-
-A sound just before **Death Coil**, **Howl of Terror**, **Shadow Ward**, your
-**Soulstone**, and **Fel Domination** are ready again (Shadowburn,
-Conflagrate, Amplify Curse, Bane of Doom, and Inferno are off by default), also
-in combat. Each spell has its own sound from Dyre's Sounds, picked from a menu
-like the Cooldown Manager's: Dyre's Picks, the game's interface sounds, the
-Cooldown Manager's alert sounds, or a voice that says the spell's name. Pick
-how early it plays on the Cooldown Chimes page.
-
-**Dyre's Shields Up** shows the shield display for every class. With it
-installed, WTF draws no shield ring of its own and greys out its shield
-settings; use `/dsu` for them.
-
-**Dyre's Buff Reminders** shows buff reminders and plays cooldown chimes
-for every class. With it installed, WTF hides its own reminder icons and
-plays no chimes of its own, so you never see two icons for one buff or hear
-a chime twice. Its chime and reminder settings are greyed out, and WTF keeps
-them as they are. Dyre's Buff Reminders copies your WTF chime choices the
-first time its chimes run; use `/dbr` for them. From version 0.3.0, Dyre's
-Buff Reminders also plays proc sounds, Nightfall included: WTF then plays no
-Nightfall sound of its own, greys out its Alerts page, and keeps its Nightfall
-settings as they are. Dyre's Buff Reminders copies your Nightfall switch and
-sound the first time its proc sounds run.
-
-## Shield display
-
-The shield crescent from Mage Tools Forever: it fills with your **Shadow Ward**,
-your Voidwalker's **Sacrifice**, or any absorb on you, like Power Word: Shield,
-and drains as it absorbs, also in combat. A Paladin's **Blessing of
-Protection** on you, which has no absorb, shows as a gold innermost arc that
-drains with its time left. If you also use Mage
-Tools Forever or Dyre's Shields Up, you still see one crescent. An optional
-sound, from Dyre's Sounds, plays when a shield ends.
-
-## Demon Armor reminder
-
-An icon with a pulsing gold border while you have neither Demon Armor nor
-Demon Skin, out of combat. Click it to cast your armor.
-
 ## Settings
 
 **Options → AddOns → Warlock Tools Forever** (or `/wtf`) has one switch per
@@ -327,7 +286,7 @@ main WTF settings page, or type `/wtf unlock`: every WTF frame gets a gold
 outline, and the DoT tracker and control bar show sample rows, so you can drag
 them. Frames are magnetic: drop one near another and it snaps beside it, 20
 pixels apart and lined up. Hold **Shift** while dragging to move a whole
-snapped group. Scroll over the Demon Armor icon to resize it. Untick it, or type `/wtf lock`, to lock them again.
+snapped group. Untick it, or type `/wtf lock`, to lock them again.
 `/wtf reset` puts them back in their default places. Everything starts locked.
 
 While unlocked, a faint grid covers the screen, with red lines through its
@@ -359,9 +318,6 @@ panel) to move just that one, freely; not in combat.
 | `/wtf debug_emote` | Diagnostics: two test emotes from a timer, one per chat function, and which the game blocks |
 | `/wtf debug_tracker` | Diagnostics: the spell IDs each tracker slot accepts, and tracked mobs |
 | `/wtf debug_control` | Diagnostics: the control bar's spell IDs, rows, and clicks |
-| `/wtf debug_chimes` | Diagnostics: each chime spell, its cooldown, and the sound |
-| `/wtf debug_shield` | Diagnostics: the absorb APIs and the shields WTF tracks |
-| `/wtf debug_reminders` | Diagnostics: the Demon Armor reminder and its click |
 
 `/warlocktools` works the same as `/wtf`, in case another AddOn uses `/wtf`.
 
