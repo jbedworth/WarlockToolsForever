@@ -141,8 +141,44 @@ local function RefreshControl()
     WTF.RefreshControl()
 end
 
+-- A section heading, as Blizzard's Controls page adds them
+-- (Blizzard_SettingControls.lua: CreateSettingsListSectionHeaderInitializer).
+local function Heading(layout, name, tooltip)
+    if type(CreateSettingsListSectionHeaderInitializer) == "function" and type(layout) == "table"
+            and type(layout.AddInitializer) == "function" then
+        layout:AddInitializer(CreateSettingsListSectionHeaderInitializer(name, tooltip))
+    end
+end
+
+-- How Fear, Banish, and your focus work (John, 1.3.1: "make sure we have
+-- something that explains how the fear/focus works"): the page's heading
+-- tooltip, and a button that says it in chat, line by line.
+WTF.CONTROL_HELP = {
+    "\"! Fear\" makes the mob under your mouse (else your target) your focus and fears it. "
+        .. "Shift-press it to fear another mob and keep your focus.",
+    "The Focus box above the Control bar shows your focus's Fear. Click it to fear your focus again; "
+        .. "with no focus it does nothing.",
+    "Every other mob you fear gets its own row, and a Fear timer under its nameplate.",
+    "\"! Banish\" works the same way: it makes the mob your focus, marks it with the moon, and banishes it. "
+        .. "Click its row to banish your focus again.",
+}
+
+function WTF.ReportControlHelp()
+    for _, line in ipairs(WTF.CONTROL_HELP) do
+        WTF.Report(line)
+    end
+end
+
 local function AddControlPage(parent)
-    local page = Settings.RegisterVerticalLayoutSubcategory(parent, CONTROL_TITLE)
+    local page, layout = Settings.RegisterVerticalLayoutSubcategory(parent, CONTROL_TITLE)
+    Heading(layout, "Fear, Banish, and your focus", table.concat(WTF.CONTROL_HELP, " "))
+    -- Pinned Blizzard_SettingControls.lua:1014.
+    if type(CreateSettingsButtonInitializer) == "function" and type(layout) == "table"
+            and type(layout.AddInitializer) == "function" then
+        layout:AddInitializer(CreateSettingsButtonInitializer("How Fear and your focus work", "Show in chat",
+            WTF.ReportControlHelp, "Say in chat how \"! Fear\", the Focus box, and \"! Banish\" use your focus.",
+            true))
+    end
     local function MarkerChoices()
         local container = Settings.CreateControlTextContainer()
         for _, marker in ipairs(WTF.RAID_MARKERS) do
@@ -166,17 +202,18 @@ local function AddControlPage(parent)
                     WTF.RefreshControl()
                 end)
             Settings.CreateDropdown(page, marker, MarkerChoices, "The raid marker for a mob you "
-                .. spell.label .. ": the \"! " .. spell.label .. "\" macro and the row click mark it, also in "
-                .. "combat. Banish from its plain spell button gets none: the game lets only your own key press "
-                .. "or click set markers. After a row click, %M puts it in the message. In a raid only the leader "
-                .. "and assistants mark.")
+                .. spell.label .. ": the \"! " .. spell.label .. "\" macro marks your focus with it, also in "
+                .. "combat. The row click and the plain spell button do not mark. For a Banish at your focus, %M "
+                .. "puts it in the message. In a raid only the leader and assistants mark.")
         end
     end
     Flag(page, "WTF_CONTROL_MACROS", "Keep control macros", "control", "macros", true,
         "Keep \"! Fear\", \"! Banish\", and \"! Seduction\" in your character macros for your action bars, "
-            .. "each once you know its spell. \"! Fear\" Fears your focus (Shift-press it to focus the mob under your mouse, or your target, first), else the mob under your mouse (a feared mob's nameplate "
-            .. "as its timer runs out), else your target. The others focus the hostile mob under your mouse (or "
-            .. "your target, out of combat) and cast on your focus. \"! Seduction\" appears once your Succubus "
+            .. "each once you know its spell. \"! Fear\" makes the mob under your mouse (else your target) your "
+            .. "focus and fears it; Shift-press it to fear another mob and keep your focus. The Focus box above "
+            .. "the Control bar shows your focus's Fear; click it to fear your focus again. \"! Banish\" and "
+            .. "\"! Seduction\" focus the hostile mob under your mouse (or your target, out of combat) and cast on "
+            .. "your focus; \"! Banish\" also marks it with the moon. \"! Seduction\" appears once your Succubus "
             .. "or Incubus has learned Seduction from its Grimoire, and casts only while one is your pet. Turning "
             .. "this off deletes them.", function() WTF.ApplyControlMacros() end)
     Flag(page, "WTF_CONTROL_PLATE_TIMERS", "Fear timers on nameplates", "control", "plateTimers", true,
@@ -378,15 +415,6 @@ local function AddTrackerSizes(page, theme)
     end, "Where the mob's name sits in each row."))
 end
 
--- A section heading, as Blizzard's Controls page adds them
--- (Blizzard_SettingControls.lua: CreateSettingsListSectionHeaderInitializer).
-local function Heading(layout, name, tooltip)
-    if type(CreateSettingsListSectionHeaderInitializer) == "function" and type(layout) == "table"
-            and type(layout.AddInitializer) == "function" then
-        layout:AddInitializer(CreateSettingsListSectionHeaderInitializer(name, tooltip))
-    end
-end
-
 -- A panel's own settings (author): its color, then its opacity.
 local function AddPanelSection(page, layout, panel, colors)
     Heading(layout, panel.heading, "Settings for the DoT tracker's " .. panel.name .. " only.")
@@ -518,7 +546,7 @@ local ANNOUNCE_ROWS = {
     {switch = "healthstoneEmote", label = "Healthstone created: emote (starts with your name; once a minute)"},
     {switch = "soulstoneEmote", label = "Soulstone created: emote (starts with your name; once a minute)"},
     {switch = "fearGroup", label = "Fear: tell the group as you start casting"},
-    {switch = "banishGroup", label = "Banish: tell the group as you start casting (%M: its moon, after a row click)"},
+    {switch = "banishGroup", label = "Banish: tell the group as you start casting (%M: its moon, at your focus)"},
     {switch = "enslaveGroup", label = "Enslave Demon: tell the group as you start casting"},
     {switch = "howlGroup", label = "Howl of Terror: tell the group"},
 }
@@ -568,7 +596,7 @@ local function CreateAnnouncePage()
     title:SetPoint("TOPLEFT", PAGE_LEFT, -16)
     local help = Text(content, "GameFontHighlightSmall",
         "%T is the target's full name (for control spells, the mob), %Z your zone, and %M the mob's raid "
-            .. "marker (after a Banish row click; else nothing). Press Enter to keep an edit, Escape to undo it. "
+            .. "marker (for a Banish at your focus; else nothing). Press Enter to keep an edit, Escape to undo it. "
             .. "Nothing is sent for yourself or for a cast that fails.")
     help:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -8)
     help:SetWidth(EDIT_WIDTH)
@@ -949,7 +977,9 @@ function WTF.InitializeOptions()
         "A row per mob you DoT, with the time left on your DoTs, Bane, Curse, and Fear.",
         RefreshTracker)
     Flag(category, "WTF_CONTROL_ENABLED", "Control bar", "control", "enabled", true,
-        "A bar per mob you Fear or Banish with its time left; click one to cast it again.", RefreshControl)
+        "Bars for the mobs you Fear or Banish, with their time left, and a Focus box above them with your "
+            .. "focus's Fear. Click the Focus box to fear your focus again, or a Banish row to banish your focus "
+            .. "again.", RefreshControl)
     -- With Dyre's Toolkit, its own page has the unlock switch and the grid, for
     -- every Dyre's AddOn (author-approved: no second switch here); /wtf unlock
     -- and /wtf lock still work.

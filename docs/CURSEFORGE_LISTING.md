@@ -39,14 +39,15 @@ Per-file changelogs need no manual text: each CI upload uses the version's
 - **Your target, your focus, and up to eight more mobs**, all at once. Each row shows your Curse, Bane, Corruption, Immolate, Siphon Life, and Fear or Banish, with a live countdown.
 - **Missing DoTs stay visible** as dim icons, so you see what to recast at a glance.
 - **Click a slot** on your target or focus row to recast that spell.
-- Two looks: **Bars** that drain like the Cooldown Manager's, or **Compact** icons. Every color is yours to change.
-- Optional **DoT dots above enemy nameplates**: grey means missing.
+- Two looks: **Bars** that drain like the Cooldown Manager's, or **Compact** icons.
+- Optional **DoT dots above enemy nameplates**: grey means missing. Choose which DoTs get a dot.
 - **Move the target, focus, and other-mobs panels separately**: each snaps to your other Dyre's frames and to the grid.
 - **Mob health on each row**: the name line becomes a health bar in the panel's color, with the number, the percent, or both.
 - **Sizes for each look**: icon size, name width, text size, and name position; bar width and line height for Bars.
 - **Opacity for each panel**, and for the nameplate DoT dots.
-- **Your DoT order**: drag your DoTs into the order you cast them, on the rows and on the nameplate dots.
-- **Panel colors**: choose the color of the target, focus, and other-mobs panels and their health bars.
+- **The DoTs page**: drag your DoTs into the order you cast them, on the rows and on the nameplate dots, and pick each DoT's color.
+- **Panel colors**: the target, focus, and other-mobs panels each have their own section, with their color (outline and health bar) and opacity.
+- In combat the game can hide which nameplate belongs to which mob. A mob you DoT without ever targeting or focusing it (for example with a mouseover macro) can show without its timers until you target or focus it.
 
 ### Soul Shards, handled
 - Set a shard limit (it matches your soul bags by default). **Extra shards from Drain Soul and Shadowburn are deleted for you.**
@@ -60,12 +61,18 @@ Per-file changelogs need no manual text: each CI upload uses the version's
 - Reminders when your Soulstone runs out, or when you carry no Healthstone.
 
 ### Fear and Banish control
-- A countdown bar for **every mob you Fear or Banish**, plus a Fear timer under each feared nameplate, so you know which one breaks next.
-- **! Banish** and a click on a Banish row mark the mob with the moon, so your group leaves it alone.
-- **! Fear**, **! Banish**, and **! Seduction** macros: aim with your mouse, no retargeting.
+- A countdown bar for **every mob you Fear** and for your **banished focus**, plus a Fear timer under each feared nameplate, so you know which one breaks next.
+- **! Fear**, **! Banish**, and **! Seduction** macros for your action bars: aim with your mouse, no retargeting.
+
+### Fear and your focus
+- **! Fear** makes the mob under your mouse (else your target) your focus and fears it. **Shift-press** it to fear another mob and keep your focus.
+- The **Focus box** above the Fear bars shows your focus's Fear. **Click it to fear your focus again**; with no focus it does nothing.
+- Every other mob you fear gets its own row, and a Fear timer under its nameplate.
+- **! Banish** works the same way: it makes the mob your focus, marks it with the moon so your group leaves it alone, and banishes it. Click its row to banish your focus again.
 
 ### Stays out of your way
 - Small frames you place yourself: `/wtf unlock` shows a grid, frames snap together, `/wtf lock` when you're done.
+- While frames are locked, hold **Ctrl** and drag to move one frame, a DoT tracker panel too (not in combat).
 - No popups, no forced layouts. Everything has an off switch.
 
 ### Also included
@@ -79,12 +86,12 @@ The CurseForge app installs both with WTF, and they work on every class:
 These lived in WTF until 1.3.0. Your WTF settings for them are copied over the first time each AddOn runs.
 
 ### Commands
-- `/wtf` opens the settings. `/wtf shards` shows your shards and limit.
+- `/wtf` opens the settings. `/wtf shards` shows your shards and limit, `/wtf stones` your stones.
 - `/wtf unlock`, `/wtf lock`, `/wtf reset` move your frames.
 - `/warlocktools` works the same, in case another AddOn uses `/wtf`.
 
 ### Compatibility
-Tested on the Forever beta client 1.60.1, build 70450. If a client update removes an API it needs, WTF turns itself off with one chat message.
+For World of Warcraft: Forever 1.60.1 (tested on build 70450). If a client update removes an API it needs, WTF turns itself off with one chat message.
 
 WowUp users (2.24.0 or later): install from the repository URL; GitHub releases carry the Forever metadata WowUp needs.
 

@@ -451,11 +451,23 @@ their other classes ("virality"):
 - After MTF's Polymorph bar, for many mobs (author-approved): up to five
   rows, one per mob you Fear or Banish, each an AuraContainer slot
   (`HARMFUL|PLAYER`, Fear and Banish IDs plus spellbook IDs of those names)
-  with the mob's name above a bar line. Rows come from your cast events (SENT
-  names the target, matched to a unit for its GUID) and bind to the mob
-  through your focus, then target, then its nameplate (never mouseover; a
-  cast through mouseover, as "! Fear" does, still counts and marks); a
-  recast on the same mob keeps its row. A row goes when the mob dies, after the longest such spell plus 5 s
+  with the mob's name above a bar line. Rows come from your cast events. The
+  mob is locked as the cast starts (`UNIT_SPELLCAST_SENT` names it): the first
+  live hostile unit with that name in the order WTF's own casts aim, focus,
+  then mouseover, then target, then a nameplate; its GUID is used when the
+  cast lands, never a new lookup by name (player report, the DoT tracker's
+  bug class: a tab or mouse move mid-cast, same-named mobs). Known limit: a
+  plain spell-button cast at your target, while your focus or the mob under
+  the mouse has the same name, counts on that one. Rows bind to the mob
+  through your focus, then target, then its nameplate by GUID, else Core's
+  plate memory (`WTF.KnownPlate`, shared with the tracker, for secret plate
+  GUIDs); never mouseover. A recast on the same mob keeps its row. A secret
+  "can attack" or "dead" answer counts as a live hostile mob, a unit with a
+  secret GUID is skipped unless Core's plate memory knows its plate, and a
+  spell ID missing from the sets counts by its name (client-only cases, kept
+  after a 1.3.1 report). `/wtf debug_control` reports `lastSent` (spell,
+  target name, the unit locked, and each unit looked at: attack, dead,
+  readable GUID) and `lastLanded` (the row and its unit, or why none). A row goes when the mob dies, after the longest such spell plus 5 s
   (Fear 20, Banish 30), or never when the cast fails.
 - A raid marker per spell (Control page; Banish moon by default;
   author-approved: single-target control only, one marker slot in a group, so
@@ -472,28 +484,49 @@ their other classes ("virality"):
   the Blizzard UI" popup (pinned RaidMarkersDocumentation: HasRestrictions).
 - Markers come only from the game's `/tm` (author-approved, as MTF): a
   macro's `/tm` runs untainted from the key press (pinned SlashCommands.lua),
-  so it works in and out of combat. "! Banish" has `/tm
-  [@focus,harm,nodead,exists] !N` after its focus line, and the Banish row
-  click marks the unit it casts on (`@focus`, then `@target`) before each cast
-  (`WTF.MarkLine`, `WTF.RecastMacro`); N is the Banish marker setting, and
-  None leaves the line out. "!" keeps a second press from toggling it off. A
-  marker change rebuilds the macros and clicks out of combat. "! Fear" and
-  "! Seduction" (no marker setting) have no `/tm`. Banish cast from the plain
-  spell button gets no marker. %M names the marker ("{moon}") only for a cast
-  sent within 0.5 s of a row click (the click slot's PreClick); WTF cannot
-  know that "! Banish" or the spell button cast it, so then %M is empty. A
+  so it works in and out of combat. "! Banish" is exactly MTF's "! Polymorph"
+  with Banish (John, 1.3.1): `#showtooltip Banish`, `/focus
+  [@mouseover,harm,nodead][nocombat,harm,nodead]`, `/tm
+  [@focus,harm,nodead,exists] !N` (`WTF.MarkLine`; N is the Banish marker
+  setting, and None leaves the line out), `/use [@focus,exists,harm,nodead]
+  Banish`. "!" keeps a second press from toggling it off. A marker change
+  rebuilds the macros out of combat. The row click, "! Fear", and
+  "! Seduction" have no `/tm`; Banish from the plain spell button gets no
+  marker. %M names the marker ("{moon}") for a Banish at your focus (the mob
+  "! Banish" marks), else nothing. A
   player's own `/tm` macro without "!" toggles the marker WTF's macro set, so
   the README says to set the marker to None when using one.
-- Click to recast, Banish only (author-approved: single-target control
-  follows the focus): each row has a fixed secure click slot under it
-  (`WarlockToolsForeverControlClick1`..5) with `/use [@focus,exists,harm,nodead]
-  Banish`, `/stopmacro [@focus,exists]`, then by name: `/cleartarget`,
-  `/targetexact <mob>`, `/use [@target,harm,nodead] Banish`,
-  `/targetlasttarget`; set only out of combat: at cast start for a pull, else
+- Banish follows the focus only (John, 1.3.1, as MTF's Polymorph bar): a
+  Banish counts only when the cast's name is your focus's and the focus is a
+  live hostile mob with a readable GUID, locked as the cast starts
+  (`LockFocusGUID`). Its row binds to "focus" and goes when your focus becomes
+  another mob or none, or dies (a focus with a secret GUID stays). A Banish at
+  a mob that is not your focus shows no row.
+- Click to recast, Banish only: each row has a fixed secure click slot under
+  it (`WarlockToolsForeverControlClick1`..5) with only `/use
+  [@focus,exists,harm,nodead] Banish` (`WTF.RecastMacro`): no marker, no
+  targeting by name; with no focus it does nothing. Set only out of combat: at cast start for a pull, else
   when combat ends. A slot shows only while it has a click (or while
   unlocked, to drag by). A secure slot cannot hide in combat, so a row whose
   mob died or whose cast failed in combat stays on screen, dimmed, while its
-  slot still shows: no click area is ever invisible (MTF had one). Fear rows have no click (author-approved): a secure
+  slot still shows: no click area is ever invisible (MTF had one).
+- The Focus box (John, 1.3.1: "put a special box on the top if/when the
+  focus target is feared"): `WarlockToolsForeverControlFocus`, a fixed secure
+  button above the rows (BOTTOMLEFT on the anchor's TOPLEFT), whose only
+  click is `/use [@focus,exists,harm,nodead] Fear`: it always aims at the
+  focus, so it can never fear another mob, also when the focus changes in
+  combat, and with no focus it does nothing. Its display is a child frame
+  (focus panel color, "Focus: <name>", a dim Fear line) with an AuraContainer
+  bound to "focus" (Fear IDs only). Shown by a state driver `[@focus,exists,
+  harm,nodead] show; hide` ("show" while unlocked, "hide" when the bar is off
+  or no Fear is known), set out of combat. AddOn code cannot read auras in
+  combat and a secure frame's visibility can follow only unit conditions, so
+  it cannot hide while the focus is not feared: it shows while you have a
+  live hostile focus, never as an invisible click area. A Fear row whose mob
+  is your focus hides (the box shows it) and comes back when the focus
+  changes; rows are plain frames, so this follows in combat. Banish keeps its
+  own focus row; it could move into this box later.
+- Fear rows have no click (author-approved): a secure
   macro can aim only at a unit token or a name, never at a GUID (the
   restricted environment has no UnitGUID), tokens move in combat, and juggled
   mobs share names. Rows find their mob through focus, target, then its
@@ -505,14 +538,14 @@ their other classes ("virality"):
   range may get another plate and token, and the engine shows its real time
   left). Clicking the plate targets the mob.
 - Macros (author-approved, after the author's own, `control.macros`):
-  "! Fear" once you know Fear, the author's juggling macro (author-approved):
-  `/focus [mod:shift,@mouseover,harm,nodead][mod:shift,harm,nodead]` then
-  `/use [@focus,exists,harm,nodead][@mouseover,harm,nodead][harm,nodead]
-  Fear`: with Shift the mob under the mouse, else the target, becomes the
-  focus; the cast goes to the focus first if there is one, else the
-  mouseover, such as a feared mob's nameplate as its timer ends, else the
-  target. A plain press never changes the focus. No /tm, as Fear has no
-  marker setting; "! Banish" once you know Banish and "! Seduction" once your summoned demon
+  "! Fear" once you know Fear, inverted in 1.3.1 (John: "set focus by
+  default, shift fears a mob without changing focus"): `/focus
+  [nomod:shift,@mouseover,harm,nodead][nomod:shift,harm,nodead]` then `/use
+  [mod:shift,@mouseover,harm,nodead][mod:shift,harm,nodead][@focus,exists,
+  harm,nodead] Fear` (181 letters): a plain press makes the mob under the
+  mouse, else the target, your focus and fears it (with neither, your focus
+  as it was); Shift fears the mob under the mouse, else the target, and
+  keeps the focus. No /tm, as Fear has no marker setting; "! Banish" once you know Banish and "! Seduction" once your summoned demon
   knows Seduction (a Grimoire teaches it; the pet spellbook, by ID or by name,
   so a Succubus or an Incubus counts; checked on `UNIT_PET` and
   `SPELLS_CHANGED`; the macro stays when the demon is dismissed; per the

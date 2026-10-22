@@ -268,6 +268,8 @@ local function fixture(options)
             local data = state.units[unit]
             if driver == "[combat] hide; show" then
                 frame.shown = not state.combat
+            elseif driver == "show" or driver == "hide" then
+                frame.shown = driver == "show"
             else
                 frame.shown = data ~= nil and not data.friend and not data.dead
             end
@@ -2549,20 +2551,269 @@ local function controlRow(state, index)
     return state.env["WarlockToolsForeverControlRow" .. index]
 end
 
+-- "! Banish": the mob becomes your focus, then the Banish goes to it.
+local function banishAt(state, unit)
+    state.units.focus = state.units[unit]
+    state.emit("PLAYER_FOCUS_CHANGED")
+    local name = state.units[unit].name
+    state.emit("UNIT_SPELLCAST_SENT", "player", name, "banish-" .. unit, BANISH)
+    state.emit("UNIT_SPELLCAST_SUCCEEDED", "player", "banish-" .. unit, BANISH)
+end
+
+local CLICK_BANISH = "/use [@focus,exists,harm,nodead] Banish"
+
+-- Two same-named skeletons with plates up, A on nameplate5 and B on
+-- nameplate6; a unit table is shared, so UnitIsUnit sees one mob.
+local function skeletons(state, hidden)
+    local a = {name = "Skeleton", guid = "Creature-50", secretPlateGUID = hidden}
+    local b = {name = "Skeleton", guid = "Creature-60", secretPlateGUID = hidden}
+    state.units.nameplate5, state.units.nameplate6 = a, b
+    state.emit("NAME_PLATE_UNIT_ADDED", "nameplate5")
+    state.emit("NAME_PLATE_UNIT_ADDED", "nameplate6")
+    return a, b
+end
+
+local function sendAndLand(state, spellID, id, between)
+    state.emit("UNIT_SPELLCAST_SENT", "player", "Skeleton", id, spellID)
+    if between then between() end
+    state.emit("UNIT_SPELLCAST_SUCCEEDED", "player", id, spellID)
+end
+
+local function controlGUID(state, index)
+    return state.wtf.controlRows[index].guid
+end
+
+-- The Focus box above the Control bar's rows (John, 1.3.1).
+local function focusBox(state)
+    return state.env.WarlockToolsForeverControlFocus
+end
+
+test("the Focus box shows while you have a live hostile focus; its click fears only your focus", function()
+    local state = controlFixture()
+    local box = focusBox(state)
+    equal(box.protected, true, "a secure button")
+    equal(box.attributes.macrotext1, "/use [@focus,exists,harm,nodead] Fear",
+        "it aims only at your focus, so it can never fear another mob; with no focus it does nothing")
+    equal(state.drivers[box], "[@focus,exists,harm,nodead] show; hide", "the game shows it, also in combat")
+    equal(box.shown, false, "no focus: no box, so nothing invisible takes clicks")
+    state.units.focus = state.units.nameplate4
+    state.emit("PLAYER_FOCUS_CHANGED")
+    state.applyDrivers()
+    equal(box.shown, true, "a hostile focus")
+    equal(box.display.name.text, "Focus: Imp")
+    equal(box.container.unit, "focus", "the engine shows your Fear on your focus")
+    equal(box.container.slots[1].ids[FEAR], true, "your Fear only")
+    equal(box.container.slots[1].ids[BANISH], nil)
+    state.units.focus = {name = "Guard", guid = "Creature-5", friend = true}
+    state.applyDrivers()
+    equal(box.shown, false, "a friendly focus: hidden")
+end)
+test("a Fear on your focus shows in the Focus box, not again in the rows", function()
+    local state = controlFixture()
+    state.units.focus = state.units.nameplate3
+    state.emit("PLAYER_FOCUS_CHANGED")
+    castAt(state, FEAR, "nameplate3")
+    castAt(state, FEAR, "nameplate4")
+    equal(state.wtf.controlRows[1].guid, "Creature-1", "the focus's Fear is still tracked")
+    equal(controlRow(state, 1).shown, false, "but its row hides: the box shows it")
+    equal(controlRow(state, 2).shown, true, "another feared mob keeps its row")
+    state.combat = true
+    state.units.focus = state.units.nameplate4
+    state.emit("PLAYER_FOCUS_CHANGED")
+    equal(controlRow(state, 1).shown, true, "in combat, the old focus's row comes back")
+    equal(controlRow(state, 2).shown, false, "and the new focus's row hides")
+    equal(focusBox(state).attributes.macrotext1, "/use [@focus,exists,harm,nodead] Fear",
+        "the click is the same: it follows your focus without a change")
+end)
+test("the Focus box follows the Control bar's switch and shows while unlocked", function()
+    local state = controlFixture()
+    state.slash("unlock")
+    equal(state.drivers[focusBox(state)], "show", "unlocked: a sample to drag by")
+    equal(focusBox(state).display.name.text, "Focus (sample)")
+    state.slash("lock")
+    state.settings.WTF_CONTROL_ENABLED:SetValue(false)
+    equal(state.drivers[focusBox(state)], "hide", "the Control bar off: no box")
+    equal(focusBox(state).attributes.macrotext1, nil)
+    local unknown = controlFixture({known = {}})
+    equal(unknown.drivers[focusBox(unknown)], "hide", "no Fear known: no box")
+end)
+-- John's own Fear macro (player report, 1.3.1: the Fear bar did not show):
+-- /focus [mod:shift,@mouseover,harm,nodead][mod:shift,harm,nodead]
+-- /use [@focus,exists,harm,nodead][@mouseover,harm,nodead][harm,nodead] Fear
+-- Each case sets the units as the macro leaves them, then casts at castName.
+local function johnsFear(setup)
+    local state = controlFixture()
+    local sire = {name = "Moonstalker Sire", guid = "Creature-90"}
+    state.units.nameplate7 = sire
+    state.emit("NAME_PLATE_UNIT_ADDED", "nameplate7")
+    local castName = setup(state, sire) or "Moonstalker Sire"
+    state.combat = true
+    state.emit("UNIT_SPELLCAST_SENT", "player", castName, "john-1", FEAR)
+    state.emit("UNIT_SPELLCAST_SUCCEEDED", "player", "john-1", FEAR)
+    return state
+end
+
+test("John's Fear macro gets a bar in each of its cases", function()
+    local cases = {
+        {"no focus, the mob targeted", "Creature-90", function(state, sire)
+            state.units.target, state.units.focus, state.units.mouseover = sire, nil, nil end},
+        {"the mouse on the target", "Creature-90", function(state, sire)
+            state.units.target, state.units.mouseover = sire, sire end},
+        {"the mouse on your pet", "Creature-90", function(state, sire)
+            state.units.target = sire
+            state.units.mouseover = {name = "Succubus", guid = "Pet-1", friend = true} end},
+        {"the mouse on another mob than the target", "Creature-91", function(state, sire)
+            state.units.target = sire
+            state.units.mouseover = {name = "Wolf", guid = "Creature-91"}
+            return "Wolf" end},
+        {"the focus set, then the cast", "Creature-90", function(state, sire)
+            state.units.focus, state.units.target = sire, sire end, true},
+        {"a stale dead focus", "Creature-90", function(state, sire)
+            state.units.focus = {name = "Boar", guid = "Creature-92", dead = true}
+            state.units.target = sire end},
+        {"a friendly focus", "Creature-90", function(state, sire)
+            state.units.focus = {name = "Guard", guid = "Creature-93", friend = true}
+            state.units.target = sire end},
+    }
+    for _, case in ipairs(cases) do
+        local state = johnsFear(case[3])
+        equal(state.wtf.controlRows[1].guid, case[2], case[1])
+        if case[4] then
+            state.applyDrivers()
+            equal(focusBox(state).shown, true, case[1] .. ": your focus's Fear shows in the Focus box")
+            equal(controlRow(state, 1).shown, false, case[1] .. ": not again in a row")
+        else
+            equal(controlRow(state, 1).shown, true, case[1] .. ": the bar shows")
+        end
+    end
+end)
+test("a secret \"can attack\" answer does not drop a Fear", function()
+    local state = johnsFear(function(state, sire)
+        state.units.target = sire
+        local canAttack = state.env.UnitCanAttack
+        state.env.UnitCanAttack = function(who, unit)
+            if state.units[unit] == sire then
+                local hidden = secret()
+                state.secrets[hidden] = true
+                return hidden
+            end
+            return canAttack(who, unit)
+        end
+    end)
+    equal(state.wtf.controlRows[1].guid, "Creature-90")
+end)
+test("a Fear rank the spell sets do not list yet counts by its name", function()
+    local state = controlFixture()
+    state.units.target = {name = "Moonstalker Sire", guid = "Creature-90"}
+    state.env.C_Spell.GetSpellName = function(id)
+        if id == 990005 then return "Fear" end
+        return SPELLS[id]
+    end
+    state.emit("UNIT_SPELLCAST_SENT", "player", "Moonstalker Sire", "john-2", 990005)
+    state.emit("UNIT_SPELLCAST_SUCCEEDED", "player", "john-2", 990005)
+    equal(state.wtf.controlRows[1].guid, "Creature-90", "a new rank, by its name")
+end)
+test("debug_control says how the last Fear found its mob and where it went", function()
+    local state = johnsFear(function(state, sire)
+        state.units.target = sire
+        state.units.mouseover = {name = "Succubus", guid = "Pet-1", friend = true}
+    end)
+    state.clear()
+    state.slash("debug_control")
+    local all = table.concat(state.messages, "\n")
+    contains(all, "debug_control lastSent spell=5782 target=Moonstalker Sire unit=target locked=true")
+    contains(all, "looked=mouseover(other name) target(attack=true dead=false guid=true)")
+    contains(all, "debug_control lastLanded row 1 bound to target")
+    local missed = johnsFear(function(state)
+        state.units.target = nil
+        return "Nobody"
+    end)
+    missed.clear()
+    missed.slash("debug_control")
+    all = table.concat(missed.messages, "\n")
+    contains(all, "unit=nil locked=false")
+    contains(all, "debug_control lastLanded no mob locked as it started")
+end)
+test("a Fear lands on the mob it started on, also with same-named mobs and a tab mid-cast", function()
+    local state = controlFixture()
+    local a, b = skeletons(state)
+    state.units.target = a
+    state.emit("PLAYER_TARGET_CHANGED")
+    sendAndLand(state, FEAR, "f1", function()
+        state.units.target = b
+        state.emit("PLAYER_TARGET_CHANGED")
+    end)
+    equal(controlGUID(state, 1), "Creature-50", "the mob targeted as the cast started")
+    equal(controlRow(state, 1).container.unit, "nameplate5", "bound to its own plate")
+end)
+test("a control cast counts on your focus first, then the mob under the mouse, then your target", function()
+    local state = controlFixture()
+    local a, b = skeletons(state)
+    state.units.focus, state.units.target = a, b
+    state.emit("PLAYER_FOCUS_CHANGED")
+    sendAndLand(state, FEAR, "f1")
+    equal(controlGUID(state, 1), "Creature-50", '"! Fear" on your focus, not the same-named target')
+    local other = controlFixture()
+    local a2, b2 = skeletons(other)
+    other.units.mouseover, other.units.target = a2, b2
+    sendAndLand(other, FEAR, "f2")
+    equal(controlGUID(other, 1), "Creature-50", '"! Fear" with no focus: the mob under the mouse')
+    local plain = controlFixture()
+    local a3 = skeletons(plain)
+    plain.units.target = a3
+    plain.units.focus = {name = "Skeleton", guid = "Creature-70", friend = true}
+    sendAndLand(plain, FEAR, "f3")
+    equal(controlGUID(plain, 1), "Creature-50", "a friendly focus of that name is never the mob")
+end)
+test("a cast whose mob was unknown as it started is never found by name when it lands", function()
+    local state = controlFixture()
+    local a = skeletons(state)
+    state.units.target = nil
+    state.units.nameplate5, state.units.nameplate6 = nil, nil
+    sendAndLand(state, FEAR, "f1", function()
+        state.units.target = a
+        state.emit("PLAYER_TARGET_CHANGED")
+    end)
+    equal(controlGUID(state, 1), nil, "no row for a guess")
+end)
+test("with secret plate GUIDs, a feared mob that is no longer your target binds to its plate", function()
+    local state = controlFixture()
+    local a, b = skeletons(state, true)
+    state.units.target = a
+    state.emit("PLAYER_TARGET_CHANGED")
+    state.combat = true
+    sendAndLand(state, FEAR, "f1")
+    state.units.target = b
+    state.emit("PLAYER_TARGET_CHANGED")
+    equal(controlGUID(state, 1), "Creature-50")
+    equal(controlRow(state, 1).container.unit, "nameplate5", "Core's plate memory finds its plate")
+    state.units.nameplate5 = nil
+    state.emit("NAME_PLATE_UNIT_REMOVED", "nameplate5")
+    state.units.nameplate5 = b
+    state.emit("NAME_PLATE_UNIT_ADDED", "nameplate5")
+    equal(controlRow(state, 1).container.unit, "none", "a reused token is not taken for the feared mob")
+end)
+test('"! Banish" marks and casts on the same unit, your focus', function()
+    local state = controlFixture()
+    local body = state.wtf.ControlMacroBody({name = "! Banish", spell = 710, known = {710}, marker = "banish"})
+    local lines = {}
+    for line in body:gmatch("[^\n]+") do lines[#lines + 1] = line end
+    equal(lines[2], "/focus [@mouseover,harm,nodead][nocombat,harm,nodead]")
+    equal(lines[3], "/tm [@focus,harm,nodead,exists] !5", "the moon goes on the focus")
+    equal(lines[4], "/use [@focus,exists,harm,nodead] Banish", "and so does the cast")
+end)
 test("each mob you Fear or Banish gets its own bar, bound to its unit", function()
     local state = controlFixture()
     castAt(state, FEAR, "nameplate3")
-    castAt(state, BANISH, "nameplate4")
+    banishAt(state, "nameplate4")
+    state.units.target = state.units.nameplate4
     state.emit("PLAYER_TARGET_CHANGED")
     local first, second = controlRow(state, 1), controlRow(state, 2)
     equal(first.shown, true)
     equal(first.name.text, "Boar")
     equal(first.container.unit, "nameplate3", "its nameplate once you target another mob")
     equal(second.name.text, "Imp")
-    equal(second.container.unit, "target", "your target first")
-    state.units.focus = state.units.nameplate4
-    state.emit("PLAYER_FOCUS_CHANGED")
-    equal(second.container.unit, "focus", "your focus before anything, as it never drops")
+    equal(second.container.unit, "focus", "the Banish row is your focus's")
     equal(first.container.slots[1].ids[FEAR], true, "the slot takes Fear")
     equal(first.container.slots[1].ids[BANISH], true, "and Banish")
     equal(first.container.slots[1].filter, "HARMFUL|PLAYER")
@@ -2580,20 +2831,15 @@ test("WTF never calls SetRaidTarget: markers come only from the game's /tm in a 
     -- In client the call raised ADDON_ACTION_FORBIDDEN for AddOn code, also out
     -- of combat (MTF's same guarded call).
     local state = controlFixture()
-    state.units.target = state.units.nameplate4
-    castAt(state, BANISH, "nameplate4")
+    banishAt(state, "nameplate4")
     castAt(state, FEAR, "nameplate3")
     state.combat = true
-    castAt(state, BANISH, "nameplate4")
+    banishAt(state, "nameplate4")
     state.combat = false
-    state.units.target = nil
-    state.units.mouseover = {name = "Felguard", guid = "Creature-8"}
-    state.emit("UNIT_SPELLCAST_SENT", "player", "Felguard", "cast-mo", BANISH)
-    state.emit("UNIT_SPELLCAST_SUCCEEDED", "player", "cast-mo", BANISH)
     equal(state.markCalls, nil, "never called")
     equal(controlRow(state, 1).name.text, "Imp", "the rows still track")
-    contains(state.env.WarlockToolsForeverControlClick1.attributes.macrotext1, "/tm [@target,harm,nodead,exists] !5",
-        "the row click marks with /tm")
+    equal(state.env.WarlockToolsForeverControlClick1.attributes.macrotext1, CLICK_BANISH,
+        "the row click does not mark: only \"! Banish\" does")
     equal(state.settings.WTF_CONTROL_MARKER_FEAR, nil, "no marker setting for Fear")
     state.clear()
     state.slash("debug_control")
@@ -2603,28 +2849,39 @@ test("WTF never calls SetRaidTarget: markers come only from the game's /tm in a 
     local chosen = fixture({db = {control = {markers = {banish = 8}, markersVersion = 2}}})
     equal(chosen.wtf.db.control.markers.banish, 8, "a marker you chose stays")
 end)
-test("a Banish cast on the mob under the mouse is tracked", function()
+test("a Banish counts only at your focus; your focus becoming another mob or none ends its row", function()
     local state = controlFixture()
     state.units.target = nil
     state.units.mouseover = {name = "Felguard", guid = "Creature-8"}
     state.emit("UNIT_SPELLCAST_SENT", "player", "Felguard", "cast-mo", BANISH)
     state.emit("UNIT_SPELLCAST_SUCCEEDED", "player", "cast-mo", BANISH)
-    equal(controlRow(state, 1).name.text, "Felguard", "tracked")
-    equal(controlRow(state, 1).container.unit, "none", "rows never bind to mouseover")
+    equal(controlRow(state, 1).shown, false, "the mob under the mouse, not your focus: no row")
+    castAt(state, BANISH, "nameplate4")
+    equal(controlRow(state, 1).shown, false, "the plain spell button at your target: no row")
+    banishAt(state, "nameplate4")
+    equal(controlRow(state, 1).name.text, "Imp", "at your focus: its row")
+    equal(controlRow(state, 1).container.unit, "focus")
+    state.units.focus = state.units.nameplate3
+    state.emit("PLAYER_FOCUS_CHANGED")
+    equal(controlRow(state, 1).shown, false, "your focus is another mob now: the row goes")
+    banishAt(state, "nameplate4")
+    state.units.focus = nil
+    state.emit("PLAYER_FOCUS_CHANGED")
+    equal(controlRow(state, 1).shown, false, "no focus: the row goes")
 end)
-test("the group message names the marker only after a Banish row click", function()
+test("the group message names the marker for a Banish at your focus", function()
     local state = controlFixture({group = "party", known = {[FEAR] = true, [BANISH] = true, [ENSLAVE] = true}})
     castAt(state, BANISH, "nameplate4")
     equal(state.sent[1].message, "Banishing >> Imp << to the Twisting Nether. Hands off until it comes back"
-        .. " - via Warlock Tools Forever (WTF)", "a plain cast: WTF cannot know it was marked")
+        .. " - via Warlock Tools Forever (WTF)", "not at your focus: \"! Banish\" did not mark it")
     state.now = state.now + 10
-    state.clickButton("WarlockToolsForeverControlClick1", "LeftButton")
-    castAt(state, BANISH, "nameplate4")
+    banishAt(state, "nameplate4")
     equal(state.sent[2].message, "Banishing >> Imp << {moon} to the Twisting Nether. Hands off until it comes back"
-        .. " - via Warlock Tools Forever (WTF)", "the click's /tm marked it")
+        .. " - via Warlock Tools Forever (WTF)", "your focus: the mob \"! Banish\" marks")
+    state.settings.WTF_CONTROL_MARKER_BANISH:SetValue(0)
     state.now = state.now + 10
-    castAt(state, BANISH, "nameplate4")
-    equal(state.sent[3].message:find("{moon}", 1, true), nil, "a later plain cast names none again")
+    banishAt(state, "nameplate4")
+    equal(state.sent[3].message:find("{", 1, true), nil, "marker None: none in the message")
 end)
 test("control spells tell the group as the cast starts, with the marker in chat", function()
     local state = controlFixture({group = "party", known = {[FEAR] = true, [BANISH] = true, [ENSLAVE] = true}})
@@ -2649,27 +2906,24 @@ test("control spells tell the group as the cast starts, with the marker in chat"
     castAt(alone, FEAR, "nameplate3")
     equal(#alone.sent, 0, "nothing when alone")
 end)
--- Each cast marks its mob first with the game's /tm, which works in combat.
-local RECAST_BANISH_IMP = "/tm [@focus,harm,nodead,exists] !5\n/use [@focus,exists,harm,nodead] Banish"
-    .. "\n/stopmacro [@focus,exists]\n/cleartarget\n/targetexact Imp\n/tm [@target,harm,nodead,exists] !5"
-    .. "\n/use [@target,harm,nodead] Banish\n/targetlasttarget"
-
-test("clicking a Banish row recasts on your focus, or with none on the mob by name", function()
+test("clicking a Banish row banishes your focus again: no marker, no targeting", function()
     local state = controlFixture()
-    castAt(state, BANISH, "nameplate4")
+    banishAt(state, "nameplate4")
     local click = state.env.WarlockToolsForeverControlClick1
     equal(click.protected, true, "a secure button")
     equal(click.shown, true)
-    equal(click.attributes.macrotext1, RECAST_BANISH_IMP)
+    equal(click.attributes.macrotext1, CLICK_BANISH, "only your focus; with no focus it does nothing")
     state.combat = true
     -- Started in combat: the click waits for combat to end.
     state.units.nameplate5 = {name = "Voidwalker", guid = "Creature-3"}
-    castAt(state, BANISH, "nameplate5")
-    equal(controlRow(state, 2).name.text, "Voidwalker", "the bar shows in combat")
-    equal(state.env.WarlockToolsForeverControlClick2.attributes.macrotext1, nil)
+    banishAt(state, "nameplate5")
+    equal(controlRow(state, 1).alpha, 0.45, "the Imp is no longer your focus: dimmed while its slot shows")
+    equal(controlRow(state, 2).name.text, "Voidwalker", "the bar shows in combat, for your new focus")
+    equal(state.env.WarlockToolsForeverControlClick2.attributes.macrotext1, nil, "its click waits")
     state.combat = false
     state.emit("PLAYER_REGEN_ENABLED")
-    contains(state.env.WarlockToolsForeverControlClick2.attributes.macrotext1, "/targetexact Voidwalker")
+    equal(state.env.WarlockToolsForeverControlClick1.attributes.macrotext1, nil, "the Imp's click goes")
+    equal(state.env.WarlockToolsForeverControlClick2.attributes.macrotext1, CLICK_BANISH)
     equal(state.env.WarlockToolsForeverControlClick3.shown, false, "no click area without a mob")
 end)
 -- A shown click slot under a hidden row is an invisible area that takes
@@ -2684,7 +2938,7 @@ local function noHiddenClickArea(state, label)
 end
 test("a Banish mob that dies in combat leaves its click slot visible, dimmed, until combat ends", function()
     local state = controlFixture()
-    castAt(state, BANISH, "nameplate4")
+    banishAt(state, "nameplate4")
     local row = controlRow(state, 1)
     noHiddenClickArea(state, "out of combat")
     state.combat = true
@@ -2711,9 +2965,9 @@ test("Fear rows show the timer but have no click, so no click Fears the wrong mo
 end)
 test("a Banish row whose click is set keeps its slot until combat ends", function()
     local state = controlFixture()
-    castAt(state, BANISH, "nameplate4")
+    banishAt(state, "nameplate4")
     local click1 = state.env.WarlockToolsForeverControlClick1
-    contains(click1.attributes.macrotext1, "/targetexact Imp")
+    equal(click1.attributes.macrotext1, CLICK_BANISH)
     state.combat = true
     state.units.nameplate4.dead = true
     state.emit("UNIT_HEALTH", "nameplate4")
@@ -2732,7 +2986,7 @@ test("a Banish row whose click is set keeps its slot until combat ends", functio
 end)
 test("a Banish that fails out of combat gives back its row and click", function()
     local state = controlFixture()
-    state.units.target = state.units.nameplate4
+    state.units.focus = state.units.nameplate4
     state.emit("UNIT_SPELLCAST_SENT", "player", "Imp", "cast-a", BANISH)
     local click1 = state.env.WarlockToolsForeverControlClick1
     equal(click1.shown, true, "set as the cast starts")
@@ -2741,7 +2995,7 @@ test("a Banish that fails out of combat gives back its row and click", function(
     equal(click1.attributes.macrotext1, nil)
     for index = 1, 5 do
         state.units["nameplate" .. (10 + index)] = {name = "Mob" .. index, guid = "Creature-1" .. index}
-        state.units.target = state.units["nameplate" .. (10 + index)]
+        state.units.focus = state.units["nameplate" .. (10 + index)]
         state.emit("UNIT_SPELLCAST_SENT", "player", "Mob" .. index, "cast-f" .. index, BANISH)
         state.emit("UNIT_SPELLCAST_FAILED", "player", "cast-f" .. index, BANISH)
     end
@@ -2800,11 +3054,12 @@ test("a feared mob's nameplate shows a Fear countdown, also after its plate come
 end)
 test("control macros appear only for the spells you know; Seduction needs your Succubus", function()
     local state = controlFixture({known = {[FEAR] = true}})
-    local fear = "#showtooltip Fear\n/focus [mod:shift,@mouseover,harm,nodead][mod:shift,harm,nodead]"
-        .. "\n/use [@focus,exists,harm,nodead][@mouseover,harm,nodead][harm,nodead] Fear"
+    local fear = "#showtooltip Fear\n/focus [nomod:shift,@mouseover,harm,nodead][nomod:shift,harm,nodead]"
+        .. "\n/use [mod:shift,@mouseover,harm,nodead][mod:shift,harm,nodead][@focus,exists,harm,nodead] Fear"
     equal(macroBody(state, "! Fear"), fear,
-        "Shift sets the focus; then your focus first, else the mob under the mouse, else your target")
-    equal(#fear, 157, "the body's length")
+        "a plain press focuses the mob under the mouse (else your target) and fears the focus; "
+            .. "Shift fears the mob under the mouse (else your target) and keeps the focus")
+    equal(#fear, 181, "the body's length, well under 255")
     equal(macroBody(state, "! Banish"), nil, "no Banish before you learn it")
     equal(macroBody(state, "! Seduction"), nil, "no Seduction before Summon Succubus")
     state.known[BANISH] = true
@@ -2829,21 +3084,20 @@ test("control macros appear only for the spells you know; Seduction needs your S
     equal(macroBody(state, "! Seduction"), nil)
     equal(macroBody(state, "! Fear"), nil)
 end)
-test("the Banish marker setting goes into the macro and the row click, rebuilt out of combat", function()
+test("the Banish marker setting goes into the macro, rebuilt out of combat; the click never marks", function()
     local state = controlFixture({known = {[FEAR] = true, [BANISH] = true}})
-    castAt(state, BANISH, "nameplate4")
+    banishAt(state, "nameplate4")
     local click = state.env.WarlockToolsForeverControlClick1
     state.settings.WTF_CONTROL_MARKER_BANISH:SetValue(8)
     contains(macroBody(state, "! Banish"), "/tm [@focus,harm,nodead,exists] !8")
-    contains(click.attributes.macrotext1, "/tm [@target,harm,nodead,exists] !8")
+    equal(click.attributes.macrotext1, CLICK_BANISH)
     state.combat = true
     state.settings.WTF_CONTROL_MARKER_BANISH:SetValue(0)
     contains(macroBody(state, "! Banish"), "!8", "a macro changes only out of combat")
     state.combat = false
     state.emit("PLAYER_REGEN_ENABLED")
     equal(macroBody(state, "! Banish"):find("/tm", 1, true), nil, "None: no /tm line")
-    equal(click.attributes.macrotext1:find("/tm", 1, true), nil)
-    contains(click.attributes.macrotext1, "/targetexact Imp", "the click still recasts")
+    equal(click.attributes.macrotext1, CLICK_BANISH, "the click still recasts")
     equal(macroBody(state, "! Fear"):find("/tm", 1, true), nil, "Fear never marks")
 end)
 test("Seduction has no marker setting, so its macro has no /tm", function()
@@ -3017,6 +3271,33 @@ local function initializerFor(page, variable)
     end
 end
 
+test("the Control page explains how Fear, Banish, and your focus work", function()
+    local state = fixture()
+    local page = state.categories.Control
+    local heading, button
+    for _, entry in ipairs(page.headings) do
+        if entry.heading then heading = heading or entry end
+        if entry.buttonClick then button = button or entry end
+    end
+    equal(heading.heading, "Fear, Banish, and your focus")
+    contains(heading.tooltip, "Shift-press it to fear another mob and keep your focus")
+    equal(button.name, "How Fear and your focus work")
+    equal(button.buttonText, "Show in chat")
+    state.clear()
+    button.buttonClick()
+    equal(#state.messages, 4, "one chat line each")
+    equal(state.messages[1], "WTF: \"! Fear\" makes the mob under your mouse (else your target) your focus and "
+        .. "fears it. Shift-press it to fear another mob and keep your focus.")
+    contains(state.messages[2], "Click it to fear your focus again; with no focus it does nothing.")
+    contains(state.messages[3], "Every other mob you fear gets its own row")
+    contains(state.messages[4], "\"! Banish\" works the same way")
+    local macros = initializerFor(page, "WTF_CONTROL_MACROS")
+    contains(macros.tooltip, "\"! Fear\" makes the mob under your mouse (else your target) your focus and fears it")
+    contains(macros.tooltip, "The Focus box above the Control bar shows your focus's Fear")
+    contains(macros.tooltip, "\"! Banish\" also marks it with the moon")
+    local main = initializerFor(state.categories["Warlock Tools Forever"], "WTF_CONTROL_ENABLED")
+    contains(main.tooltip, "Click the Focus box to fear your focus again")
+end)
 test("size sliders are labeled without (%): their values show the % sign", function()
     local state = fixture()
     for _, case in ipairs({{"Control", "WTF_CONTROL_SCALE", "Bar size"}}) do

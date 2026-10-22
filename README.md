@@ -8,9 +8,9 @@ several mobs, and a Fear and Banish control bar.
 
 ## Compatibility
 
-WTF is tested on the Forever beta, `1.60.1` build `70450`, Interface `16001`,
-Lua `5.1`. It does not check the client version or build, because beta builds
-change several times a week. At login it checks for the APIs it needs and
+WTF is for World of Warcraft: Forever `1.60.1` (tested on build `70450`),
+Interface `16001`, Lua `5.1`. It does not check the client version or build,
+because builds change often. At login it checks for the APIs it needs and
 disables itself with one message if any are missing. It runs on Warlocks only;
 on other classes it prints one message and stays off.
 
@@ -240,35 +240,55 @@ with **Nameplate dot opacity** (100%, fully solid, by default).
 A bar for each mob you **Fear** or **Banish**, with the mob's name and the time
 left, in the same style as the DoT tracker's Bars theme. Several mobs at once
 are fine. It follows each mob as you change target, empties when the spell
-breaks early, and goes when the mob dies.
+breaks early, and goes when the mob dies. A cast counts on the mob it starts
+on, also when you tab or move the mouse before it lands.
 
-- **Raid marker:** the "! Banish" macro and clicking a Banish row put the
-  moon on the mob, in and out of combat, so your group knows it is out of the
-  fight (change the marker on the Control settings page). The game lets only
-  your own key press or click set markers, so Banish cast from its plain
-  spell button gets none. The group message names the marker after a row
-  click only, since WTF cannot tell which button cast it otherwise.
+- **Banish follows your focus**, as Mage Tools Forever's Polymorph bar does:
+  "! Banish" makes the mob under your mouse your focus, marks it, and
+  banishes it. Its bar shows only for a Banish at your focus, and goes when
+  your focus becomes another mob or none. A Banish at a mob that is not your
+  focus (the plain spell button on your target, for example) shows no bar.
+- **Fear rows** follow every mob you Fear. With several mobs of the same
+  name, WTF counts a Fear on the one its own casts aim at: your focus, else
+  the mob under the mouse, else your target. So a Fear from the plain spell
+  button at your target, while your focus has the same name, shows on the
+  focus's row; "! Fear" avoids that.
+- **Focus box:** above the rows, a box in the focus panel's color shows
+  "Focus: <name>" while you have a hostile focus, with your Fear's timer on
+  it while it is feared. Click it to Fear your focus again. It aims only at
+  your focus, so it never fears another mob, also when your focus changes
+  in combat; with no focus it is hidden. Your focus's Fear shows there, not
+  again in the rows. On the Control settings page, **How Fear and your focus
+  work** says all this in chat.
+
+- **Raid marker:** the "! Banish" macro puts the moon on your focus, in and
+  out of combat, so your group knows it is out of the fight (change the
+  marker on the Control settings page). The Banish row click and the plain
+  spell button do not mark. For a Banish at your focus, the group message
+  names the marker.
   Fear marks nothing, so WTF uses only one marker slot in a group. If you mark
   with your own `/tm` macro, set Banish's marker to None: the game toggles a
   marker that is set twice.
 - **Group messages:** Fear, Banish, Enslave Demon, and Howl of Terror can tell
   your party or raid as you start casting, with the mob's name and marker
   (Announce page).
-- **Click a Banish row** to banish your focus again (with no focus, WTF targets
-  the mob by name and returns you to your target). The game lets the click
+- **Click a Banish row** to banish your focus again, with the same spell. The
+  click does not mark or change your target; with no focus it does nothing.
+  The game lets the click
   change only out of combat: a Banish that starts before the pull is
   clickable all fight; one started in combat becomes clickable when combat
   ends.
 - **Fear rows** show each feared mob and its time left; they take no clicks,
   since the game gives AddOns no way to aim at one of several same-named
-  mobs. Instead, a **Fear timer under each feared mob's nameplate** shows which
-  one is about to break: click its nameplate to target it, then Fear.
+  mobs (the Focus box is the one Fear click). A **Fear timer under each
+  feared mob's nameplate** shows which one is about to break: hover its
+  nameplate and press "! Fear", or click it to target it.
 - **Macros:** WTF keeps "! Fear", "! Banish", and "! Seduction" in your
   character macros, each once you know its spell ("! Seduction" once your
-  Succubus or Incubus has learned Seduction from its Grimoire). "! Fear" Fears your focus if you have one, else the mob under your
-  mouse, else your target: hover a feared mob's nameplate as its timer runs
-  out and press it. Hold Shift as you press it to make the mob under your
-  mouse (or your target) your focus first; a plain press keeps your focus.
+  Succubus or Incubus has learned Seduction from its Grimoire). "! Fear" makes
+  the mob under your mouse (else your target) your focus and fears it. Hold
+  Shift as you press it to Fear the mob under your mouse (else your target)
+  and keep your focus, for juggling a second mob.
   "! Banish" and "! Seduction" focus the hostile mob under your mouse (or your
   target, out of combat) and cast on your focus; "! Seduction" does nothing
   unless your pet is a Succubus or an Incubus. Turn them off on the Control settings page.

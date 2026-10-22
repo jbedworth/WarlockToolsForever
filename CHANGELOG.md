@@ -4,6 +4,21 @@ Player-facing changes for each Warlock Tools Forever release, newest first. The
 release builder copies the section for the TOC version into the GitHub release
 notes and the CurseForge changelog, and fails if that section is missing.
 
+## 1.3.1
+
+### Fixes
+- Control bar: with several mobs of the same name, a Fear could show on the wrong mob's row, or get no row, when you tabbed or moved the mouse while it was casting. WTF now finds the mob when the cast starts, in the order its own casts aim: your focus, then the mob under the mouse, then your target.
+- Control bar: a Fear no longer loses its bar when the game keeps a mob's "can attack" answer hidden in combat, or when you cast a Fear rank WTF did not list yet.
+- `/wtf debug_control` now shows how the last Fear or Banish found its mob and where its bar went.
+- Control bar: a feared mob that is no longer your target or focus now keeps its bar in combat, bound to its own nameplate, also when the game hides nameplate details in combat.
+
+### Other changes
+- Control bar: Banish now works exactly like Mage Tools Forever's Polymorph bar. "! Banish" makes the mob under your mouse your focus, marks it, and banishes it; the Banish bar shows only for a Banish at your focus and goes when your focus changes. A click on the Banish row banishes your focus again, with no marker and no targeting; with no focus it does nothing. Before, with no focus, the click targeted the mob by name and could pick another mob of the same name.
+- The group message names the Banish marker (%M) for a Banish at your focus, instead of after a row click.
+- "! Fear" is inverted: a plain press makes the mob under your mouse (else your target) your focus and fears it; with Shift it fears the mob under your mouse (else your target) and keeps your focus.
+- Control bar: a new **Focus box** above the rows shows your focus while it is a hostile mob, with your Fear's timer on it while it is feared. Click it to Fear your focus again; it never fears another mob, and with no focus it is hidden. Your focus's Fear shows there instead of in the rows.
+- Control settings page: a "Fear, Banish, and your focus" heading and a **How Fear and your focus work** button that explains them in chat.
+
 ## 1.3.0
 
 Four features moved out of WTF into two of Dyre's AddOns that every class can use. The CurseForge app installs both with WTF, and each copies your WTF settings for its features once, the first time it runs on a character.

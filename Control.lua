@@ -20,15 +20,21 @@ local _, WTF = ...
 -- nothing). The combat log is closed,
 -- so a resist cannot be seen; a successful cast counts as landed.
 --
--- Clicking a Banish row recasts Banish on your focus (author-approved: single
--- target control follows the focus, as the "! Banish" macro sets it), or,
--- with no focus, targets the mob by name, casts, and goes back to your
--- target. Secure buttons change only out of combat, so each row's click sits
+-- Banish follows your focus only (John, 1.3.1, as MTF's Polymorph bar: "The
+-- ! Banish macro should work exactly like the sheep one"): "! Banish" focuses
+-- the mob, marks it, and banishes it; a Banish counts only when it is cast at
+-- your focus, its row is bound to "focus", and it goes when your focus becomes
+-- another mob or none. Clicking a Banish row banishes your focus again, with
+-- no marker and no targeting; with no focus it does nothing. Secure buttons
+-- change only out of combat, so each row's click sits
 -- in a fixed slot under its row and is set as the cast starts (a pull's
 -- Banish starts before combat); a row begun in combat gets its click when
 -- combat ends. Fear rows have no click (author-approved): a secure macro can
 -- aim only at a unit token or a name, never at one mob's GUID, and juggled
--- mobs share names, so a click could Fear the wrong one. A countdown on each
+-- mobs share names, so a click could Fear the wrong one. Your focus's Fear
+-- instead shows in the Focus box above the rows (John, 1.3.1: "put a special
+-- box on the top if/when the focus target is feared"), whose click fears your
+-- focus again. A countdown on each
 -- feared mob's nameplate shows which one is about to break; clicking the
 -- nameplate targets it.
 
@@ -84,6 +90,11 @@ local DEFAULT_POINT = {"CENTER", "CENTER", -260, -60}
 local SAMPLES = {"Fear (sample)", "Banish (sample)"}
 
 local control = {available = false, casts = {}, ids = {}, kinds = {}, rows = {}, lastAnnounce = {}}
+-- The Focus box: shown while you have a live hostile focus, in the focus
+-- panel's color, with your Fear on your focus. The tracker's focus red when
+-- the tracker has no panel colors.
+local FOCUS_RED = {0.9, 0.1, 0.1}
+local FOCUS_SAMPLE = "Focus (sample)"
 local anchor
 
 local function IsWholeNumber(value)
@@ -205,7 +216,8 @@ local function KnowsAny()
     return false
 end
 
--- The unit showing this mob now: its nameplate, else target or focus. Not
+-- The unit showing this mob now: your focus or target, else its nameplate
+-- (by GUID, else Core's plate memory, for plates whose GUID is secret). Not
 -- mouseover: it changes with the pointer and has no event WTF rebinds on.
 local function FindUnit(guid)
     if not guid then
@@ -223,19 +235,87 @@ local function FindUnit(guid)
             return unit
         end
     end
+    return WTF.KnownPlate(guid)
 end
 
--- The unit a cast sent at targetName went to: the first that matches by name.
-local function FindCastUnit(targetName)
-    for _, unit in ipairs({"target", "focus", "mouseover"}) do
-        if UnitExists(unit) and ReadName(unit) == targetName then
-            return unit
+-- A live mob you can attack. An answer the client keeps secret counts as yes
+-- (player report: in client a Fear could get no bar; a secret "can attack"
+-- must not drop the cast), and a secret "dead" as alive.
+local function IsLiveHostile(unit)
+    local canAttack = UnitCanAttack("player", unit)
+    return (WTF.IsSecret(canAttack) or canAttack == true) and not IsDead(unit)
+end
+
+-- For /wtf debug_control: a value as text, never a secret's contents.
+local function Said(value)
+    return WTF.Describe(value)
+end
+
+-- A Banish locks your focus as it starts, when the cast's name is your
+-- focus's, its GUID is readable, and it is a live hostile mob; else nothing.
+local function LockFocusGUID(targetName)
+    local guid = ReadGUID("focus")
+    if guid and ReadName("focus") == targetName and IsLiveHostile("focus") then
+        return guid
+    end
+end
+
+-- The mob a cast sent at targetName goes to, as the cast starts (player
+-- report: the same class of bug as the DoT tracker's, a mob found by name at
+-- success time or on the wrong unit). The send gives only a name, so the
+-- first live hostile unit with it, in the order WTF's own casts aim: your
+-- focus ("! Banish", "! Seduction", the Banish row, and "! Fear" with a
+-- focus), the mob under the mouse ("! Fear" without one), then your target.
+-- Known limit: a plain spell-button cast at your target, while your focus
+-- or the mob under the mouse has the same name, counts on that one.
+-- A unit whose GUID is secret is skipped, unless it is a nameplate whose mob
+-- Core's plate memory knows. Returns the GUID and the unit, and notes each
+-- unit it looked at for /wtf debug_control.
+local CAST_UNITS = {"focus", "mouseover", "target"}
+for index = 1, MAX_NAMEPLATE_UNITS do
+    CAST_UNITS[#CAST_UNITS + 1] = "nameplate" .. index
+end
+
+local function FindCastGUID(targetName)
+    local seen = {}
+    control.lastLook = seen
+    for _, unit in ipairs(CAST_UNITS) do
+        if UnitExists(unit) then
+            local name = ReadName(unit)
+            if name == targetName then
+                local guid = ReadGUID(unit) or (unit:match("^nameplate") and WTF.plates[unit])
+                local canAttack, dead = UnitCanAttack("player", unit), UnitIsDead(unit)
+                seen[#seen + 1] = string.format("%s(attack=%s dead=%s guid=%s)", unit, Said(canAttack),
+                    Said(dead), tostring(guid ~= nil))
+                if guid and IsLiveHostile(unit) then
+                    return guid, unit
+                end
+            elseif #seen < 6 and not unit:match("^nameplate") then
+                seen[#seen + 1] = unit .. "(other name)"
+            end
         end
     end
-    for index = 1, MAX_NAMEPLATE_UNITS do
-        local unit = "nameplate" .. index
-        if UnitExists(unit) and ReadName(unit) == targetName then
-            return unit
+end
+
+-- A control spell by ID, else by name (a rank the spell sets do not list yet).
+local function KindOf(spellID)
+    local spell = control.kinds[spellID]
+    if spell then
+        return spell
+    end
+    local name = C_Spell.GetSpellName(spellID)
+    if not name then
+        return nil
+    end
+    for _, kind in ipairs(WTF.CONTROL_SPELLS) do
+        for _, id in ipairs(kind.ids) do
+            if C_Spell.GetSpellName(id) == name then
+                control.kinds[spellID] = kind
+                if kind.bar then
+                    control.ids[spellID] = true
+                end
+                return kind
+            end
         end
     end
 end
@@ -260,11 +340,20 @@ local function Layout()
     local settings = WTF.db.control
     local sample = not WTF.db.locked
     anchor.mover:SetShown(sample)
+    -- A Fear on your focus shows in the Focus box, not twice.
+    local focusGUID = control.focusBox and ReadGUID("focus")
+    if control.focusBox then
+        local name = ReadName("focus")
+        control.focusBox.display.name:SetText(sample and not name and FOCUS_SAMPLE
+            or ("Focus: " .. (name or "")))
+    end
     for index, row in ipairs(control.rows) do
         local holder = row.holder
         local spent = not row.guid and holder:IsVisible() and holder.mobName ~= nil
         row:SetAlpha(spent and SPENT_ALPHA or 1)
-        if row.guid then
+        if row.guid and not row.focusOnly and focusGUID and row.guid == focusGUID then
+            row:Hide()
+        elseif row.guid then
             row.name:SetText(row.mobName)
             row:SetShown(settings.enabled)
         elseif spent then
@@ -290,13 +379,26 @@ local function ApplyClicks()
     -- Rows scale with their click slots, so they never drift apart in combat.
     anchor:SetScale(settings.scale / 100)
     anchor:SetShown(settings.enabled and (KnowsAny() or not WTF.db.locked))
+    local box = control.focusBox
+    if box then
+        box:SetScale(settings.scale / 100)
+        local fear = C_Spell.GetSpellName(WTF.CONTROL_SPELLS[1].ids[1])
+        local known = settings.enabled and fear and KnowsAny()
+        box:SetAttribute("type1", known and "macro" or nil)
+        box:SetAttribute("macrotext1", known and WTF.RecastMacro(fear) or nil)
+        -- Only unit conditions decide a secure frame's visibility in combat:
+        -- while you have a live hostile focus (a Fear on it fills the bar),
+        -- or always while frames are unlocked, to drag by.
+        UnregisterStateDriver(box, "visibility")
+        RegisterStateDriver(box, "visibility", not known and "hide"
+            or not WTF.db.locked and "show" or "[@focus,exists,harm,nodead] show; hide")
+    end
     for _, row in ipairs(control.rows) do
         row:SetScale(settings.scale / 100)
         local holder, name, spell = row.holder, row.clickName, row.clickSpell
         if name and spell then
             holder:SetAttribute("type1", "macro")
-            holder:SetAttribute("macrotext1", WTF.RecastMacro(spell, name,
-                row.clickKey and WTF.db.control.markers[row.clickKey]))
+            holder:SetAttribute("macrotext1", WTF.RecastMacro(spell))
         else
             holder:SetAttribute("type1", nil)
             holder:SetAttribute("macrotext1", nil)
@@ -310,6 +412,7 @@ end
 
 local function Forget(row)
     row.guid, row.mobName, row.clickName, row.clickSpell, row.token = nil, nil, nil, nil, nil
+    row.focusOnly = nil
     Bind(row, nil)
     Layout()
     ApplyClicks()
@@ -326,24 +429,10 @@ function WTF.MarkLine(unit, marker)
     return "/tm [@" .. unit .. ",harm,nodead,exists] !" .. marker
 end
 
--- A recast on your focus, or with no focus on the mob by name: a missing mob
--- leaves no target, so nothing else is cast on. Each cast marks its mob first.
-function WTF.RecastMacro(spell, name, marker)
-    local lines = {}
-    local function Add(line)
-        if line then
-            lines[#lines + 1] = line
-        end
-    end
-    Add(WTF.MarkLine("focus", marker))
-    Add("/use [@focus,exists,harm,nodead] " .. spell)
-    Add("/stopmacro [@focus,exists]")
-    Add("/cleartarget")
-    Add("/targetexact " .. name)
-    Add(WTF.MarkLine("target", marker))
-    Add("/use [@target,harm,nodead] " .. spell)
-    Add("/targetlasttarget")
-    return table.concat(lines, "\n")
+-- A row click: the same spell on your focus, and nothing else (no marker,
+-- no targeting); with no focus it does nothing.
+function WTF.RecastMacro(spell)
+    return "/use [@focus,exists,harm,nodead] " .. spell
 end
 
 local function RowFor(guid, name)
@@ -366,10 +455,11 @@ local function Track(row, guid, mobName, spell, spellName)
     row.guid, row.mobName = guid, mobName
     if spell.click then
         row.clickName, row.clickSpell, row.clickKey = mobName, spellName, spell.key
+        row.focusOnly = true
     end
     local token = {}
     row.token = token
-    Bind(row, FindUnit(guid))
+    Bind(row, row.focusOnly and "focus" or FindUnit(guid))
     Layout()
     ApplyClicks()
     C_Timer.After(spell.longest + FORGET_SLACK, function()
@@ -383,10 +473,11 @@ local function ShowTooltip(holder)
     GameTooltip:SetOwner(holder, "ANCHOR_TOP")
     if holder.mobName then
         GameTooltip:SetText("Click: " .. holder.spellName .. " your focus again.", 1, 1, 1)
-        GameTooltip:AddLine("With no focus, targets " .. holder.mobName .. " by name, then goes back to your "
-            .. "target.", 0.7, 0.7, 0.7, true)
+        GameTooltip:AddLine("No marker and no target change. With no focus it does nothing.", 0.7, 0.7, 0.7,
+            true)
     else
-        GameTooltip:SetText("Banish a mob, then click its row to cast it again.", 0.7, 0.7, 0.7)
+        GameTooltip:SetText("Banish your focus (\"! Banish\"), then click its row to cast it again.", 0.7, 0.7,
+            0.7)
     end
     GameTooltip:Show()
 end
@@ -438,6 +529,80 @@ local function SlotInitializer(row)
     end
 end
 
+-- The Focus box (John, 1.3.1): a fixed secure button above the rows whose
+-- only click is "/use [@focus,exists,harm,nodead] Fear", so it can never fear
+-- another mob, also when your focus changes in combat; with no focus it does
+-- nothing. AddOn code cannot read auras in combat and a secure frame's
+-- visibility can follow only unit conditions, so the box shows while you have
+-- a live hostile focus (a state driver), never as an invisible click area: its
+-- dim Fear line fills with the engine's bar while your Fear is on the focus.
+-- Your Fear's spell IDs (the box is built before the plate timers' list).
+local function FearOnly()
+    local ids = {}
+    for id, spell in pairs(control.kinds) do
+        if spell.key == "fear" then
+            ids[id] = true
+        end
+    end
+    return ids
+end
+
+local function CreateFocusBox()
+    local box = CreateFrame("Button", "WarlockToolsForeverControlFocus", anchor, "SecureActionButtonTemplate")
+    box:SetSize(WIDTH, ROW_HEIGHT)
+    box:SetPoint("BOTTOMLEFT", anchor, "TOPLEFT", 0, ROW_GAP)
+    box:RegisterForClicks("AnyUp", "AnyDown")
+    box:SetAttribute("useOnKeyDown", false)
+    box:RegisterForDrag("LeftButton")
+    box:SetScript("OnDragStart", StartDrag)
+    box:SetScript("OnDragStop", StopDrag)
+    box:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_TOP")
+        GameTooltip:SetText("Click: Fear your focus again.", 1, 1, 1)
+        GameTooltip:AddLine("Only your focus; with no focus it does nothing.", 0.7, 0.7, 0.7, true)
+        GameTooltip:Show()
+    end)
+    box:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    -- What it shows: a child, so it shows and hides with the box.
+    local display = CreateFrame("Frame", nil, box, "BackdropTemplate")
+    display:SetAllPoints(box)
+    display:EnableMouse(false)
+    display:SetBackdrop({bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
+        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border", edgeSize = 10,
+        insets = {left = 2, right = 2, top = 2, bottom = 2}})
+    display:SetBackdropColor(BROWN[1], BROWN[2], BROWN[3], BROWN[4])
+    local r, g, b = FOCUS_RED[1], FOCUS_RED[2], FOCUS_RED[3]
+    if WTF.PanelColor and WTF.db.tracker and WTF.db.tracker.panelColors then
+        r, g, b = WTF.PanelColor("focus")
+    end
+    display:SetBackdropBorderColor(r, g, b)
+    display.name = display:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    display.name:SetPoint("TOPLEFT", PADDING, -4)
+    display.name:SetWidth(WIDTH - PADDING * 2)
+    display.name:SetJustifyH("LEFT")
+    local line = display:CreateTexture(nil, "BACKGROUND")
+    line:SetPoint("TOPLEFT", display, "TOPLEFT", PADDING, -HEADER)
+    line:SetSize(WIDTH - PADDING * 2, LINE)
+    line:SetColorTexture(LINE_BACKGROUND[1], LINE_BACKGROUND[2], LINE_BACKGROUND[3], LINE_BACKGROUND[4])
+    local placeholder = display:CreateTexture(nil, "BACKGROUND", nil, 1)
+    placeholder:SetTexture(C_Spell.GetSpellTexture(WTF.CONTROL_SPELLS[1].ids[1]))
+    placeholder:SetTexCoord(0.07, 0.93, 0.07, 0.93)
+    placeholder:SetDesaturated(true)
+    placeholder:SetAlpha(PLACEHOLDER_ALPHA)
+    placeholder:SetSize(ICON, ICON)
+    placeholder:SetPoint("LEFT", line, "LEFT", 1, 0)
+    local container = CreateFrame("AuraContainer", nil, display, CONTAINER_TEMPLATE)
+    container:SetPoint("TOPLEFT", display, "TOPLEFT")
+    container:SetSize(1, 1)
+    container:AddAuraSlot("fear", AURA_FILTER, {
+        candidateFilters = {includeSpellIDs = FearOnly()},
+        initializeFrame = SlotInitializer(display),
+    })
+    container:SetUnit("focus")
+    box.display, box.container = display, container
+    return box
+end
+
 local function CreateRow(index)
     local offset = -(index - 1) * (ROW_HEIGHT + ROW_GAP)
     -- The click slot: a secure button at a fixed place under the row.
@@ -450,7 +615,6 @@ local function CreateRow(index)
     holder:RegisterForDrag("LeftButton")
     holder:SetScript("OnDragStart", StartDrag)
     holder:SetScript("OnDragStop", StopDrag)
-    holder:SetScript("PreClick", function() control.rowClickAt = GetTime() end)
     holder:SetScript("OnEnter", ShowTooltip)
     holder:SetScript("OnLeave", function() GameTooltip:Hide() end)
     holder:Hide()
@@ -495,17 +659,13 @@ end
 
 -- WTF never calls SetRaidTarget: in client it raised ADDON_ACTION_FORBIDDEN
 -- for AddOn code also out of combat (MTF's same guarded call, BugGrabber and
--- the taint log), so markers come only from the game's /tm in "! Banish" and
--- the row click (WTF.MarkLine), which run from your key press or click.
--- A row click names its marker in the message: its PreClick shows WTF the
--- click, and the cast it starts is sent within this many seconds. A cast from
--- "! Banish" or the spell button tells WTF nothing, so it names none.
-local ROW_CLICK_WINDOW = 0.5
+-- the taint log), so the marker comes only from the game's /tm in "! Banish"
+-- (WTF.MarkLine), which runs from your key press.
 
--- %M: the marker's chat code after a row click, else nothing.
-local function MarkerCode(spell)
-    local clicked = control.rowClickAt
-    if not clicked or GetTime() - clicked > ROW_CLICK_WINDOW then
+-- %M: the marker's chat code for a Banish at your focus (the mob "! Banish"
+-- marks), else nothing.
+local function MarkerCode(spell, atFocus)
+    if not atFocus then
         return ""
     end
     local index = spell.marker and WTF.db.control.markers[spell.key] or 0
@@ -518,7 +678,7 @@ local function MarkerCode(spell)
 end
 
 -- At the start of a cast (author-approved), as the other group messages go.
-local function AnnounceCast(spell, targetName)
+local function AnnounceCast(spell, targetName, atFocus)
     local settings = WTF.db.announce
     local now = GetTime()
     local last = control.lastAnnounce[spell.key]
@@ -526,7 +686,7 @@ local function AnnounceCast(spell, targetName)
         return
     end
     -- With no marker, %M goes with the space before it.
-    local code = MarkerCode(spell)
+    local code = MarkerCode(spell, atFocus)
     local text = settings[spell.key .. "GroupText"]
     if code == "" then
         text = text:gsub(" ?%%M", "")
@@ -542,7 +702,7 @@ local function OnCastSent(target, castGUID, spellID)
     if WTF.IsSecret(spellID) or WTF.IsSecret(target) or WTF.IsSecret(castGUID) then
         return
     end
-    local spell = control.kinds[spellID]
+    local spell = KindOf(spellID)
     if not spell then
         return
     end
@@ -553,17 +713,26 @@ local function OnCastSent(target, castGUID, spellID)
     if type(target) ~= "string" or target == "" then
         return
     end
-    AnnounceCast(spell, target)
+    local guid, unit
+    if spell.click then
+        guid = LockFocusGUID(target)
+        unit = guid and "focus"
+        control.lastLook = {"focus only"}
+    else
+        guid, unit = FindCastGUID(target)
+    end
+    control.lastSent = {spellID = spellID, target = target, unit = unit, locked = guid ~= nil,
+        look = table.concat(control.lastLook or {}, " ")}
+    AnnounceCast(spell, target, spell.click and guid ~= nil)
     if not spell.bar or not WTF.db.control.enabled then
         return
     end
-    local unit = FindCastUnit(target)
-    local guid = unit and ReadGUID(unit)
+    -- The mob's plate, while it is your focus or target, for later binding.
+    WTF.LearnPlates()
     control.casts[castGUID] = {target = target, spellID = spellID, guid = guid}
-    control.lastCast = {spellID = spellID, target = target}
     -- A pull's Fear or Banish starts out of combat and lands in it: set the
     -- click now, while the game still allows it.
-    if spell.click and not InCombatLockdown() then
+    if spell.click and guid and not InCombatLockdown() then
         local row = RowFor(guid, target)
         if row and not row.guid then
             row.clickName, row.clickSpell, row.clickKey = target, C_Spell.GetSpellName(spellID), spell.key
@@ -582,30 +751,42 @@ local function OnCastSucceeded(castGUID)
     if not cast or not WTF.db.control.enabled then
         return
     end
+    -- Only the mob locked as the cast started (hostile then); never one found
+    -- by name now, which after a tab or a mouse move may be another mob.
     local guid = cast.guid
     if not guid then
-        local unit = FindCastUnit(cast.target)
-        guid = unit and ReadGUID(unit)
+        control.lastLanded = "no mob locked as it started"
+        return
     end
-    -- A cast on the mob under the mouse (as "! Fear" does) counts: mouseover
-    -- checks the cast, though rows never bind to it.
     local unit = FindUnit(guid)
-    if not unit and guid and ReadGUID("mouseover") == guid then
-        unit = "mouseover"
-    end
-    if not unit or not UnitCanAttack("player", unit) then
+    if unit and IsDead(unit) then
+        control.lastLanded = "the mob was dead"
         return
     end
     local spell = control.kinds[cast.spellID]
     local row = RowFor(guid, cast.target)
     if row then
         Track(row, guid, cast.target, spell, C_Spell.GetSpellName(cast.spellID))
+        for index, each in ipairs(control.rows) do
+            if each == row then
+                control.lastLanded = "row " .. index .. " bound to " .. tostring(row.boundUnit)
+            end
+        end
+    else
+        control.lastLanded = "no free row"
     end
 end
 
 local function Rebind()
     for _, row in ipairs(control.rows) do
-        if row.guid then
+        if row.focusOnly then
+            -- Your focus is no longer the banished mob: another mob, or none.
+            -- A focus whose GUID is secret stays (it cannot be told apart).
+            local guid = ReadGUID("focus")
+            if not UnitExists("focus") or (guid and guid ~= row.guid) or IsDead("focus") then
+                Forget(row)
+            end
+        elseif row.guid then
             local unit = FindUnit(row.guid)
             if unit and IsDead(unit) then
                 Forget(row)
@@ -631,9 +812,11 @@ end
 -- Banish marker setting; set to None, the line goes. "! Fear" is the author's
 -- own juggling macro: it Fears your focus when you have one, else the mob
 -- under the mouse (a feared mob's nameplate as its timer runs out), else your
--- target (author-approved). It sets the focus only with Shift held (the mob
--- under the mouse, else your target), so a plain press keeps the focus you
--- chose. Fear has no marker setting, so the macro has no /tm.
+-- target (author-approved). Inverted in 1.3.1 (John: "set focus by default,
+-- shift fears a mob without changing focus"): a plain press makes the mob
+-- under the mouse (else your target) your focus and fears it; with Shift it
+-- fears the mob under the mouse (else your target) and keeps your focus.
+-- Fear has no marker setting, so the macro has no /tm.
 
 local CONTROL_MACROS = {
     {name = "! Fear", spell = 5782, known = {5782, 6213, 6215}, mouseover = true},
@@ -641,8 +824,9 @@ local CONTROL_MACROS = {
     {name = "! Seduction", spell = 6358, pet = true, condition = ",pet:Succubus/Incubus"},
 }
 local FOCUS_LINE = "/focus [@mouseover,harm,nodead][nocombat,harm,nodead]"
--- "! Fear": with Shift, the mob under the mouse, else your target, becomes the focus.
-local SHIFT_FOCUS_LINE = "/focus [mod:shift,@mouseover,harm,nodead][mod:shift,harm,nodead]"
+-- "! Fear": without Shift, the mob under the mouse, else your target, becomes the focus.
+local FEAR_FOCUS_LINE = "/focus [nomod:shift,@mouseover,harm,nodead][nomod:shift,harm,nodead]"
+local FEAR_CAST = "/use [mod:shift,@mouseover,harm,nodead][mod:shift,harm,nodead][@focus,exists,harm,nodead] "
 
 local function KnowsAnyOf(ids)
     if type(C_SpellBook) ~= "table" or type(C_SpellBook.IsSpellKnown) ~= "function" then
@@ -693,8 +877,7 @@ function WTF.ControlMacroBody(macro)
         return nil
     end
     if macro.mouseover then
-        return "#showtooltip " .. spell .. "\n" .. SHIFT_FOCUS_LINE
-            .. "\n/use [@focus,exists,harm,nodead][@mouseover,harm,nodead][harm,nodead] " .. spell
+        return "#showtooltip " .. spell .. "\n" .. FEAR_FOCUS_LINE .. "\n" .. FEAR_CAST .. spell
     end
     local lines = {"#showtooltip " .. spell, FOCUS_LINE}
     lines[#lines + 1] = WTF.MarkLine("focus", macro.marker and WTF.db.control.markers[macro.marker])
@@ -832,8 +1015,14 @@ end
 local events = CreateFrame("Frame")
 events:SetScript("OnEvent", function(_, event, unit, first, second, third)
     if event == "NAME_PLATE_UNIT_ADDED" or event == "NAME_PLATE_UNIT_REMOVED" then
+        if not WTF.IsSecret(unit) then
+            WTF.ForgetPlate(unit)
+        end
         if event == "NAME_PLATE_UNIT_ADDED" then
             AttachTimer(unit)
+            if not WTF.IsSecret(unit) then
+                WTF.LearnPlate(unit)
+            end
         else
             DetachTimer(unit)
         end
@@ -876,6 +1065,9 @@ events:SetScript("OnEvent", function(_, event, unit, first, second, third)
         for _, timer in ipairs(plates.all) do
             timer.container:SetAuraSlotCandidateFilters("fear", {includeSpellIDs = FearIDs()})
         end
+        if control.focusBox then
+            control.focusBox.container:SetAuraSlotCandidateFilters("fear", {includeSpellIDs = FearIDs()})
+        end
         ApplyClicks()
         WTF.ApplyControlMacros()
     elseif event == "PLAYER_REGEN_ENABLED" then
@@ -894,7 +1086,10 @@ events:SetScript("OnEvent", function(_, event, unit, first, second, third)
         end
         ApplyClicks()
     else
+        -- Your target or focus changed: learn its plate before rebinding.
+        WTF.LearnPlates()
         Rebind()
+        Layout()
     end
 end)
 
@@ -935,7 +1130,9 @@ function WTF.InitializeControl()
     for index = 1, MAX_ROWS do
         control.rows[index] = CreateRow(index)
     end
+    control.focusBox = CreateFocusBox()
     WTF.controlRows = control.rows
+    WTF.controlFocusBox = control.focusBox
     Place()
     control.available = true
     for _, event in ipairs({"PLAYER_REGEN_ENABLED", "PLAYER_TARGET_CHANGED", "PLAYER_FOCUS_CHANGED",
@@ -965,10 +1162,12 @@ function WTF.ReportControlDebug()
     end
     table.sort(ids)
     WTF.Report("debug_control ids=" .. table.concat(ids, ","))
-    local last = control.lastCast
-    if last then
-        WTF.Report(string.format("debug_control lastCast spell=%d target=%s", last.spellID, last.target))
+    local sent = control.lastSent
+    if sent then
+        WTF.Report(string.format("debug_control lastSent spell=%d target=%s unit=%s locked=%s looked=%s",
+            sent.spellID, sent.target, tostring(sent.unit), tostring(sent.locked), sent.look))
     end
+    WTF.Report("debug_control lastLanded " .. tostring(control.lastLanded or "nothing yet"))
     for index, row in ipairs(control.rows) do
         WTF.Report(string.format("debug_control row %d mob=%s unit=%s click=%s macro=%s", index,
             tostring(row.mobName), tostring(row.boundUnit), tostring(row.holder:IsShown()),

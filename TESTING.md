@@ -421,10 +421,9 @@ and printing.
       dies. "! Banish" and a row click put the moon on the mob; Banish from
       the spell button and Fear mark nothing. Each feared
       mob's nameplate shows a draining Fear timer, also after it leaves plate
-      range and comes back. "! Fear" Fears your focus if you have one
-      (also while you hover another mob), else the mob whose nameplate you
-      hover, else your target. Shift+press while hovering a mob: it becomes
-      your focus and is feared. A plain press afterwards keeps that focus. "! Banish", and "! Seduction" (only once your Succubus or Incubus has its
+      range and comes back. "! Fear" while hovering a mob: it becomes your
+      focus and is feared; with nothing hovered, your target. Shift+press
+      while hovering another mob: that one is feared and your focus stays. "! Banish", and "! Seduction" (only once your Succubus or Incubus has its
       Seduction Grimoire; check both demons, and `/wtf debug_control` for the
       pet family and seduction=true)
       focus the mob under the mouse and cast on it; Seduction does nothing
@@ -452,6 +451,26 @@ and printing.
       to install it from CurseForge. WTF's own modules work in every case.
 - [ ] `/wtf debug_shield`, `/wtf debug_chimes`, and `/wtf debug_reminders`
       show the usage line (they moved with the features).
+- [ ] If a Fear or Banish gets no bar, run `/wtf debug_control` right then
+      and note the `lastSent` and `lastLanded` lines.
+- [ ] Focus box: with a hostile focus, a box in the focus color above the
+      Control bar says "Focus: <name>"; Fear the focus: its timer fills the
+      box, and the focus has no second row below. Click the box: your focus
+      is feared again (also after you change your target). Change your focus
+      in combat: the box shows the new focus, and a click fears only it.
+      Clear the focus: the box hides, and nothing invisible takes clicks
+      there.
+- [ ] Control bar with same-named mobs (two skeletons or wolves): target
+      one, start Fear, and tab to the other before it lands: the bar shows
+      the first. Set one as focus and target the other, press "! Fear": the
+      focus's bar. Without a focus, mouse over one and press "! Fear": that
+      one. Then target another mob: each feared mob's bar keeps its timer
+      on its own nameplate, in combat. "! Banish" on the mob under the
+      mouse: it becomes your focus, and the moon and the Banish go on it;
+      its bar shows. Banish from the plain button at a non-focus target: no
+      bar. Change or clear your focus: the Banish bar goes. Click the Banish
+      row: it banishes your focus, with no marker and no target change;
+      with no focus it does nothing.
 - [ ] Every WTF macro and row click works with `/use`: "! Healthstone" and
       "! Soulstone" (left-click uses, right-click creates the rank), "! Fear",
       "! Banish", "! Seduction", a pinned DoT slot click on the target and on

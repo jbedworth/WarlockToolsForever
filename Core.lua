@@ -29,6 +29,62 @@ function WTF.IsSecret(value)
     return type(issecretvalue) == "function" and issecretvalue(value) == true
 end
 
+-- Which mob each nameplate token shows, shared by the DoT tracker and the
+-- Control bar, for plates whose GUID cannot be read (secret, as the client
+-- may give in combat; player report: a dotted target you tabbed away from
+-- stayed unbound beside its own plate). Learned from the plate's GUID when
+-- readable, else from UnitIsUnit with your target or focus, whose GUIDs are
+-- readable; a token shows one mob until its plate goes. Each module calls
+-- these from its own event handlers, so handler order never matters.
+local MAX_NAMEPLATE_UNITS = 40
+WTF.plates = {}
+
+local function ReadableGUID(unit)
+    local guid = UnitGUID(unit)
+    if WTF.IsSecret(guid) or type(guid) ~= "string" then
+        return nil
+    end
+    return guid
+end
+
+function WTF.LearnPlate(unit)
+    if not UnitExists(unit) then
+        return
+    end
+    local guid = ReadableGUID(unit)
+    if guid then
+        WTF.plates[unit] = guid
+        return
+    end
+    for _, known in ipairs({"target", "focus"}) do
+        local same = UnitIsUnit(unit, known)
+        if not WTF.IsSecret(same) and same == true then
+            WTF.plates[unit] = ReadableGUID(known) or WTF.plates[unit]
+            return
+        end
+    end
+end
+
+function WTF.LearnPlates()
+    for index = 1, MAX_NAMEPLATE_UNITS do
+        WTF.LearnPlate("nameplate" .. index)
+    end
+end
+
+-- A plate came or went: its token may show another mob now.
+function WTF.ForgetPlate(unit)
+    WTF.plates[unit] = nil
+end
+
+-- The plate token known to show this mob, else nil.
+function WTF.KnownPlate(guid)
+    for unit, known in pairs(WTF.plates) do
+        if known == guid and UnitExists(unit) then
+            return unit
+        end
+    end
+end
+
 -- Text for diagnostics that never touches a secret value's contents.
 function WTF.Describe(value)
     if WTF.IsSecret(value) then

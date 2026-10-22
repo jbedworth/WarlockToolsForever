@@ -100,7 +100,7 @@ for index, slot in ipairs(SLOTS) do
 end
 
 local tracker = {rows = {}, pinned = {}, casts = {}, spellSlots = {}, known = {}, slotKnown = {},
-    dead = {}, plates = {}, available = false}
+    dead = {}, available = false}
 
 function WTF.CheckTrackerCapabilities()
     if type(C_XMLUtil) ~= "table" or type(C_XMLUtil.GetTemplateInfo) ~= "function" then
@@ -847,36 +847,8 @@ local function ReadGUID(unit)
     return guid
 end
 
--- The unit token showing this mob now: its nameplate, else target or focus.
--- Which mob each nameplate token shows, for plates whose GUID cannot be read
--- (secret, as the client may give in combat; player report: a dotted target
--- you tabbed away from stayed unbound beside its own plate). Learned from the
--- plate's GUID when readable, else from UnitIsUnit with your target or focus,
--- whose GUIDs are readable; a token shows one mob until its plate goes.
-local function LearnPlate(unit)
-    if not UnitExists(unit) then
-        return
-    end
-    local guid = ReadGUID(unit)
-    if guid then
-        tracker.plates[unit] = guid
-        return
-    end
-    for _, known in ipairs({"target", "focus"}) do
-        local same = UnitIsUnit(unit, known)
-        if not WTF.IsSecret(same) and same == true then
-            tracker.plates[unit] = ReadGUID(known) or tracker.plates[unit]
-            return
-        end
-    end
-end
-
-local function LearnPlates()
-    for index = 1, MAX_NAMEPLATE_UNITS do
-        LearnPlate("nameplate" .. index)
-    end
-end
-
+-- The unit token showing this mob now: its nameplate (by GUID, else Core's
+-- plate memory), else target or focus.
 local function FindUnit(guid)
     for index = 1, MAX_NAMEPLATE_UNITS do
         local unit = "nameplate" .. index
@@ -884,10 +856,9 @@ local function FindUnit(guid)
             return unit
         end
     end
-    for unit, known in pairs(tracker.plates) do
-        if known == guid and UnitExists(unit) then
-            return unit
-        end
+    local known = WTF.KnownPlate(guid)
+    if known then
+        return known
     end
     for _, unit in ipairs({"target", "focus"}) do
         if ReadGUID(unit) == guid then
@@ -1099,7 +1070,7 @@ local function Track(guid, mobName)
         end
     end
     local row = free or oldest
-    LearnPlates()
+    WTF.LearnPlates()
     row.guid, row.mobName, row.firstSeen, row.unseenSince = guid, mobName, GetTime(), nil
     Bind(row, FindUnit(guid))
     Layout()
@@ -1391,12 +1362,12 @@ events:SetScript("OnEvent", function(_, event, unit, first, second, third)
         local oldTarget, oldFocus = tracker.shownTarget, tracker.shownFocus
         if event == "NAME_PLATE_UNIT_REMOVED" and not WTF.IsSecret(unit) then
             NoteDeath(unit)
-            tracker.plates[unit] = nil
+            WTF.ForgetPlate(unit)
         elseif event == "NAME_PLATE_UNIT_ADDED" and not WTF.IsSecret(unit) then
-            tracker.plates[unit] = nil
-            LearnPlate(unit)
+            WTF.ForgetPlate(unit)
+            WTF.LearnPlate(unit)
         else
-            LearnPlates()
+            WTF.LearnPlates()
         end
         RefreshBindings()
         -- Your target or focus just left with no unit showing the mob: as a
@@ -1570,7 +1541,7 @@ function WTF.ReportTrackerDebug()
         if UnitExists(unit) then
             shown = shown + 1
             readable = readable + (ReadGUID(unit) and 1 or 0)
-            known = known + (tracker.plates[unit] and 1 or 0)
+            known = known + (WTF.plates[unit] and 1 or 0)
             local same = UnitIsUnit(unit, "target")
             if not WTF.IsSecret(same) and same == true then
                 targetPlate = unit
