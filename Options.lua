@@ -3,13 +3,14 @@ local _, WTF = ...
 -- The AddOn settings: a main page with one switch per module, and a subpage
 -- per module for its details. Shards and Stones use Blizzard's vertical layout
 -- with proxy settings that read and write WarlockToolsForeverDB directly;
--- Announce needs text fields, so it is a canvas page.
+-- Announce needs text fields and DoTs rows you drag to reorder, so they are
+-- canvas pages.
 local TITLE = "Warlock Tools Forever"
 local SHARDS_TITLE = "Soul Shards"
 local STONES_TITLE = "Stones"
 local ANNOUNCE_TITLE = "Announce"
 local TRACKER_TITLE = "DoT Tracker"
-local COLORS_TITLE = "DoT Colors"
+local DOTS_TITLE = "DoTs"
 local ALERTS_TITLE = "Alerts"
 local SHIELD_TITLE = "Shield"
 local CHIMES_TITLE = "Cooldown Chimes"
@@ -91,10 +92,15 @@ local function RefreshShield()
     WTF.RefreshShield()
 end
 
-local function SliderOptions(minValue, maxValue, step)
+-- A percent slider's value shows its % sign, so its label has no "(%)".
+local function Percent(value)
+    return string.format("%d%%", value)
+end
+
+local function SliderOptions(minValue, maxValue, step, percent)
     local options = Settings.CreateSliderOptions(minValue, maxValue, step)
     if type(MinimalSliderWithSteppersMixin) == "table" and type(options.SetLabelFormatter) == "function" then
-        options:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right)
+        options:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right, percent and Percent or nil)
     end
     return options
 end
@@ -173,14 +179,14 @@ local function AddShieldPage(parent)
     display.SetupSoundMenu(dropdown)
     GreyUnlessOwner(dropdown, display)
     dropdown:SetParentInitializer(soundSwitch, function() return WTF.db.shield.breakSound end)
-    local scale = Proxy(page, "WTF_SHIELD_SCALE", Settings.VarType.Number, "Display size (%)", display.DEFAULT_SCALE,
+    local scale = Proxy(page, "WTF_SHIELD_SCALE", Settings.VarType.Number, "Display size", display.DEFAULT_SCALE,
         function() return WTF.db.shield.scale end,
         function(value)
             WTF.db.shield.scale = display.SanitizeScale(value)
             RefreshShield()
         end)
     GreyUnlessOwner(Settings.CreateSlider(page, scale,
-        SliderOptions(display.SCALE_MIN, display.SCALE_MAX, display.SCALE_STEP),
+        SliderOptions(display.SCALE_MIN, display.SCALE_MAX, display.SCALE_STEP, true),
         "How big the shield display is, in percent." .. note), display)
 end
 
@@ -291,7 +297,7 @@ local function AddControlPage(parent)
     Flag(page, "WTF_CONTROL_PLATE_TIMERS", "Fear timers on nameplates", "control", "plateTimers", true,
         "A thin bar under each feared mob's nameplate that drains with your Fear's time left, so you see which "
             .. "one is about to break; click its nameplate to target it.", RefreshControl)
-    local scale = Proxy(page, "WTF_CONTROL_SCALE", Settings.VarType.Number, "Bar size (%)",
+    local scale = Proxy(page, "WTF_CONTROL_SCALE", Settings.VarType.Number, "Bar size",
         WTF.DEFAULT_CONTROL_SCALE,
         function() return WTF.db.control.scale end,
         function(value)
@@ -299,7 +305,7 @@ local function AddControlPage(parent)
             RefreshControl()
         end)
     Settings.CreateSlider(page, scale,
-        SliderOptions(WTF.CONTROL_SCALE_MIN, WTF.CONTROL_SCALE_MAX, WTF.CONTROL_SCALE_STEP),
+        SliderOptions(WTF.CONTROL_SCALE_MIN, WTF.CONTROL_SCALE_MAX, WTF.CONTROL_SCALE_STEP, true),
         "How big the control bar is, in percent. A change in combat applies when combat ends.")
 end
 
@@ -487,8 +493,45 @@ local function AddTrackerSizes(page, theme)
     end, "Where the mob's name sits in each row."))
 end
 
+-- A section heading, as Blizzard's Controls page adds them
+-- (Blizzard_SettingControls.lua: CreateSettingsListSectionHeaderInitializer).
+local function Heading(layout, name, tooltip)
+    if type(CreateSettingsListSectionHeaderInitializer) == "function" and type(layout) == "table"
+            and type(layout.AddInitializer) == "function" then
+        layout:AddInitializer(CreateSettingsListSectionHeaderInitializer(name, tooltip))
+    end
+end
+
+-- A panel's own settings (author): its color, then its opacity.
+local function AddPanelSection(page, layout, panel, colors)
+    Heading(layout, panel.heading, "Settings for the DoT tracker's " .. panel.name .. " only.")
+    local color = Proxy(page, "WTF_PANEL_COLOR_" .. panel.key:upper(), Settings.VarType.String, colors.label,
+        colors.color,
+        function() return WTF.db.tracker.panelColors[panel.key] end,
+        function(value)
+            WTF.db.tracker.panelColors[panel.key] = WTF.SanitizeColor(value, colors.color)
+            if WTF.ApplyPanelColors then
+                WTF.ApplyPanelColors()
+            end
+        end)
+    Settings.CreateColorSwatch(page, color, panel.key == "list"
+        and "The row border and health fill of the other mobs' rows. It changes at once, also in combat."
+        or "The outline and health fill of the " .. panel.name .. ". It changes at once, also in combat.")
+    local setting = Proxy(page, "WTF_TRACKER_OPACITY_" .. panel.key:upper(), Settings.VarType.Number,
+        panel.label, WTF.DEFAULT_PANEL_OPACITY,
+        function() return WTF.db.tracker.panelOpacity[panel.key] end,
+        function(value) WTF.SetTrackerPanelOpacity(panel.key, value) end)
+    local initializer = Settings.CreateSlider(page, setting,
+        SliderOptions(WTF.PANEL_OPACITY_MIN, WTF.PANEL_OPACITY_MAX, 5, true),
+        "How solid the " .. panel.name .. " is, rows and all, in percent. It changes at once, also in combat.")
+    AddDefaultTick(initializer, WTF.PANEL_OPACITY_MIN, WTF.PANEL_OPACITY_MAX, WTF.DEFAULT_PANEL_OPACITY)
+end
+
+-- Sections (author): General (what every panel shares) first, then one per
+-- panel: Target, Focus, and Others.
 local function AddTrackerPage(parent)
     local page, layout = Settings.RegisterVerticalLayoutSubcategory(parent, TRACKER_TITLE)
+    Heading(layout, "General", "Settings that every DoT tracker panel shares, and the nameplate dots.")
     local theme = Proxy(page, "WTF_TRACKER_THEME", Settings.VarType.String, "Theme", "bars",
         function() return WTF.db.tracker.theme end,
         function(value) WTF.SetTrackerTheme(value) end)
@@ -502,7 +545,7 @@ local function AddTrackerPage(parent)
     local dotsInitializer = Flag(page, "WTF_TRACKER_PLATE_DOTS", "Show DoT dots on nameplates", "tracker",
         "plateDots", false,
         "In combat, a bubble above each hostile nameplate with a dot per DoT you know: colored while it is up, "
-            .. "grey while it is missing. Needs at least one DoT you know.",
+            .. "grey while it is missing. Needs at least one DoT you know. The DoTs page chooses the dots.",
         RefreshPlateDots)
     if type(dotsInitializer.AddModifyPredicate) == "function" then
         dotsInitializer:AddModifyPredicate(function() return WTF.HasTrackableDots() end)
@@ -514,11 +557,8 @@ local function AddTrackerPage(parent)
             WTF.db.tracker.plateDotsOffset = WTF.SanitizePlateDotsOffset(value)
             RefreshPlateDots()
         end)
-    local options = Settings.CreateSliderOptions(WTF.PLATE_DOTS_OFFSET_MIN, WTF.PLATE_DOTS_OFFSET_MAX, 1)
-    if type(MinimalSliderWithSteppersMixin) == "table" and type(options.SetLabelFormatter) == "function" then
-        options:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right)
-    end
-    local offsetInitializer = Settings.CreateSlider(page, offset, options,
+    local offsetInitializer = Settings.CreateSlider(page, offset,
+        SliderOptions(WTF.PLATE_DOTS_OFFSET_MIN, WTF.PLATE_DOTS_OFFSET_MAX, 1),
         "How far above the nameplate the dots sit, to clear other nameplate AddOns.")
     offsetInitializer:SetParentInitializer(dotsInitializer, function()
         return WTF.db.tracker.plateDots and WTF.HasTrackableDots()
@@ -529,39 +569,20 @@ local function AddTrackerPage(parent)
         WTF.DEFAULT_PLATE_DOTS_OPACITY,
         function() return WTF.db.tracker.plateDotsOpacity end,
         function(value) WTF.SetPlateDotsOpacity(value) end)
-    local opacityOptions = Settings.CreateSliderOptions(WTF.PLATE_DOTS_OPACITY_MIN, WTF.PLATE_DOTS_OPACITY_MAX, 5)
-    if type(MinimalSliderWithSteppersMixin) == "table" and type(opacityOptions.SetLabelFormatter) == "function" then
-        opacityOptions:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right,
-            function(value) return string.format("%d%%", value) end)
-    end
-    local opacityInitializer = Settings.CreateSlider(page, opacity, opacityOptions,
+    local opacityInitializer = Settings.CreateSlider(page, opacity,
+        SliderOptions(WTF.PLATE_DOTS_OPACITY_MIN, WTF.PLATE_DOTS_OPACITY_MAX, 5, true),
         "How solid the bubble of DoT dots above each nameplate is, in percent. It changes at once, also in combat.")
     opacityInitializer:SetParentInitializer(dotsInitializer, function()
         return WTF.db.tracker.plateDots and WTF.HasTrackableDots()
     end)
     AddDefaultTick(opacityInitializer, WTF.PLATE_DOTS_OPACITY_MIN, WTF.PLATE_DOTS_OPACITY_MAX,
         WTF.DEFAULT_PLATE_DOTS_OPACITY)
-    for _, panel in ipairs(WTF.TRACKER_PANELS) do
-        local setting = Proxy(page, "WTF_TRACKER_OPACITY_" .. panel.key:upper(), Settings.VarType.Number,
-            panel.label, WTF.DEFAULT_PANEL_OPACITY,
-            function() return WTF.db.tracker.panelOpacity[panel.key] end,
-            function(value) WTF.SetTrackerPanelOpacity(panel.key, value) end)
-        local options = Settings.CreateSliderOptions(WTF.PANEL_OPACITY_MIN, WTF.PANEL_OPACITY_MAX, 5)
-        if type(MinimalSliderWithSteppersMixin) == "table" and type(options.SetLabelFormatter) == "function" then
-            options:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right,
-                function(value) return string.format("%d%%", value) end)
-        end
-        local initializer = Settings.CreateSlider(page, setting, options, "How solid the DoT tracker's "
-            .. panel.label:lower():gsub(" opacity", "") .. " is, rows and all, in percent. It changes at once, "
-            .. "also in combat.")
-        AddDefaultTick(initializer, WTF.PANEL_OPACITY_MIN, WTF.PANEL_OPACITY_MAX, WTF.DEFAULT_PANEL_OPACITY)
-    end
     local health = Proxy(page, "WTF_TRACKER_HEALTH", Settings.VarType.Boolean, "Show mob health", false,
         function() return WTF.db.tracker.health end,
         function(value) WTF.SetTrackerHealth("health", value) end)
     local healthInitializer = Settings.CreateCheckbox(page, health,
-        "A thin health bar under each mob's name in the DoT tracker, also in combat. A change in combat applies "
-            .. "when combat ends.")
+        "Each mob's name line in the DoT tracker is its health bar, in the panel's color, also in combat. "
+            .. "A change in combat applies when combat ends.")
     local healthText = Proxy(page, "WTF_TRACKER_HEALTH_TEXT", Settings.VarType.String, "Health text", "none",
         function() return WTF.db.tracker.healthText end,
         function(value) WTF.SetTrackerHealth("healthText", value) end)
@@ -582,10 +603,16 @@ local function AddTrackerPage(parent)
             WTF.SetTrackerSize(WTF.db.tracker.theme, nil)
         end, "Back to the theme's own sizes and name position.", true))
     end
+    local colors = {}
+    for _, entry in ipairs(WTF.TRACKER_PANEL_COLORS) do
+        colors[entry.key] = entry
+    end
+    for _, panel in ipairs(WTF.TRACKER_PANELS) do
+        AddPanelSection(page, layout, panel, colors[panel.key])
+    end
 end
 
--- One color per slot, shared by the tracker's bars and the nameplate dots, and
--- whether the slot shows as a nameplate dot. Colors apply at once.
+-- One color per slot, shared by the tracker's bars and the nameplate dots.
 local function ApplyColors()
     if WTF.ApplyTrackerColors then
         WTF.ApplyTrackerColors()
@@ -595,31 +622,6 @@ local function ApplyColors()
     end
 end
 
-local function AddColorsPage(parent)
-    local page = Settings.RegisterVerticalLayoutSubcategory(parent, COLORS_TITLE)
-    for _, slot in ipairs(WTF.DOT_SLOTS) do
-        local key = slot.key
-        local color = Proxy(page, "WTF_COLOR_" .. key:upper(), Settings.VarType.String, slot.label, slot.color,
-            function() return WTF.db.tracker.colors[key] end,
-            function(value)
-                WTF.db.tracker.colors[key] = WTF.SanitizeColor(value, slot.color)
-                ApplyColors()
-            end)
-        Settings.CreateColorSwatch(page, color, "The color of " .. slot.label
-            .. " on the tracker's bars and on nameplate dots.")
-        local plate = Proxy(page, "WTF_PLATE_" .. key:upper(), Settings.VarType.Boolean,
-            slot.label .. " on nameplates", slot.plate,
-            function() return WTF.db.tracker.onPlates[key] end,
-            function(value)
-                WTF.db.tracker.onPlates[key] = value == true
-                RefreshPlateDots()
-            end)
-        Settings.CreateCheckbox(page, plate, "Show a " .. slot.label .. " dot in the nameplate bubble.")
-    end
-end
-
--- With Dyre's Buff Reminders 0.3.0 or later installed the page only says that
--- it plays the Nightfall sound.
 local function AddAlertsPage(parent)
     local by = WTF.NightfallStandAside()
     local page, layout = Settings.RegisterVerticalLayoutSubcategory(parent,
@@ -830,6 +832,263 @@ local function CreateAnnouncePage()
     return page
 end
 
+-- DoTs page ------------------------------------------------------------------
+
+-- One row per DoT (author): its icon, its name, whether it shows as a
+-- nameplate dot, and its color. Blizzard's Settings list has no control to
+-- reorder a list, so this is a canvas page whose rows you drag up or down,
+-- as Dyre's Quest Targeting reorders its hit list: a gold line shows where
+-- the row would drop, placed by an OnUpdate set only for the drag.
+local DOTS_ROW_HEIGHT = 30
+local DOTS_ICON_SIZE = 22
+local DOTS_ROW_WIDTH = 420
+local DOTS_PLATE_LEFT = 220
+local DOTS_SWATCH_LEFT = 380
+local DOTS_SWATCH_SIZE = 20
+local DOTS_BUTTON_WIDTH = 128
+local DOTS_BUTTON_HEIGHT = 22
+local DOTS_DRAG_ALPHA = 0.5
+local DOTS_INSERT_HEIGHT = 2
+local PLATES_OFF_TIP = "Turn on Show DoT dots on nameplates on the DoT Tracker page to choose the dots."
+
+local function SetDotOrder(order)
+    WTF.db.tracker.order = WTF.SanitizeDotOrder(order)
+    if WTF.ApplyDotOrder then
+        WTF.ApplyDotOrder()
+    end
+    RefreshPlateDots()
+end
+
+-- The plate switches work only while the dots can show.
+local function PlatesOn()
+    return WTF.db.tracker.plateDots == true and WTF.HasTrackableDots and WTF.HasTrackableDots()
+end
+
+local function Tooltip(owner, text)
+    if type(GameTooltip) ~= "table" then
+        return
+    end
+    GameTooltip:SetOwner(owner, "ANCHOR_RIGHT")
+    GameTooltip:SetText(text, 1, 1, 1, 1, true)
+    GameTooltip:Show()
+end
+
+local function HideTooltip()
+    if type(GameTooltip) == "table" then
+        GameTooltip:Hide()
+    end
+end
+
+local function HexOf(r, g, b)
+    return string.format("ff%02x%02x%02x", math.floor(r * 255 + 0.5), math.floor(g * 255 + 0.5),
+        math.floor(b * 255 + 0.5))
+end
+
+local function SetDotColor(key, value)
+    local default
+    for _, slot in ipairs(WTF.DOT_SLOTS) do
+        if slot.key == key then
+            default = slot.color
+        end
+    end
+    WTF.db.tracker.colors[key] = WTF.SanitizeColor(value, default)
+    ApplyColors()
+end
+
+-- The game's color picker, as the Settings color swatch opens it
+-- (Blizzard_SettingControls.lua: SettingsColorSwatchMixin); Cancel puts the
+-- old color back.
+local function PickColor(row)
+    if type(ColorPickerFrame) ~= "table" or type(ColorPickerFrame.SetupColorPickerAndShow) ~= "function" then
+        return
+    end
+    local key = row.key
+    local r, g, b = WTF.SlotColor(key)
+    ColorPickerFrame:SetupColorPickerAndShow({
+        swatch = row.swatch, r = r, g = g, b = b,
+        swatchFunc = function() SetDotColor(key, HexOf(ColorPickerFrame:GetColorRGB())) end,
+        cancelFunc = function() SetDotColor(key, HexOf(ColorPickerFrame:GetPreviousValues())) end,
+    })
+end
+
+local function CreateDotsPage()
+    local page = CreateFrame("Frame")
+    page.rows = {}
+    local title = Text(page, "GameFontHighlightHuge", DOTS_TITLE)
+    title:SetPoint("TOPLEFT", PAGE_LEFT, -16)
+    local help = Text(page, "GameFontHighlightSmall",
+        "Your DoTs in the order the DoT tracker's rows and the nameplate dots show them, the first one on top "
+            .. "or at the left. Drag a row up or down to move it. A change made in combat reaches the tracker "
+            .. "when combat ends; colors change at once.")
+    help:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -8)
+    help:SetWidth(EDIT_WIDTH)
+    local insert = page:CreateTexture(nil, "OVERLAY")
+    insert:SetColorTexture(GOLD[1], GOLD[2], GOLD[3])
+    insert:SetHeight(DOTS_INSERT_HEIGHT)
+    insert:Hide()
+    page.insert = insert
+
+    -- The gap under the cursor: 0 above the first row to #rows below the
+    -- last, or nil when the cursor leaves the page (a drop there cancels).
+    local function DropSlot()
+        local scale = page:GetEffectiveScale()
+        local x, y = GetCursorPosition()
+        x, y = x / scale, y / scale
+        local left, right, top, bottom = page:GetLeft(), page:GetRight(), page:GetTop(), page:GetBottom()
+        if not (left and right and top and bottom) or x < left or x > right or y > top or y < bottom then
+            return nil
+        end
+        local slot = 0
+        for _, row in ipairs(page.rows) do
+            local rowTop = row:GetTop()
+            if rowTop and rowTop - DOTS_ROW_HEIGHT / 2 > y then
+                slot = slot + 1
+            end
+        end
+        return slot
+    end
+
+    local function PlaceInsertLine()
+        local slot = DropSlot()
+        if not slot then
+            insert:Hide()
+            return
+        end
+        local anchor = page.rows[math.max(slot, 1)]
+        insert:ClearAllPoints()
+        insert:SetPoint("LEFT", anchor, slot == 0 and "TOPLEFT" or "BOTTOMLEFT", 0, 0)
+        insert:SetWidth(DOTS_ROW_WIDTH)
+        insert:Show()
+    end
+
+    local function StartReorder(row)
+        row.reordering = true
+        row:SetAlpha(DOTS_DRAG_ALPHA)
+        row:SetScript("OnUpdate", PlaceInsertLine)
+    end
+
+    -- The gap counts the dragged row itself; a drop next to it changes nothing.
+    local function StopReorder(row)
+        if not row.reordering then
+            return
+        end
+        row.reordering = nil
+        row:SetScript("OnUpdate", nil)
+        row:SetAlpha(1)
+        insert:Hide()
+        local slot = DropSlot()
+        if not slot then
+            return
+        end
+        local from = row.position
+        if slot >= from then
+            slot = slot - 1
+        end
+        if slot + 1 ~= from then
+            local order = {}
+            for index, key in ipairs(WTF.db.tracker.order) do
+                order[index] = key
+            end
+            table.insert(order, slot + 1, table.remove(order, from))
+            SetDotOrder(order)
+        end
+        page:OnRefresh()
+    end
+
+    local previous = help
+    for position = 1, #WTF.DOT_SLOTS do
+        local row = CreateFrame("Button", nil, page)
+        row:SetSize(DOTS_ROW_WIDTH, DOTS_ROW_HEIGHT)
+        row:SetPoint("TOPLEFT", previous, "BOTTOMLEFT", 0, position == 1 and -16 or 0)
+        row.position = position
+        row:RegisterForDrag("LeftButton")
+        row:SetScript("OnDragStart", StartReorder)
+        row:SetScript("OnDragStop", StopReorder)
+        row:SetScript("OnEnter", function(self)
+            Tooltip(self, "Drag up or down to move " .. self.label:GetText() .. ".")
+        end)
+        row:SetScript("OnLeave", HideTooltip)
+        row.icon = row:CreateTexture(nil, "ARTWORK")
+        row.icon:SetSize(DOTS_ICON_SIZE, DOTS_ICON_SIZE)
+        row.icon:SetPoint("LEFT", 0, 0)
+        row.label = Text(row, "GameFontHighlight", "")
+        row.label:SetPoint("LEFT", row.icon, "RIGHT", 8, 0)
+        row.plate = CheckButton(row, "UICheckButtonTemplate", "On nameplates")
+        row.plate:SetPoint("LEFT", DOTS_PLATE_LEFT, 0)
+        row.plate:SetScript("OnClick", function(self)
+            WTF.db.tracker.onPlates[row.key] = self:GetChecked() == true
+            RefreshPlateDots()
+        end)
+        -- A disabled button still shows its tooltip, which says why.
+        row.plate:SetMotionScriptsWhileDisabled(true)
+        row.plate:SetScript("OnEnter", function(self)
+            Tooltip(self, PlatesOn() and ("Show a " .. row.label:GetText() .. " dot in the nameplate bubble.")
+                or PLATES_OFF_TIP)
+        end)
+        row.plate:SetScript("OnLeave", HideTooltip)
+        row.swatch = CreateFrame("Button", nil, row)
+        row.swatch:SetSize(DOTS_SWATCH_SIZE, DOTS_SWATCH_SIZE)
+        row.swatch:SetPoint("LEFT", DOTS_SWATCH_LEFT, 0)
+        local edge = row.swatch:CreateTexture(nil, "BACKGROUND")
+        edge:SetAllPoints()
+        edge:SetColorTexture(GOLD[1], GOLD[2], GOLD[3])
+        row.swatch.color = row.swatch:CreateTexture(nil, "ARTWORK")
+        row.swatch.color:SetPoint("TOPLEFT", 1, -1)
+        row.swatch.color:SetPoint("BOTTOMRIGHT", -1, 1)
+        row.swatch:SetScript("OnClick", function() PickColor(row) end)
+        row.swatch:SetScript("OnEnter", function(self)
+            Tooltip(self, "The color of " .. row.label:GetText() .. " on the tracker's bars and on nameplate dots. "
+                .. "Click to change it.")
+        end)
+        row.swatch:SetScript("OnLeave", HideTooltip)
+        page.rows[position] = row
+        previous = row
+    end
+    local reset = CreateFrame("Button", nil, page, "UIPanelButtonTemplate")
+    reset:SetSize(DOTS_BUTTON_WIDTH, DOTS_BUTTON_HEIGHT)
+    reset:SetPoint("TOPLEFT", previous, "BOTTOMLEFT", 0, -12)
+    reset:SetText("Reset order")
+    reset:SetScript("OnClick", function()
+        SetDotOrder(nil)
+        page:OnRefresh()
+    end)
+    page.reset = reset
+
+    function page:OnRefresh()
+        local platesOn = PlatesOn()
+        for position, slot in ipairs(WTF.OrderedDotSlots()) do
+            local row = self.rows[position]
+            row.key = slot.key
+            row.label:SetText(slot.label)
+            local texture = WTF.TrackerSlotIcon and WTF.TrackerSlotIcon(slot.key)
+            if texture then
+                row.icon:SetTexture(texture)
+            else
+                row.icon:SetColorTexture(WTF.SlotColor(slot.key))
+            end
+            row.plate:SetChecked(WTF.db.tracker.onPlates[slot.key] == true)
+            row.plate:SetEnabled(platesOn)
+            row.plate.label:SetTextColor(platesOn and 1 or 0.5, platesOn and 1 or 0.5, platesOn and 1 or 0.5)
+            row.swatch.color:SetColorTexture(WTF.SlotColor(slot.key))
+        end
+    end
+
+    -- The Settings panel's Defaults button restores this page only: the
+    -- order, the colors, and the nameplate dots.
+    function page:OnDefault()
+        for _, slot in ipairs(WTF.DOT_SLOTS) do
+            WTF.db.tracker.colors[slot.key] = slot.color
+            WTF.db.tracker.onPlates[slot.key] = true
+        end
+        ApplyColors()
+        SetDotOrder(nil)
+        self:OnRefresh()
+    end
+
+    page:SetScript("OnShow", page.OnRefresh)
+    return page
+end
+
 function WTF.InitializeOptions()
     if not HasSettingsAPI() then
         return
@@ -904,7 +1163,9 @@ function WTF.InitializeOptions()
     AddShardPage(category)
     AddStonesPage(category)
     AddTrackerPage(category)
-    AddColorsPage(category)
+    local dotsPage = CreateDotsPage()
+    WTF.dotsPage = dotsPage
+    Settings.RegisterCanvasLayoutSubcategory(category, dotsPage, DOTS_TITLE)
     AddAlertsPage(category)
     AddShieldPage(category)
     AddChimesPage(category)

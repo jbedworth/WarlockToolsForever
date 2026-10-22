@@ -34,13 +34,14 @@ local NAME_LINE = 14
 local BAR_HEADER = 18
 local BAR_LINE_GAP = 2
 -- Mob health (author-approved): the line with the mob's name is its health
--- bar, filled in the panel's color (purple target, red focus, dark grey for
--- the others), at least as wide as the DoTs; the text after the name takes
+-- bar, filled in the panel's color (Panel colors, DoT Colors page), at least
+-- as wide as the DoTs; the text after the name takes
 -- these widths (at 100% text size) from the name's room.
 local HEALTH_ALPHA = 0.8
-local HEALTH_OTHER = {0.33, 0.33, 0.33}
--- Inside the row's border, for a health line that is the whole row.
+-- Inside the row's border, for a health line beside the icons, and its gap
+-- to the nearest icon.
 local HEALTH_INSET = 3
+local HEALTH_ICON_GAP = 2
 local HEALTH_TEXT_WIDTH = {number = 34, percent = 30, both = 70}
 local BAR_BACKGROUND = {0.1, 0.1, 0.1, 0.6}
 -- The pinned rows' outline: a solid line this thick, this far outside the
@@ -50,15 +51,14 @@ local OUTLINE_GAP = 2
 local PINNED_SPACING = OUTLINE + OUTLINE_GAP + 2
 local SLOT_GAP = 6
 local PADDING = 6
--- Seconds a list row stays without a unit to bind (its nameplate out of sight).
+-- Seconds a list row stays without a unit to bind (its nameplate out of
+-- sight), out of combat. In combat it stays until combat ends (player
+-- feedback: nameplates off and on, or a mob out of plate range, lost its row).
 local UNSEEN_SECONDS = 10
 local MAX_NAMEPLATE_UNITS = 40
 local AURA_FILTER = "HARMFUL|PLAYER"
 local CONTAINER_TEMPLATE = "CustomAuraContainerTemplate"
 local BROWN = {0.28, 0.16, 0.07, 0.85}
-local FOCUS_RED = {0.9, 0.1, 0.1}
-local WARLOCK_FALLBACK = {0.53, 0.53, 0.93}
-local IDLE_BORDER = {0.45, 0.35, 0.2}
 local PLACEHOLDER_ALPHA = 0.3
 local DEFAULT_POINT = {"CENTER", "CENTER", -260, 120}
 local SAMPLE_NAMES = {target = "Target (sample)", focus = "Focus (sample)",
@@ -74,7 +74,8 @@ local PINNED = {
 -- spellbook spell with the same name, so Forever's own ranks count too. Banes
 -- are new on Forever and are matched by name only. A pinned slot recasts "cast",
 -- or for families with "lastUsed" the last one you cast (else "cast").
--- Display order (author-approved): Curse, Bane, the other DoTs, then control.
+-- The default display order (author-approved): Curse, Bane, the other DoTs,
+-- then control. The DoT Order page changes it (tracker.order).
 local SLOTS = {
     -- Weakness, Recklessness, Elements, Shadow, Tongues, and Exhaustion. In
     -- client the curse debuff did not match these IDs (Forever reworked
@@ -93,19 +94,13 @@ local SLOTS = {
     {key = "control", lastUsed = "lastControl", cast = 5782, ids = {5782, 6213, 6215, 5484, 17928,
         6789, 17925, 17926, 710, 18647}},
 }
+local SLOT_INDEX = {}
+for index, slot in ipairs(SLOTS) do
+    SLOT_INDEX[slot.key] = index
+end
 
 local tracker = {rows = {}, pinned = {}, casts = {}, spellSlots = {}, known = {}, slotKnown = {},
-    available = false}
-
-local function ClassColor()
-    if type(C_ClassColor) == "table" and type(C_ClassColor.GetClassColor) == "function" then
-        local color = C_ClassColor.GetClassColor("WARLOCK")
-        if color then
-            return color.r, color.g, color.b
-        end
-    end
-    return WARLOCK_FALLBACK[1], WARLOCK_FALLBACK[2], WARLOCK_FALLBACK[3]
-end
+    dead = {}, plates = {}, available = false}
 
 function WTF.CheckTrackerCapabilities()
     if type(C_XMLUtil) ~= "table" or type(C_XMLUtil.GetTemplateInfo) ~= "function" then
@@ -254,25 +249,26 @@ local function SlotIcon(slot)
     end
 end
 
+function WTF.TrackerSlotIcon(key)
+    return SlotIcon(SLOTS[SLOT_INDEX[key]])
+end
+
 local function IsCompact()
     return tracker.theme ~= "bars"
 end
 
--- The slots a row shows, as SLOTS indexes: one for each spell family you
--- know, in both themes (author-approved), or all of them while you know none.
+-- The slots a row shows, as SLOTS indexes in the saved DoT order (DoT Order
+-- page): one for each spell family you know, in both themes (author-
+-- approved), or all of them while you know none.
 local function ShownSlots()
-    local shown = {}
-    for index, slot in ipairs(SLOTS) do
-        if tracker.slotKnown[slot.key] then
-            shown[#shown + 1] = index
+    local shown, all = {}, {}
+    for _, key in ipairs(WTF.db.tracker.order) do
+        all[#all + 1] = SLOT_INDEX[key]
+        if tracker.slotKnown[key] then
+            shown[#shown + 1] = SLOT_INDEX[key]
         end
     end
-    if #shown == 0 then
-        for index in ipairs(SLOTS) do
-            shown[index] = index
-        end
-    end
-    return shown
+    return #shown > 0 and shown or all
 end
 
 -- The current theme's sizes (settings; the defaults are the constants above).
@@ -416,12 +412,18 @@ end
 -- unit frame text uses on this client, EUI_UnitFrames_Text.lua:421-424).
 -- Number and percent are separate texts, so no secret string is formatted.
 -- The name line: its own line across the row (Bars, or a Compact name above
--- or below the icons), or the whole row when the name sits beside the icons.
+-- or below the icons), or the name's column beside the icons.
 local function PlaceHealth(row)
     local bar, where = row.health, Sizes().namePosition
     bar:ClearAllPoints()
-    if IsCompact() and (where == "left" or where == "right") then
+    -- Beside the icons (player request): only the name's column, from the
+    -- row's inner edge to the icons, less a small gap.
+    if IsCompact() and where == "left" then
         bar:SetPoint("TOPLEFT", row, "TOPLEFT", HEALTH_INSET, -HEALTH_INSET)
+        bar:SetPoint("BOTTOMRIGHT", row, "BOTTOMLEFT", PADDING + Sizes().nameWidth - HEALTH_ICON_GAP, HEALTH_INSET)
+        return
+    elseif IsCompact() and where == "right" then
+        bar:SetPoint("TOPLEFT", row, "TOPLEFT", PADDING + SlotsWidth() - SLOT_GAP + HEALTH_ICON_GAP, -HEALTH_INSET)
         bar:SetPoint("BOTTOMRIGHT", row, "BOTTOMRIGHT", -HEALTH_INSET, HEALTH_INSET)
         return
     end
@@ -443,15 +445,6 @@ local function CreateHealth(row, unit)
     local bar = CreateFrame("StatusBar", nil, row)
     bar:SetFrameLevel(level)
     bar:SetStatusBarTexture("Interface\\Buttons\\WHITE8X8")
-    local r, g, b
-    if unit == "target" then
-        r, g, b = ClassColor()
-    elseif unit == "focus" then
-        r, g, b = FOCUS_RED[1], FOCUS_RED[2], FOCUS_RED[3]
-    else
-        r, g, b = HEALTH_OTHER[1], HEALTH_OTHER[2], HEALTH_OTHER[3]
-    end
-    bar:SetStatusBarColor(r, g, b, HEALTH_ALPHA)
     bar:SetMinMaxValues(0, 1)
     bar:Hide()
     row.health = bar
@@ -588,6 +581,19 @@ local function SlotInitializer(row, index, position)
     end
 end
 
+-- A row in its panel's color (Core's TRACKER_PANEL_COLORS): the row border,
+-- the target's or focus's outline, and the health fill. All are WTF's own.
+local function ColorPanel(row)
+    local r, g, b = WTF.PanelColor(row.panelKey or "list")
+    row:SetBackdropBorderColor(r, g, b)
+    if row.outline then
+        row.outline:SetBackdropBorderColor(r, g, b)
+    end
+    if row.health then
+        row.health:SetStatusBarColor(r, g, b, HEALTH_ALPHA)
+    end
+end
+
 local function CreateRow(parent, unit)
     local row = CreateFrame("Frame", nil, parent, "BackdropTemplate")
     -- Which panel's opacity its DoT bars carry.
@@ -597,8 +603,8 @@ local function CreateRow(parent, unit)
         edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border", edgeSize = 10,
         insets = {left = 2, right = 2, top = 2, bottom = 2}})
     row:SetBackdropColor(BROWN[1], BROWN[2], BROWN[3], BROWN[4])
-    row:SetBackdropBorderColor(IDLE_BORDER[1], IDLE_BORDER[2], IDLE_BORDER[3])
     local regions = CreateHealth(row, unit)
+    ColorPanel(row)
     row.name = ScaleFont(regions:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall"))
     PlaceName(row)
     row.name:SetJustifyH("LEFT")
@@ -707,10 +713,55 @@ local function StackOffset(key)
 end
 
 -- Dragging and snapping (Layout.lua, or Dyre's Toolkit): a row drags its section.
+-- Locked, the rows let clicks through to the world. While Ctrl is held (out
+-- of combat, with Dyre's Toolkit) they take the mouse, so a Ctrl-drag moves
+-- a panel freely, as on every Dyre's AddOn's frames (the toolkit's
+-- BeginDrag rule, author-approved; player report: the panels did not move,
+-- as no part of a locked panel took the mouse to start the drag). Event
+-- driven (MODIFIER_STATE_CHANGED), and never changed during a drag, so its
+-- drop always arrives. The pinned rows are secure: out of combat only, and
+-- turned off as combat starts (PLAYER_REGEN_DISABLED comes before the
+-- lockdown).
+local function RowsTakeMouse()
+    return not WTF.db.locked or tracker.ctrlMove == true
+end
+
+local function ApplyRowMouse()
+    if InCombatLockdown() then
+        return
+    end
+    local take = RowsTakeMouse()
+    for _, row in pairs(tracker.pinned) do
+        row:EnableMouse(take)
+    end
+    for _, row in ipairs(tracker.rows) do
+        row:EnableMouse(take)
+    end
+end
+
+local function UpdateCtrlMove(entering)
+    if tracker.dragging then
+        return
+    end
+    local ctrl = not entering and WTF.toolkit ~= nil and WTF.db.locked and not InCombatLockdown()
+        and type(IsControlKeyDown) == "function" and IsControlKeyDown() == true
+    if ctrl ~= (tracker.ctrlMove == true) then
+        tracker.ctrlMove = ctrl or nil
+        ApplyRowMouse()
+    end
+end
+
 local function DragScripts(frame, key)
     frame:RegisterForDrag("LeftButton")
-    frame:SetScript("OnDragStart", function() WTF.BeginDrag(tracker.sections[key]) end)
-    frame:SetScript("OnDragStop", function() WTF.EndDrag(tracker.sections[key]) end)
+    frame:SetScript("OnDragStart", function()
+        tracker.dragging = true
+        WTF.BeginDrag(tracker.sections[key])
+    end)
+    frame:SetScript("OnDragStop", function()
+        tracker.dragging = nil
+        WTF.EndDrag(tracker.sections[key])
+        UpdateCtrlMove()
+    end)
 end
 
 local function CreatePinnedRow(key)
@@ -734,22 +785,14 @@ local function CreatePinnedRow(key)
     end
     row:EnableMouse(true)
     DragScripts(row, key)
-    -- Target: warlock purple; focus: red (author-approved), same outline.
-    local r, g, b
-    if key == "target" then
-        r, g, b = ClassColor()
-    else
-        r, g, b = FOCUS_RED[1], FOCUS_RED[2], FOCUS_RED[3]
-    end
-    row:SetBackdropBorderColor(r, g, b)
     local outline = CreateFrame("Frame", nil, row, "BackdropTemplate")
     local inset = OUTLINE + OUTLINE_GAP
     outline:SetPoint("TOPLEFT", -inset, inset)
     outline:SetPoint("BOTTOMRIGHT", inset, -inset)
     outline:SetBackdrop({edgeFile = "Interface\\Buttons\\WHITE8X8", edgeSize = OUTLINE})
-    outline:SetBackdropBorderColor(r, g, b)
     outline:EnableMouse(false)
     row.outline = outline
+    ColorPanel(row)
     return row
 end
 
@@ -780,7 +823,7 @@ local function ApplyPinnedVisibility()
     local settings = WTF.db.tracker
     for key, row in pairs(tracker.pinned) do
         -- The row itself takes the mouse only to be dragged; its slots always do.
-        row:EnableMouse(not WTF.db.locked)
+        row:EnableMouse(RowsTakeMouse())
         UnregisterStateDriver(row, "visibility")
         if settings.placeholders then
             row:Show()
@@ -805,10 +848,44 @@ local function ReadGUID(unit)
 end
 
 -- The unit token showing this mob now: its nameplate, else target or focus.
+-- Which mob each nameplate token shows, for plates whose GUID cannot be read
+-- (secret, as the client may give in combat; player report: a dotted target
+-- you tabbed away from stayed unbound beside its own plate). Learned from the
+-- plate's GUID when readable, else from UnitIsUnit with your target or focus,
+-- whose GUIDs are readable; a token shows one mob until its plate goes.
+local function LearnPlate(unit)
+    if not UnitExists(unit) then
+        return
+    end
+    local guid = ReadGUID(unit)
+    if guid then
+        tracker.plates[unit] = guid
+        return
+    end
+    for _, known in ipairs({"target", "focus"}) do
+        local same = UnitIsUnit(unit, known)
+        if not WTF.IsSecret(same) and same == true then
+            tracker.plates[unit] = ReadGUID(known) or tracker.plates[unit]
+            return
+        end
+    end
+end
+
+local function LearnPlates()
+    for index = 1, MAX_NAMEPLATE_UNITS do
+        LearnPlate("nameplate" .. index)
+    end
+end
+
 local function FindUnit(guid)
     for index = 1, MAX_NAMEPLATE_UNITS do
         local unit = "nameplate" .. index
         if UnitExists(unit) and ReadGUID(unit) == guid then
+            return unit
+        end
+    end
+    for unit, known in pairs(tracker.plates) do
+        if known == guid and UnitExists(unit) then
             return unit
         end
     end
@@ -825,6 +902,9 @@ local function Bind(row, unit)
         return
     end
     row.boundUnit = wanted
+    if unit then
+        row.held = nil
+    end
     row.container:SetUnit(wanted)
     row.container:UpdateAllAuras()
     UpdateHealth(row)
@@ -838,13 +918,36 @@ end
 local Layout
 
 local function RemoveRow(row)
-    row.guid, row.mobName, row.unseenSince = nil, nil, nil
+    row.guid, row.mobName, row.unseenSince, row.held = nil, nil, nil, nil
     Bind(row, nil)
     Layout()
 end
 
+-- A mob seen dead on any unit (target, focus, mouseover, or a nameplate,
+-- also as its plate goes) loses its row at once, and its GUID is kept until
+-- combat ends, so nothing lists it again (player report: a dying target
+-- showed for a moment as another mob, as its row was bound to its plate).
+local function NoteDeath(unit)
+    if not IsDead(unit) then
+        return
+    end
+    local guid = ReadGUID(unit)
+    if not guid then
+        return
+    end
+    tracker.dead[guid] = true
+    for _, row in ipairs(tracker.rows) do
+        if row.guid == guid then
+            RemoveRow(row)
+        end
+    end
+end
+
 local function ScheduleUnseenCheck()
     C_Timer.After(UNSEEN_SECONDS + 0.1, function()
+        if InCombatLockdown() then
+            return
+        end
         local now = GetTime()
         for _, row in ipairs(tracker.rows) do
             if row.guid and row.unseenSince and now - row.unseenSince >= UNSEEN_SECONDS then
@@ -876,6 +979,37 @@ end
 
 -- Layout -----------------------------------------------------------------------
 
+-- A list not yet dragged hangs below the lowest stacked pinned row the game
+-- shows, as before the panels moved separately (author-approved, player
+-- feedback: an empty focus panel left a row-sized gap); a pinned row that was
+-- dragged away does not count, and a hidden target row keeps its space when
+-- the focus row shows, as the secure focus row cannot move in combat. The list
+-- is a plain frame, so it moves also in combat. While frames are unlocked
+-- every sample shows, so it sits below both; it moves only when its place
+-- changes, so a drag is never broken. Once dragged, it stays where it was put.
+local function FollowPinnedRows()
+    local settings = WTF.db.tracker
+    if settings.sections.list then
+        return
+    end
+    local listTop = 0
+    if not WTF.db.locked then
+        listTop = StackOffset("list")
+    else
+        for _, key in ipairs({"target", "focus"}) do
+            if not settings.sections[key] and IsLiveHostile(PINNED[key].unit) then
+                listTop = math.max(listTop, StackOffset(key) + RowStep() + PINNED_SPACING)
+            end
+        end
+    end
+    if tracker.listTop == listTop then
+        return
+    end
+    tracker.listTop = listTop
+    tracker.list:ClearAllPoints()
+    tracker.list:SetPoint("TOPLEFT", tracker.stack, "TOPLEFT", 0, -listTop)
+end
+
 -- The list leaves out your target and focus, which have pinned rows. Its
 -- frame is one row tall (it snaps by its first row); the other rows hang below.
 function Layout()
@@ -887,10 +1021,12 @@ function Layout()
         end
     end
     local target, focus = ReadGUID("target"), ReadGUID("focus")
+    -- What the pinned rows showed, for the next target or focus change.
+    tracker.shownTarget, tracker.shownFocus = target, focus
     local listed = {}
     for _, row in ipairs(tracker.rows) do
         row.sample = nil
-        if row.guid and row.guid ~= target and row.guid ~= focus then
+        if row.guid and row.guid ~= target and row.guid ~= focus and not row.held then
             listed[#listed + 1] = row
         end
     end
@@ -915,7 +1051,7 @@ function Layout()
     end
     for _, row in ipairs(tracker.rows) do
         -- List rows only display: they take the mouse only to be dragged.
-        row:EnableMouse(not WTF.db.locked)
+        row:EnableMouse(RowsTakeMouse())
         if not used[row] then
             row:Hide()
             if row.sample then
@@ -924,6 +1060,7 @@ function Layout()
         end
     end
     list:SetShown(settings.enabled and #listed > 0)
+    FollowPinnedRows()
 end
 
 -- Casts --------------------------------------------------------------------------
@@ -945,6 +1082,9 @@ local function FindCastUnit(targetName)
 end
 
 local function Track(guid, mobName)
+    if tracker.dead[guid] then
+        return
+    end
     for _, row in ipairs(tracker.rows) do
         if row.guid == guid then
             return
@@ -959,6 +1099,7 @@ local function Track(guid, mobName)
         end
     end
     local row = free or oldest
+    LearnPlates()
     row.guid, row.mobName, row.firstSeen, row.unseenSince = guid, mobName, GetTime(), nil
     Bind(row, FindUnit(guid))
     Layout()
@@ -978,20 +1119,22 @@ local function RememberLastUsed(spellID)
     end
 end
 
+-- The mob a cast lands on is the one it was aimed at as it started (player
+-- feedback, found in client): with same-named mobs and a tab before a cast
+-- with a cast time landed, reading the name at success took the new target,
+-- and the mob really dotted got no row. Only this cast's entry goes.
 local function OnCastSucceeded(castGUID)
     if WTF.IsSecret(castGUID) then
         return
     end
     local cast = tracker.casts[castGUID]
-    tracker.casts = {}
+    tracker.casts[castGUID] = nil
     if not cast then
         return
     end
     RememberLastUsed(cast.spellID)
-    local unit = FindCastUnit(cast.target)
-    local guid = unit and ReadGUID(unit)
-    if guid and UnitCanAttack("player", unit) then
-        Track(guid, cast.target)
+    if cast.guid then
+        Track(cast.guid, cast.target)
     end
 end
 
@@ -1003,7 +1146,13 @@ local function OnCastSent(target, castGUID, spellID)
     -- For /wtf debug_tracker: the last spell cast at a target, tracked or not.
     tracker.lastCast = {spellID = spellID, slot = tracker.spellSlots[spellID]}
     if tracker.spellSlots[spellID] then
-        tracker.casts[castGUID] = {target = target, spellID = spellID}
+        -- The mob now, while the cast starts: target first, as a cast at a name
+        -- usually goes to your target.
+        local unit = FindCastUnit(target)
+        local guid = unit and ReadGUID(unit)
+        local hostile = unit and UnitCanAttack("player", unit)
+        tracker.casts[castGUID] = {target = target, spellID = spellID,
+            guid = guid and not WTF.IsSecret(hostile) and hostile == true and guid or nil}
     end
 end
 
@@ -1034,10 +1183,11 @@ end
 local function ClearAll()
     for _, row in ipairs(tracker.rows) do
         if row.guid then
-            row.guid, row.mobName, row.unseenSince = nil, nil, nil
+            row.guid, row.mobName, row.unseenSince, row.held = nil, nil, nil, nil
             Bind(row, nil)
         end
     end
+    tracker.dead = {}
     Layout()
 end
 
@@ -1101,6 +1251,25 @@ local function KnownSlotsChanged()
         end
     end
     return false
+end
+
+-- A new DoT order (DoT Order page): the engine places slots only as the rows
+-- are built, so they are rebuilt (out of combat; in combat, when it ends).
+function WTF.ApplyDotOrder()
+    if tracker.available then
+        BuildRows()
+    end
+end
+
+-- New panel colors (DoT Colors page): WTF's own border, outline, and health
+-- bar, so every row follows at once, also in combat.
+function WTF.ApplyPanelColors()
+    for _, row in ipairs(tracker.rows) do
+        ColorPanel(row)
+    end
+    for _, row in pairs(tracker.pinned) do
+        ColorPanel(row)
+    end
 end
 
 -- New slot colors (DoT Colors page): the bars take a color only as they are
@@ -1188,7 +1357,14 @@ events:SetScript("OnEvent", function(_, event, unit, first, second, third)
                 BuildRows()
             end
         end
+    elseif event == "MODIFIER_STATE_CHANGED" then
+        UpdateCtrlMove()
+    elseif event == "PLAYER_REGEN_DISABLED" then
+        UpdateCtrlMove(true)
     elseif event == "UNIT_HEALTH" or event == "UNIT_MAXHEALTH" then
+        if event == "UNIT_HEALTH" and not WTF.IsSecret(unit) then
+            NoteDeath(unit)
+        end
         for _, row in ipairs(tracker.rows) do
             if row.guid and row.boundUnit == unit then
                 if event == "UNIT_HEALTH" and IsDead(unit) then
@@ -1212,7 +1388,27 @@ events:SetScript("OnEvent", function(_, event, unit, first, second, third)
             tracker.pinned.focus.container:UpdateAllAuras()
             UpdateHealth(tracker.pinned.focus)
         end
+        local oldTarget, oldFocus = tracker.shownTarget, tracker.shownFocus
+        if event == "NAME_PLATE_UNIT_REMOVED" and not WTF.IsSecret(unit) then
+            NoteDeath(unit)
+            tracker.plates[unit] = nil
+        elseif event == "NAME_PLATE_UNIT_ADDED" and not WTF.IsSecret(unit) then
+            tracker.plates[unit] = nil
+            LearnPlate(unit)
+        else
+            LearnPlates()
+        end
         RefreshBindings()
+        -- Your target or focus just left with no unit showing the mob: as a
+        -- dead mob's plate goes, most likely dead, so it is not listed until
+        -- a unit shows it again (player report).
+        local target, focus = ReadGUID("target"), ReadGUID("focus")
+        for _, row in ipairs(tracker.rows) do
+            if row.guid and (row.guid == oldTarget or row.guid == oldFocus) and row.guid ~= target
+                    and row.guid ~= focus and row.boundUnit == "none" then
+                row.held = true
+            end
+        end
         Layout()
     end
 end)
@@ -1238,6 +1434,7 @@ function Place()
             frame:SetPoint("TOPLEFT", stack, "TOPLEFT", 0, -StackOffset(key))
         end
     end
+    tracker.listTop = not WTF.db.tracker.sections.list and StackOffset("list") or nil
 end
 
 -- A panel's opacity (a setting per panel): the whole section frame, rows and
@@ -1310,8 +1507,9 @@ function WTF.InitializeTracker()
     tracker.theme = WTF.db.tracker.theme
     tracker.shown = ShownSlots()
     tracker.available = true
-    for _, event in ipairs({"PLAYER_REGEN_ENABLED", "PLAYER_TARGET_CHANGED", "PLAYER_FOCUS_CHANGED",
-        "NAME_PLATE_UNIT_ADDED", "NAME_PLATE_UNIT_REMOVED", "SPELLS_CHANGED", "UNIT_HEALTH", "UNIT_MAXHEALTH"}) do
+    for _, event in ipairs({"PLAYER_REGEN_ENABLED", "PLAYER_REGEN_DISABLED", "PLAYER_TARGET_CHANGED",
+        "PLAYER_FOCUS_CHANGED", "NAME_PLATE_UNIT_ADDED", "NAME_PLATE_UNIT_REMOVED", "SPELLS_CHANGED",
+        "UNIT_HEALTH", "UNIT_MAXHEALTH", "MODIFIER_STATE_CHANGED"}) do
         events:RegisterEvent(event)
     end
     for _, event in ipairs({"UNIT_SPELLCAST_SENT", "UNIT_SPELLCAST_SUCCEEDED", "UNIT_SPELLCAST_FAILED",
@@ -1364,10 +1562,28 @@ function WTF.ReportTrackerDebug()
         WTF.Report(string.format("debug_tracker lastCast spell=%d name=%s slot=%s", last.spellID,
             tostring(name), tostring(last.slot)))
     end
+    -- Plates: how many show, how many have a readable GUID, how many WTF knows
+    -- the mob of, and which shows your target.
+    local shown, readable, known, targetPlate = 0, 0, 0, "none"
+    for index = 1, MAX_NAMEPLATE_UNITS do
+        local unit = "nameplate" .. index
+        if UnitExists(unit) then
+            shown = shown + 1
+            readable = readable + (ReadGUID(unit) and 1 or 0)
+            known = known + (tracker.plates[unit] and 1 or 0)
+            local same = UnitIsUnit(unit, "target")
+            if not WTF.IsSecret(same) and same == true then
+                targetPlate = unit
+            end
+        end
+    end
+    WTF.Report(string.format("debug_tracker plates shown=%d readableGUID=%d known=%d targetPlate=%s targetGUID=%s",
+        shown, readable, known, targetPlate, tostring(ReadGUID("target") ~= nil)))
     for index, row in ipairs(tracker.rows) do
         if row.guid then
-            WTF.Report(string.format("debug_tracker row %d name=%s unit=%s unseen=%s", index,
-                tostring(row.mobName), tostring(row.boundUnit), tostring(row.unseenSince ~= nil)))
+            WTF.Report(string.format("debug_tracker row %d name=%s unit=%s unseen=%s held=%s", index,
+                tostring(row.mobName), tostring(row.boundUnit), tostring(row.unseenSince ~= nil),
+                tostring(row.held == true)))
         end
     end
 end

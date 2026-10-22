@@ -45,6 +45,8 @@ Per-file changelogs need no manual text: each CI upload uses the version's
 - **Mob health on each row**: the name line becomes a health bar in the panel's color, with the number, the percent, or both.
 - **Sizes for each look**: icon size, name width, text size, and name position; bar width and line height for Bars.
 - **Opacity for each panel**, and for the nameplate DoT dots.
+- **Your DoT order**: drag your DoTs into the order you cast them, on the rows and on the nameplate dots.
+- **Panel colors**: choose the color of the target, focus, and other-mobs panels and their health bars.
 
 ### Soul Shards, handled
 - Set a shard limit (it matches your soul bags by default). **Extra shards from Drain Soul and Shadowburn are deleted for you.**

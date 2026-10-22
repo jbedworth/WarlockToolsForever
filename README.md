@@ -146,9 +146,12 @@ your zone.
 
 ## DoT tracker
 
-Timers for several mobs at once, in this order: your Curse (whichever one is
-up), your Bane (Agony, Doom, or Havoc), Corruption, Immolate, Siphon Life, and
-Fear and control (Fear, Howl of Terror, Death Coil, Banish). Each live slot shows the spell's icon, a countdown,
+Timers for several mobs at once, by default in this order: your Curse
+(whichever one is up), your Bane (Agony, Doom, or Havoc), Corruption,
+Immolate, Siphon Life, and Fear and control (Fear, Howl of Terror, Death Coil,
+Banish). Put them in your own order on the **DoTs** settings page: drag a
+row up or down, and **Reset order** puts back the default. The nameplate dots
+use the same order. Each live slot shows the spell's icon, a countdown,
 a sweep, and a bar that drains as the spell runs out; a missing or expired
 spell shows as a dim icon, so you can see what to recast.
 
@@ -159,8 +162,10 @@ spell shows as a dim icon, so you can see what to recast.
 - **Click a slot in either row** to cast that spell on your target or focus.
   The Bane and Curse slots recast the last Bane or Curse you used.
 - **Below: every other mob you DoTed**, up to eight. Your target and focus are
-  not listed twice. A mob leaves the list when it dies, when it is out of
-  sight for 10 seconds, or when combat ends. These rows show timers only; the
+  not listed twice. A mob leaves the list when it dies, when combat ends, or,
+  out of combat, when it is out of sight for 10 seconds. In combat, a mob
+  whose nameplate goes away (out of range, or nameplates off) keeps its row,
+  and its timers come back with its nameplate. These rows show timers only; the
   game does not let AddOns target or cast on a mob picked from a list.
 - **Two themes** on the DoT Tracker settings page. Both show only spells you
   know, as do the nameplate dots.
@@ -178,29 +183,46 @@ spell shows as a dim icon, so you can see what to recast.
   was. A change in combat applies when combat ends.
 - **Mob health** (off by default): **Show mob health** turns the line with each
   mob's name into its health bar, in the panel's color (purple for your
-  target, red for your focus, dark grey for the others), also in combat, and **Health text** adds its number,
-  its percent, or both after the name.
+  target, red for your focus, dark grey for the others, by default), also in
+  combat, and **Health text** adds its number, its percent, or both after the
+  name. With a Compact name left or right of the icons, the fill is only
+  behind the name.
 - **Colors:** each slot's bar has its own color, the same as its nameplate
   dot: Curse purple, Bane red, Corruption white, Immolate orange, Siphon Life
-  green, Fear and control yellow. Change them on the **DoT Colors** settings
-  page.
+  green, Fear and control yellow. Change them with the swatches on the
+  **DoTs** settings page.
+- **Settings sections:** the DoT Tracker page starts with **General** (what
+  every panel shares), then **Target**, **Focus**, and **Others**, each with
+  its panel's color (the outline of your target's and focus's rows, the other
+  mobs' row border, and their health fill) and its opacity.
 - To place the tracker, unlock your frames (see
   [Moving frames](#moving-frames)): it shows sample rows to drag it by. Your
   target's row, your focus's row, and the list of other mobs each move on
   their own: drag each by its rows. They start stacked as before, and
-  `/wtf reset` stacks them again. **Target panel opacity**, **Focus panel
-  opacity**, and **Other mobs panel opacity** on the DoT Tracker page make each
-  one see-through on its own (100%, fully solid, by default).
+  `/wtf reset` stacks them again. Until you move it, the list hangs under the
+  target and focus rows that show, with no gap for a hidden one. **Target panel opacity**, **Focus panel
+  opacity**, and **Other mobs panel opacity** in their sections of the DoT
+  Tracker page make each one see-through on its own (100%, fully solid, by
+  default).
 - The timers come from Blizzard's own aura display, which reads each mob's
   nameplate. Turn on enemy nameplates so listed mobs keep their timers.
+- In combat the game can hide which nameplate belongs to which mob. WTF then
+  learns a mob's nameplate while that mob is your target or focus, and keeps
+  it while the nameplate stays up. A mob you DoT without targeting or
+  focusing it (for example with a mouseover macro) can show in the list
+  without its timers or health. Target or focus it once to fix that row; at
+  the end of combat the list clears. A mouseover cast on a mob with the same
+  name as your target can also count for your target.
 
 ### DoT dots on nameplates
 
 An optional, quick-glance view, off by default: turn on **Show DoT dots on
 nameplates** on the DoT Tracker settings page. In combat, a small bubble above
-each hostile nameplate holds one dot per DoT you know, in the slot colors. A
-dot is grey while that DoT is missing. The **DoT Colors** page chooses which
-slots appear as dots (Fear and control is off by default). Raise the bubble with **Dot height
+each hostile nameplate holds one dot per DoT you know, in the slot colors and
+the DoT order. A
+dot is grey while that DoT is missing. **On nameplates** on the **DoTs** page
+chooses which slots appear as dots (all of them by default); it is greyed out
+while the dots are off. Raise the bubble with **Dot height
 above nameplates** if it overlaps your nameplate AddOn, and make it see-through
 with **Nameplate dot opacity** (100%, fully solid, by default).
 
@@ -316,6 +338,8 @@ With Dyre's Toolkit, unlocking unlocks every Dyre's AddOn's frames, WTF's
 frames also snap to theirs, and the unlock switch and the grid are the
 toolkit's: they are on the **Dyre's AddOns** page, and WTF's page has none of
 its own. `/wtf unlock` and `/wtf lock` still work.
+While frames are locked, hold **Ctrl** and drag a frame (also a DoT tracker
+panel) to move just that one, freely; not in combat.
 
 ## Commands
 

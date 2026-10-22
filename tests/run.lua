@@ -233,10 +233,6 @@ local function fixture(options)
     env.Enum.SpellBookSpellBank = {Player = 0, Pet = 1}
     env.Enum.SpellBookItemType = {None = 0, Spell = 1, FutureSpell = 2, PetAction = 3, Flyout = 4}
     env.Enum.StatusBarTimerDirection = {ElapsedTime = 0, RemainingTime = 1}
-    env.C_ClassColor = {GetClassColor = function(class)
-        equal(class, "WARLOCK")
-        return {r = 0.53, g = 0.53, b = 0.93}
-    end}
     env.UnitIsDead = function(unit) return state.units[unit] ~= nil and state.units[unit].dead == true end
     -- Raid markers, by the unit's GUID.
     state.marks = {}
@@ -609,7 +605,17 @@ local function fixture(options)
         local data = state.units[unit]
         if data then return data.name, data.surname end
     end
-    env.UnitGUID = function(unit) return state.units[unit] and state.units[unit].guid end
+    -- A unit with secretPlateGUID has a secret GUID on its nameplate token only,
+    -- as the client may give in combat; its target or focus GUID stays readable.
+    env.UnitGUID = function(unit)
+        local data = state.units[unit]
+        if data and data.secretPlateGUID and unit:match("^nameplate") then
+            local hidden = secret()
+            state.secrets[hidden] = true
+            return hidden
+        end
+        return data and data.guid
+    end
     env.UnitCanAttack = function(_, unit) return state.units[unit] ~= nil and not state.units[unit].friend end
     env.UnitIsUnit = function(a, b) return state.units[a] == state.units[b] end
     -- In client, combat makes index access raise an error for AddOn code.
@@ -746,7 +752,10 @@ local function fixture(options)
                 local page = newCategory(name, parent)
                 page.headings = {}
                 local layout = {}
-                function layout:AddInitializer(heading) page.headings[#page.headings + 1] = heading end
+                function layout:AddInitializer(heading)
+                    heading.position = #page.initializers
+                    page.headings[#page.headings + 1] = heading
+                end
                 return page, layout
             end,
             RegisterCanvasLayoutSubcategory = function(parent, frame, name)
@@ -792,7 +801,9 @@ local function fixture(options)
             end,
             CreateSliderOptions = function(minValue, maxValue, step)
                 local object = {minValue = minValue, maxValue = maxValue, step = step}
-                function object:SetLabelFormatter(label) self.label = label end
+                function object:SetLabelFormatter(label, formatter)
+                    self.label, self.formatter = label, formatter
+                end
                 return object
             end,
             OpenToCategory = function(id) state.opened = id end,
@@ -808,6 +819,7 @@ local function fixture(options)
     env.UIParent = {GetWidth = function() return 1000 end, GetHeight = function() return 800 end,
         GetEffectiveScale = function() return 1 end}
     env.IsShiftKeyDown = function() return state.shift == true end
+    env.IsControlKeyDown = function() return state.ctrl == true end
     local SPOTS = {CENTER = {0.5, 0.5}, BOTTOMLEFT = {0, 0}, BOTTOM = {0.5, 0}, BOTTOMRIGHT = {1, 0},
         LEFT = {0, 0.5}, RIGHT = {1, 0.5}, TOPLEFT = {0, 1}, TOP = {0.5, 1}, TOPRIGHT = {1, 1}}
     -- Screen position of a frame's center, from its last point.
@@ -942,6 +954,7 @@ local function fixture(options)
         function object:GetText() return self.text end
         function object:SetTexture(texture) self.texture = texture end
         function object:SetChecked(value) self.checked = value == true end
+        function object:SetEnabled(value) self.enabled = value == true end
         function object:GetChecked() return self.checked end
         function object:CreateTexture() return widget("Texture", nil, self) end
         function object:SetDesaturated(value) self.desaturated = value == true end
@@ -2899,7 +2912,7 @@ test("with Dyre's Toolkit WTF's settings sit under Dyre's AddOns, three levels d
     local page = state.categories["Warlock Tools Forever"]
     equal(page.parent, home)
     equal(state.registered, nil, "no top-level page of its own")
-    for _, name in ipairs({"Soul Shards", "Stones", "DoT Tracker", "DoT Colors", "Alerts", "Shield",
+    for _, name in ipairs({"Soul Shards", "Stones", "DoT Tracker", "DoTs", "Alerts", "Shield",
         "Cooldown Chimes", "Control", "Announce"}) do
         equal(state.categories[name].parent, page, name .. " is under WTF's page")
     end
@@ -3025,6 +3038,24 @@ local function initializerFor(page, variable)
     end
 end
 
+test("size sliders are labeled without (%): their values show the % sign", function()
+    local state = fixture()
+    for _, case in ipairs({{"Shield", "WTF_SHIELD_SCALE", "Display size"},
+        {"Control", "WTF_CONTROL_SCALE", "Bar size"}}) do
+        local slider = initializerFor(state.categories[case[1]], case[2])
+        equal(slider.setting.name, case[3])
+        equal(slider.options.label, "right")
+        equal(slider.options.formatter(80), "80%", case[3] .. ": the value shows its % sign")
+    end
+    for _, category in pairs(state.categories) do
+        for _, initializer in ipairs(category.initializers) do
+            local name = initializer.setting and initializer.setting.name
+            if type(name) == "string" then
+                equal(name:find("(%)", 1, true), nil, name .. ": no (%) in a label")
+            end
+        end
+    end
+end)
 test("the shield break sound comes from Dyre's Sounds, chosen under its switch", function()
     local state = fixture()
     equal(state.wtf.db.shield.breakSoundKey, "fadingslow", "the default")
@@ -4234,20 +4265,27 @@ local function dot(state, spellID, target)
     state.emit("UNIT_SPELLCAST_SUCCEEDED", "player", "dot-" .. spellID .. target, spellID)
 end
 
+local function near3(actual, r, g, b, context)
+    for index, expected in ipairs({r, g, b}) do
+        if math.abs(actual[index] - expected) > 0.002 then
+            error((context or "color") .. ": expected " .. r .. "," .. g .. "," .. b .. ", got "
+                .. tostring(actual[1]) .. "," .. tostring(actual[2]) .. "," .. tostring(actual[3]), 2)
+        end
+    end
+end
+
 test("the tracker has pinned target and focus rows and eight list rows of engine slots", function()
     local state = trackerFixture()
     equal(state.targetRow.container.unit, "target")
     equal(state.focusRow.container.unit, "focus")
-    equal(state.targetRow.backdropBorder[1], 0.53, "warlock purple")
-    equal(state.targetRow.backdropBorder[3], 0.93)
+    near3(state.targetRow.backdropBorder, 0x87 / 255, 0x87 / 255, 0xed / 255, "warlock purple")
     equal(state.focusRow.outline.backdrop.edgeSize, 3, "the focus row has the same outline")
-    equal(state.focusRow.outline.backdropBorder[1], 0.9, "in red")
-    equal(state.focusRow.outline.backdropBorder[2], 0.1)
+    near3(state.focusRow.outline.backdropBorder, 0xe6 / 255, 0x1a / 255, 0x1a / 255, "in red")
     equal(state.focusRow.outline.points[1][2], -5)
     local outline = state.targetRow.outline
     equal(outline.backdrop.edgeSize, 3, "a solid 3-pixel target outline")
     equal(outline.backdrop.edgeFile, "Interface\\Buttons\\WHITE8X8")
-    equal(outline.backdropBorder[1], 0.53)
+    near3(outline.backdropBorder, 0x87 / 255, 0x87 / 255, 0xed / 255)
     equal(outline.points[1][2], -5, "drawn outside the row")
     equal(state.focusRow.points[1][5], nil, "the focus row tops its own section")
     equal(state.focusAnchor.points[#state.focusAnchor.points][5], -(ROW_STEP + TARGET_SPACING),
@@ -4327,7 +4365,44 @@ test("spellbook ranks with a tracked name join the slot, Banes by name", functio
     state.emit("UNIT_SPELLCAST_SENT", "player", "Boar", "c2", 990009)
     state.clear()
     state.slash("debug_tracker")
-    equal(state.last(), "WTF: debug_tracker lastCast spell=990009 name=nil slot=nil")
+    equal(state.messages[#state.messages - 1], "WTF: debug_tracker lastCast spell=990009 name=nil slot=nil")
+    equal(state.last(), "WTF: debug_tracker plates shown=2 readableGUID=2 known=0 targetPlate=none targetGUID=true",
+        "then the plates: shown, readable, known, and your target's")
+end)
+test("a cast lands on the mob it started on, also with same-named mobs and a tab mid-cast", function()
+    -- Player feedback: with several Thistle Bears, a dotted bear got no row.
+    local state = trackerFixture({units = {
+        target = {name = "Thistle Bear", guid = "Creature-5"},
+        nameplate5 = {name = "Thistle Bear", guid = "Creature-5"},
+        nameplate6 = {name = "Thistle Bear", guid = "Creature-6"},
+    }})
+    state.emit("UNIT_SPELLCAST_SENT", "player", "Thistle Bear", "cast-imm", 348)
+    -- Immolate is still casting: tab to the other bear.
+    state.units.target = state.units.nameplate6
+    state.emit("PLAYER_TARGET_CHANGED")
+    state.emit("UNIT_SPELLCAST_SUCCEEDED", "player", "cast-imm", 348)
+    local rows = shownRows(state)
+    equal(#rows, 1, "the first bear is listed")
+    equal(rows[1].guid, "Creature-5", "the bear the cast started on")
+    equal(rows[1].container.unit, "nameplate5")
+    -- Now an instant on the new target.
+    state.emit("UNIT_SPELLCAST_SENT", "player", "Thistle Bear", "cast-cor", 172)
+    state.emit("UNIT_SPELLCAST_SUCCEEDED", "player", "cast-cor", 172)
+    state.units.target = state.units.nameplate5
+    state.emit("PLAYER_TARGET_CHANGED")
+    rows = shownRows(state)
+    equal(#rows, 1)
+    equal(rows[1].guid, "Creature-6", "the second bear, once it is no longer your target")
+end)
+test("a cast's success drops only its own pending cast", function()
+    local state = trackerFixture()
+    state.emit("UNIT_SPELLCAST_SENT", "player", "Wolf", "cast-a", 172)
+    state.emit("UNIT_SPELLCAST_SENT", "player", "Boar", "cast-b", 348)
+    state.emit("UNIT_SPELLCAST_SUCCEEDED", "player", "cast-b", 348)
+    state.emit("UNIT_SPELLCAST_SUCCEEDED", "player", "cast-a", 172)
+    local rows = shownRows(state)
+    equal(#rows, 1)
+    equal(rows[1].name.text, "Wolf", "the earlier cast still landed")
 end)
 test("your target has the pinned row; other DoTed mobs are listed below it", function()
     local state = trackerFixture()
@@ -4339,7 +4414,7 @@ test("your target has the pinned row; other DoTed mobs are listed below it", fun
     equal(rows[1].name.text, "Wolf")
     equal(rows[1].container.unit, "nameplate4")
     equal(state.list.shown, true)
-    equal(listOffset(state), -2 * (ROW_STEP + TARGET_SPACING), "the list keeps its place below both pinned rows")
+    equal(listOffset(state), -(ROW_STEP + TARGET_SPACING), "below the target row and its outline")
     equal(state.targetRow.name.text, "Boar")
 end)
 test("tabbing moves the pinned row; the old target joins the list", function()
@@ -4354,7 +4429,7 @@ test("tabbing moves the pinned row; the old target joins the list", function()
     equal(state.targetRow.name.text, "Wolf")
     equal(state.targetRow.container.updates > 1, true, "the target row refreshes")
 end)
-test("a focus gets its pinned row; the list stays where it is", function()
+test("a focus gets its pinned row; a list not yet dragged follows the pinned rows", function()
     local state = trackerFixture({units = {
         target = {name = "Boar", guid = "Creature-1"},
         nameplate3 = {name = "Boar", guid = "Creature-1"},
@@ -4374,10 +4449,15 @@ test("a focus gets its pinned row; the list stays where it is", function()
     equal(listOffset(state), -2 * (ROW_STEP + TARGET_SPACING))
     state.units.target = nil
     state.emit("PLAYER_TARGET_CHANGED")
-    equal(listOffset(state), -2 * (ROW_STEP + TARGET_SPACING), "a section stays where it was placed")
+    equal(listOffset(state), -2 * (ROW_STEP + TARGET_SPACING),
+        "the secure focus row cannot move, so the list stays below it")
     state.units.focus = nil
     state.emit("PLAYER_FOCUS_CHANGED")
-    equal(listOffset(state), -2 * (ROW_STEP + TARGET_SPACING), "also with no pinned row")
+    equal(listOffset(state), 0, "with no pinned row the list moves to the top: no gap")
+    state.wtf.db.tracker.sections.list = {point = "CENTER", relativePoint = "BOTTOMLEFT", x = 400, y = 300}
+    state.units.focus = state.units.nameplate4
+    state.emit("PLAYER_FOCUS_CHANGED")
+    equal(listOffset(state), 0, "a list you dragged stays where you put it")
 end)
 test("list rows follow nameplates and fall back to target or focus", function()
     local state = trackerFixture()
@@ -4403,6 +4483,163 @@ test("a mob out of sight for ten seconds leaves the list", function()
     state.runTimers()
     equal(#shownRows(state), 0)
     equal(state.list.shown, false)
+end)
+test("in combat, a mob with no nameplate keeps its row until combat ends", function()
+    local state = trackerFixture()
+    state.units.nameplate5 = {name = "Bear", guid = "Creature-5"}
+    dot(state, 172, "Wolf")
+    dot(state, 172, "Bear")
+    state.combat = true
+    -- Nameplates off (V): every plate goes.
+    local wolf, bear = state.units.nameplate4, state.units.nameplate5
+    state.units.nameplate4, state.units.nameplate5 = nil, nil
+    state.emit("NAME_PLATE_UNIT_REMOVED", "nameplate4")
+    state.emit("NAME_PLATE_UNIT_REMOVED", "nameplate5")
+    equal(#shownRows(state), 2)
+    equal(shownRows(state)[1].container.unit, "none", "no unit: no auras to show")
+    state.now = state.now + 60
+    state.runTimers()
+    equal(#shownRows(state), 2, "both rows stay in combat")
+    -- Nameplates on again: each row binds back by its mob.
+    state.units.nameplate6, state.units.nameplate7 = bear, wolf
+    state.emit("NAME_PLATE_UNIT_ADDED", "nameplate6")
+    state.emit("NAME_PLATE_UNIT_ADDED", "nameplate7")
+    local bound = {}
+    for _, row in ipairs(shownRows(state)) do bound[row.container.unit] = row.mobName end
+    equal(bound.nameplate6, "Bear")
+    equal(bound.nameplate7, "Wolf")
+    -- A plate out of range, then combat ends: the list clears as before.
+    state.units.nameplate6 = nil
+    state.emit("NAME_PLATE_UNIT_REMOVED", "nameplate6")
+    state.now = state.now + 30
+    state.runTimers()
+    equal(#shownRows(state), 2, "out of plate range in combat: kept")
+    state.combat = false
+    state.emit("PLAYER_REGEN_ENABLED")
+    equal(#shownRows(state), 0, "combat ended: cleared")
+end)
+test("a dotted target you tab away from binds to its nameplate, also when plate GUIDs are secret", function()
+    for _, hidden in ipairs({false, true}) do
+        local state = trackerFixture({db = {tracker = {health = true}}})
+        local ravager = {name = "Young Black Ravager", guid = "Creature-7", secretPlateGUID = hidden,
+            health = 300, maxHealth = 1000}
+        local blade = {name = "Defias Night Blade", guid = "Creature-8", secretPlateGUID = hidden}
+        state.units.nameplate5, state.units.nameplate6 = ravager, blade
+        state.emit("NAME_PLATE_UNIT_ADDED", "nameplate5")
+        state.emit("NAME_PLATE_UNIT_ADDED", "nameplate6")
+        state.units.target = ravager
+        state.emit("PLAYER_TARGET_CHANGED")
+        state.combat = true
+        dot(state, 172, "Young Black Ravager")
+        state.units.target = blade
+        state.emit("PLAYER_TARGET_CHANGED")
+        local rows = shownRows(state)
+        local context = hidden and "secret plate GUIDs" or "readable plate GUIDs"
+        equal(#rows, 1, context .. ": the Ravager is listed")
+        equal(rows[1].mobName, "Young Black Ravager")
+        equal(rows[1].container.unit, "nameplate5", context .. ": bound to its own plate, with its timers")
+        equal(rows[1].health.shown, true, context .. ": and its health")
+        state.units.nameplate5 = nil
+        state.emit("NAME_PLATE_UNIT_REMOVED", "nameplate5")
+        state.units.nameplate5 = blade
+        state.emit("NAME_PLATE_UNIT_ADDED", "nameplate5")
+        equal(shownRows(state)[1].container.unit, "none", context .. ": a reused token is not the Ravager's")
+    end
+end)
+test("a target that dies and is cleared never shows as another mob, even for a moment", function()
+    local state = trackerFixture()
+    dot(state, 172, "Boar")
+    equal(#shownRows(state), 0, "your target is not listed")
+    local shows = 0
+    for _, row in ipairs(listRows(state)) do
+        local show = row.Show
+        row.Show = function(self) shows = shows + 1; show(self) end
+    end
+    -- Its plate does not say it is dead (or says it too late); the target does.
+    state.units.target.dead = true
+    state.emit("UNIT_HEALTH", "target")
+    state.units.target = nil
+    state.emit("PLAYER_TARGET_CHANGED")
+    equal(#shownRows(state), 0, "no Other row")
+    equal(shows, 0, "not even for a frame")
+    state.units.target = {name = "Boar", guid = "Creature-1"}
+    dot(state, 172, "Boar")
+    state.units.target = nil
+    state.emit("PLAYER_TARGET_CHANGED")
+    equal(#shownRows(state), 0, "a late cast on the dead mob does not list it again")
+    state.emit("PLAYER_REGEN_ENABLED")
+    state.units.target = {name = "Boar", guid = "Creature-1"}
+    dot(state, 172, "Boar")
+    state.units.target = nil
+    state.emit("PLAYER_TARGET_CHANGED")
+    equal(#shownRows(state), 1, "after combat the GUID is forgotten")
+end)
+test("a target whose plate went before it was cleared is not listed until a unit shows it", function()
+    local state = trackerFixture()
+    dot(state, 172, "Boar")
+    local plate = state.units.nameplate3
+    state.units.nameplate3 = nil
+    state.emit("NAME_PLATE_UNIT_REMOVED", "nameplate3")
+    equal(#shownRows(state), 0, "still your target")
+    state.units.target = nil
+    state.emit("PLAYER_TARGET_CHANGED")
+    equal(#shownRows(state), 0, "its plate went with it, most likely dead: not listed")
+    state.units.nameplate5 = plate
+    state.emit("NAME_PLATE_UNIT_ADDED", "nameplate5")
+    equal(#shownRows(state), 1, "alive after all: listed once a plate shows it")
+    equal(shownRows(state)[1].container.unit, "nameplate5")
+end)
+test("a mob seen dead as its plate goes leaves the list at once", function()
+    local state = trackerFixture()
+    dot(state, 172, "Wolf")
+    equal(#shownRows(state), 1)
+    state.units.nameplate4.dead = true
+    state.emit("NAME_PLATE_UNIT_REMOVED", "nameplate4")
+    state.units.nameplate4 = nil
+    equal(#shownRows(state), 0)
+    state.units.mouseover = {name = "Wolf", guid = "Creature-2"}
+    dot(state, 172, "Wolf")
+    equal(#shownRows(state), 0, "a late cast on it: remembered as dead until combat ends")
+end)
+test("with Dyre's Toolkit, locked panels take the mouse only while Ctrl is held, out of combat", function()
+    local state = trackerFixture({toolkit = true})
+    dot(state, 172, "Wolf")
+    local target, focus, list = pinnedRow(state, "target"), pinnedRow(state, "focus"), shownRows(state)[1]
+    local function mouse()
+        return not target.mouseDisabled, not focus.mouseDisabled, not list.mouseDisabled
+    end
+    equal(state.wtf.db.locked, true)
+    equal(select(1, mouse()) or select(2, mouse()) or select(3, mouse()), false, "locked: clicks pass through")
+    state.ctrl = true
+    state.emit("MODIFIER_STATE_CHANGED", "LCTRL", 1)
+    local a, b, c = mouse()
+    equal(a and b and c, true, "Ctrl held: every panel takes the mouse")
+    target.scripts.OnDragStart(target)
+    local call = state.toolkit.calls[#state.toolkit.calls]
+    equal(call[1], "BeginDrag")
+    equal(call[2], state.anchor, "the toolkit moves the target panel (its free move while locked)")
+    state.ctrl = false
+    state.emit("MODIFIER_STATE_CHANGED", "LCTRL", 0)
+    equal(not target.mouseDisabled, true, "a drag keeps the mouse until its drop")
+    target.scripts.OnDragStop(target)
+    equal(state.toolkit.calls[#state.toolkit.calls][1], "EndDrag")
+    equal(target.mouseDisabled, true, "then clicks pass through again")
+    -- Combat starts with Ctrl held: the secure rows let go first.
+    state.ctrl = true
+    state.emit("MODIFIER_STATE_CHANGED", "LCTRL", 1)
+    state.emit("PLAYER_REGEN_DISABLED")
+    state.combat = true
+    equal(target.mouseDisabled, true, "off as combat starts")
+    state.emit("MODIFIER_STATE_CHANGED", "LCTRL", 1)
+    equal(target.mouseDisabled, true, "never in combat")
+    equal(list.mouseDisabled, true)
+end)
+test("without Dyre's Toolkit, Ctrl does not change the locked panels", function()
+    local state = trackerFixture()
+    equal(state.wtf.db.locked, true)
+    state.ctrl = true
+    state.emit("MODIFIER_STATE_CHANGED", "LCTRL", 1)
+    equal(pinnedRow(state, "target").mouseDisabled, true)
 end)
 test("a dead mob leaves the list, and leaving combat clears it", function()
     local units = {target = {name = "Boar", guid = "Creature-1"}}
@@ -4516,7 +4753,7 @@ test("the three sections stack where the one tracker frame was, so nothing moves
         local stack = state.anchor.points[#state.anchor.points][2]
         equal(state.anchor.points[#state.anchor.points][5], 0, "the target on top")
         equal(state.focusAnchor.points[#state.focusAnchor.points][2], stack, "the same stack")
-        equal(listOffset(state), -2 * (ROW_STEP + TARGET_SPACING))
+        equal(listOffset(state), -(ROW_STEP + TARGET_SPACING), "the list below your target's row")
         local x, y = state.absCenter(stack)
         if saved then
             equal(x, 640, "an old saved tracker place becomes the stack")
@@ -4629,17 +4866,33 @@ end)
 
 -- Slot colors ----------------------------------------------------------------------
 
-local function near3(actual, r, g, b, context)
-    for index, expected in ipairs({r, g, b}) do
-        if math.abs(actual[index] - expected) > 0.002 then
-            error((context or "color") .. ": expected " .. r .. "," .. g .. "," .. b .. ", got "
-                .. tostring(actual[1]) .. "," .. tostring(actual[2]) .. "," .. tostring(actual[3]), 2)
-        end
+local function barColor(row, index)
+    return row.container.slots[index].button.display.bar.barColor
+end
+
+-- The DoTs page, refreshed as when it shows, and its row for a slot.
+local function dotsPage(state)
+    local page = state.categories.DoTs.frame
+    page:OnRefresh()
+    return page
+end
+
+local function dotsRow(page, key)
+    for _, row in ipairs(page.rows) do
+        if row.key == key then return row end
     end
 end
 
-local function barColor(row, index)
-    return row.container.slots[index].button.display.bar.barColor
+-- The game's color picker: a click on a row's swatch opens it, then the
+-- player picks a color (or cancels).
+local function pickColor(state, row, r, g, b, cancel)
+    local picker = {}
+    function picker:SetupColorPickerAndShow(info) self.info = info end
+    function picker:GetColorRGB() return r, g, b end
+    function picker:GetPreviousValues() return self.info.r, self.info.g, self.info.b end
+    state.env.ColorPickerFrame = picker
+    row.swatch.scripts.OnClick(row.swatch)
+    if cancel then picker.info.cancelFunc() else picker.info.swatchFunc() end
 end
 
 test("each slot has a default color, used by the tracker's bars", function()
@@ -4656,8 +4909,9 @@ test("a new color applies at once to bars and nameplate dots", function()
     local state = trackerFixture({db = {tracker = {plateDots = true}},
         units = {nameplate1 = {name = "Boar", guid = "Creature-1"}}})
     state.combat = true
-    state.settings.WTF_COLOR_CORRUPTION:SetValue("ff00ff00")
-    equal(state.wtf.db.tracker.colors.corruption, "ff00ff00")
+    local row = dotsRow(dotsPage(state), "corruption")
+    pickColor(state, row, 0, 1, 0)
+    equal(state.wtf.db.tracker.colors.corruption, "ff00ff00", "the DoTs page's swatch")
     near3(barColor(pinnedRow(state, "focus"), 3), 1, 1, 1, "the engine's bars change only as the rows are built")
     state.combat = false
     state.emit("PLAYER_REGEN_ENABLED")
@@ -4668,8 +4922,10 @@ test("a new color applies at once to bars and nameplate dots", function()
         if frame.colored and frame.colored.corruption then bubble = frame end
     end
     near3(bubble.colored.corruption.color, 0, 1, 0, "the nameplate dot")
-    state.settings.WTF_COLOR_CORRUPTION:SetValue("not a color")
-    equal(state.wtf.db.tracker.colors.corruption, "ffffffff", "invalid values become the default")
+    dotsPage(state)
+    near3(row.swatch.color.color, 0, 1, 0, "the swatch shows it")
+    pickColor(state, row, 1, 0, 0, true)
+    equal(state.wtf.db.tracker.colors.corruption, "ff00ff00", "Cancel puts the old color back")
 end)
 test("slots still on the old default colors move to the new ones, once", function()
     local old = trackerFixture({db = {tracker = {colors = {curse = "ff4d8cff", corruption = "ff9e40d9",
@@ -4689,19 +4945,212 @@ test("saved colors and nameplate choices are repaired on load", function()
     equal(state.wtf.db.tracker.onPlates.control, true)
     equal(state.wtf.db.tracker.onPlates.curse, true, "not a boolean: the default")
     equal(state.wtf.db.tracker.onPlates.immolate, true)
+    local fresh = trackerFixture()
+    for _, slot in ipairs(fresh.wtf.DOT_SLOTS) do
+        equal(fresh.wtf.db.tracker.onPlates[slot.key], true, slot.key .. ": on nameplates by default")
+    end
 end)
-test("the DoT Colors page has a swatch and a nameplate switch per slot", function()
+test("the DoT Tracker page: General, then a section per panel with its color and opacity", function()
     local state = trackerFixture()
-    local page = state.categories["DoT Colors"]
-    equal(page.parent, state.categories["Warlock Tools Forever"])
-    equal(#page.initializers, 12)
-    equal(page.initializers[1].setting.variable, "WTF_COLOR_CURSE")
-    equal(page.initializers[1].swatch, true)
-    equal(page.initializers[5].setting.variable, "WTF_COLOR_CORRUPTION")
-    equal(page.initializers[5].setting.default, "ffffffff")
-    equal(page.initializers[6].setting.variable, "WTF_PLATE_CORRUPTION")
-    equal(page.initializers[12].setting.variable, "WTF_PLATE_CONTROL")
-    equal(page.initializers[12].setting.default, false, "crowd control is off on nameplates")
+    local page = state.categories["DoT Tracker"]
+    local headings, names = {}, {}
+    for _, heading in ipairs(page.headings) do
+        if heading.heading then
+            headings[#headings + 1] = heading
+            names[#names + 1] = heading.heading
+        end
+    end
+    equal(table.concat(names, ","), "General,Target,Focus,Others")
+    equal(headings[1].position, 0, "General first")
+    equal(page.initializers[1].setting.variable, "WTF_TRACKER_THEME", "the shared settings under General")
+    for index, case in ipairs({{"TARGET", "ff8787ed"}, {"FOCUS", "ffe61a1a"}, {"LIST", "ff545454"}}) do
+        local at = headings[index + 1].position
+        local color, opacity = page.initializers[at + 1], page.initializers[at + 2]
+        equal(color.setting.variable, "WTF_PANEL_COLOR_" .. case[1], case[1] .. ": its color in its section")
+        equal(color.swatch, true)
+        equal(color.setting.default, case[2], case[1] .. ": the color before 1.2.0")
+        equal(opacity.setting.variable, "WTF_TRACKER_OPACITY_" .. case[1], case[1] .. ": then its opacity")
+        local nextHeading = headings[index + 2]
+        equal(nextHeading and nextHeading.position or #page.initializers, at + 2, "nothing else in the section")
+    end
+    equal(state.categories["DoT Colors"], nil, "no DoT Colors page")
+    equal(state.categories["DoT Order"], nil, "no DoT Order page")
+end)
+test("a panel color recolors its outline, border, and health fill at once, also in combat", function()
+    local state = trackerFixture({db = {tracker = {health = true}}})
+    dot(state, 6222, "Wolf")
+    local list = shownRows(state)[1]
+    near3(list.backdropBorder, 0x54 / 255, 0x54 / 255, 0x54 / 255, "the others' border: dark grey, not brown")
+    state.combat = true
+    state.settings.WTF_PANEL_COLOR_TARGET:SetValue("ff00ff00")
+    state.settings.WTF_PANEL_COLOR_FOCUS:SetValue("ff0000ff")
+    state.settings.WTF_PANEL_COLOR_LIST:SetValue("ffff0000")
+    equal(state.wtf.db.tracker.panelColors.target, "ff00ff00")
+    local target, focus = pinnedRow(state, "target"), pinnedRow(state, "focus")
+    near3(target.outline.backdropBorder, 0, 1, 0, "the target outline, in combat")
+    near3(target.backdropBorder, 0, 1, 0, "and its border")
+    near3(target.health.barColor, 0, 1, 0, "and its health fill")
+    equal(target.health.barColor[4], 0.8, "the health fill keeps its own opacity")
+    near3(focus.outline.backdropBorder, 0, 0, 1, "the focus outline")
+    near3(focus.health.barColor, 0, 0, 1)
+    near3(list.backdropBorder, 1, 0, 0, "the others' row border")
+    near3(list.health.barColor, 1, 0, 0, "and health fill")
+    state.combat = false
+    state.emit("PLAYER_REGEN_ENABLED")
+    pickColor(state, dotsRow(dotsPage(state), "corruption"), 0, 1, 0)
+    dot(state, 6222, "Wolf")
+    near3(shownRows(state)[1].backdropBorder, 1, 0, 0, "rows built later take it too")
+    near3(pinnedRow(state, "target").outline.backdropBorder, 0, 1, 0)
+    state.settings.WTF_PANEL_COLOR_LIST:SetValue("red")
+    equal(state.wtf.db.tracker.panelColors.list, "ff545454", "an invalid value becomes the default")
+end)
+test("saved panel colors are repaired on load", function()
+    local state = trackerFixture({db = {tracker = {panelColors = {target = "FF112233", focus = 7}}}})
+    equal(state.wtf.db.tracker.panelColors.target, "ff112233")
+    equal(state.wtf.db.tracker.panelColors.focus, "ffe61a1a")
+    equal(state.wtf.db.tracker.panelColors.list, "ff545454")
+    local broken = trackerFixture({db = {tracker = {panelColors = "purple"}}})
+    equal(broken.wtf.db.tracker.panelColors.target, "ff8787ed")
+end)
+
+-- DoT order -----------------------------------------------------------------------
+
+local function slotKeys(container)
+    local keys = {}
+    for index, slot in ipairs(container.slots) do keys[index] = slot.key end
+    return table.concat(keys, ",")
+end
+
+-- The newest nameplate bubble's dots, in order.
+local function bubbleKeys(state)
+    local newest
+    for _, frame in ipairs(state.frames) do
+        if frame.colored and frame.container then newest = frame end
+    end
+    return slotKeys(newest.container)
+end
+
+local function orderFixture()
+    local state = trackerFixture({db = {tracker = {plateDots = true}}})
+    state.combat = true
+    state.emit("PLAYER_REGEN_DISABLED")
+    state.combat = false
+    state.emit("NAME_PLATE_UNIT_ADDED", "nameplate4")
+    dot(state, 172, "Wolf")
+    return state, dotsPage(state)
+end
+
+-- Drags a DoTs row and drops it with the cursor at (x, y). The page spans 0
+-- to 600 both ways; row 1's top is at 500, each row 30 tall.
+local function dragRow(state, page, position, x, y)
+    function page:GetLeft() return 0 end
+    function page:GetRight() return 600 end
+    function page:GetTop() return 600 end
+    function page:GetBottom() return 0 end
+    for index, row in ipairs(page.rows) do
+        function row:GetTop() return 500 - (index - 1) * 30 end
+    end
+    state.env.GetCursorPosition = function() return x, y end
+    local row = page.rows[position]
+    row.scripts.OnDragStart(row)
+    equal(row.alpha, 0.5, "the dragged row dims")
+    row.scripts.OnUpdate(row)
+    local shown = page.insert.shown
+    row.scripts.OnDragStop(row)
+    equal(row.scripts.OnUpdate, nil, "no OnUpdate once the drag stops")
+    equal(row.alpha, 1)
+    equal(page.insert.shown, false)
+    return shown
+end
+
+test("the DoT order defaults to the rotation order, and bad saved orders are repaired", function()
+    local state = trackerFixture()
+    equal(table.concat(state.wtf.db.tracker.order, ","), "curse,bane,corruption,immolate,siphon,control")
+    equal(slotKeys(pinnedRow(state, "target").container), "curse,bane,corruption,immolate,control",
+        "the rows as before: the DoTs you know, in the default order")
+    for _, case in ipairs({
+        {{"immolate", "bogus", "immolate", 5, "curse"}, "immolate,curse,bane,corruption,siphon,control",
+            "unknown and doubled keys dropped, missing ones added"},
+        {"curse", "curse,bane,corruption,immolate,siphon,control", "not a list: the default"},
+        {{"control", "siphon", "immolate", "corruption", "bane", "curse"},
+            "control,siphon,immolate,corruption,bane,curse", "a whole order stays"},
+    }) do
+        local repaired = trackerFixture({db = {tracker = {order = case[1]}}})
+        equal(table.concat(repaired.wtf.db.tracker.order, ","), case[2], case[3])
+    end
+end)
+test("the DoTs page reorders by drag and drop; rows and nameplate dots follow", function()
+    local state, page = orderFixture()
+    equal(page.rows[1].key, "curse")
+    equal(page.rows[4].key, "immolate")
+    equal(page.rows[4].label.text, "Immolate")
+    equal(bubbleKeys(state), "curse,bane,corruption,immolate,control", "the dots in the default order")
+    equal(dragRow(state, page, 4, 100, 440), true, "a gold line shows the drop place")
+    equal(table.concat(state.wtf.db.tracker.order, ","), "curse,bane,immolate,corruption,siphon,control")
+    equal(page.rows[3].key, "immolate", "the page shows the new order")
+    equal(slotKeys(pinnedRow(state, "target").container), "curse,bane,immolate,corruption,control",
+        "the target row")
+    equal(slotKeys(pinnedRow(state, "focus").container), "curse,bane,immolate,corruption,control")
+    equal(slotKeys(currentRows(state)[1].container), "curse,bane,immolate,corruption,control", "the list rows")
+    near3(barColor(pinnedRow(state, "target"), 3), 1, 0x80 / 255, 0x19 / 255, "Immolate's bar third")
+    equal(bubbleKeys(state), "curse,bane,immolate,corruption,control", "the nameplate dots")
+    dragRow(state, page, 1, 100, 440)
+    equal(table.concat(state.wtf.db.tracker.order, ","), "bane,curse,immolate,corruption,siphon,control",
+        "dragged down one")
+    dragRow(state, page, 3, 100, 410)
+    equal(table.concat(state.wtf.db.tracker.order, ","), "bane,curse,immolate,corruption,siphon,control",
+        "dropped right under itself: nothing moves")
+    equal(dragRow(state, page, 2, -5, 300), false, "outside the page: no line")
+    equal(table.concat(state.wtf.db.tracker.order, ","), "bane,curse,immolate,corruption,siphon,control",
+        "and a drop there cancels")
+    dragRow(state, page, 6, 100, 590)
+    equal(state.wtf.db.tracker.order[1], "control", "above the first row: first")
+    dragRow(state, page, 1, 100, 10)
+    equal(state.wtf.db.tracker.order[6], "control", "below the last row: last")
+    page.reset.scripts.OnClick()
+    equal(table.concat(state.wtf.db.tracker.order, ","), "curse,bane,corruption,immolate,siphon,control",
+        "Reset order")
+    equal(slotKeys(pinnedRow(state, "target").container), "curse,bane,corruption,immolate,control")
+    dragRow(state, page, 6, 100, 590)
+    pickColor(state, dotsRow(page, "bane"), 0, 0, 1)
+    dotsRow(page, "immolate").plate:SetChecked(false)
+    dotsRow(page, "immolate").plate.scripts.OnClick(dotsRow(page, "immolate").plate)
+    page:OnDefault()
+    equal(table.concat(state.wtf.db.tracker.order, ","), "curse,bane,corruption,immolate,siphon,control",
+        "the Settings panel's Defaults button: the order")
+    equal(state.wtf.db.tracker.colors.bane, "ffe62626", "the colors")
+    equal(state.wtf.db.tracker.onPlates.immolate, true, "and the nameplate dots")
+end)
+test("the DoTs page's nameplate switches choose the dots, greyed while the dots are off", function()
+    local state, page = orderFixture()
+    local immolate = dotsRow(page, "immolate")
+    equal(immolate.plate.checked, true)
+    equal(immolate.plate.enabled, true, "the dots are on")
+    immolate.plate:SetChecked(false)
+    immolate.plate.scripts.OnClick(immolate.plate)
+    equal(state.wtf.db.tracker.onPlates.immolate, false)
+    equal(bubbleKeys(state), "curse,bane,corruption,control", "no Immolate dot")
+    state.settings.WTF_TRACKER_PLATE_DOTS:SetValue(false)
+    page = dotsPage(state)
+    equal(dotsRow(page, "curse").plate.enabled, false, "Show DoT dots on nameplates is off: greyed")
+    local tip
+    state.env.GameTooltip = {SetOwner = function() end, Show = function() end, Hide = function() end,
+        SetText = function(_, text) tip = text end}
+    dotsRow(page, "curse").plate.scripts.OnEnter(dotsRow(page, "curse").plate)
+    contains(tip, "Turn on Show DoT dots on nameplates", "its tooltip says why")
+    equal(state.wtf.db.tracker.onPlates.curse, true, "the choice stays as it is")
+end)
+test("a DoT order changed in combat reaches the rows when combat ends", function()
+    local state, page = orderFixture()
+    state.combat = true
+    dragRow(state, page, 4, 100, 440)
+    equal(table.concat(state.wtf.db.tracker.order, ","), "curse,bane,immolate,corruption,siphon,control")
+    equal(slotKeys(pinnedRow(state, "target").container), "curse,bane,corruption,immolate,control",
+        "the engine's slots are placed only as the rows are built")
+    state.combat = false
+    state.emit("PLAYER_REGEN_ENABLED")
+    equal(slotKeys(pinnedRow(state, "target").container), "curse,bane,immolate,corruption,control",
+        "rebuilt after combat")
 end)
 
 -- Bar theme ----------------------------------------------------------------------
@@ -4742,7 +5191,7 @@ test("pinned rows and the list are spaced by the taller bar blocks", function()
     local focusPoint = state.focusAnchor.points[#state.focusAnchor.points]
     equal(focusPoint[5], -(step + TARGET_SPACING))
     dot(state, 172, "Wolf")
-    equal(listOffset(state), -2 * (step + TARGET_SPACING))
+    equal(listOffset(state), -(step + TARGET_SPACING))
 end)
 test("switching the theme rebuilds the rows and keeps the tracked mobs", function()
     local state = trackerFixture()
@@ -5047,6 +5496,19 @@ local function healthFixture(text, extra)
     state.emit("UNIT_HEALTH", "target")
     return state
 end
+test("mob health: a Compact name on the right fills only its column, after the icons", function()
+    local state = healthFixture("none")
+    state.settings.WTF_TRACKER_COMPACT_NAMEPOSITION:SetValue("right")
+    local row = pinnedRow(state, "target")
+    local slots = row.container.slots
+    local last = slots[#slots].button
+    equal(row.health.points[1][1], "TOPLEFT")
+    equal(row.health.points[1][4], last.points[1][4] + last.width + 2, "starts a small gap after the last icon")
+    equal(row.health.points[1][5], -3, "inside the border")
+    equal(row.health.points[2][1], "BOTTOMRIGHT")
+    equal(row.health.points[2][3], "BOTTOMRIGHT", "to the row's inner right edge")
+    equal(row.health.points[2][4], -3)
+end)
 test("mob health is off by default", function()
     local state = trackerFixture()
     equal(state.wtf.db.tracker.health, false)
@@ -5057,18 +5519,24 @@ test("mob health: the name line is the health bar, with the number, percent, or 
     local state = healthFixture("none")
     local row = pinnedRow(state, "target")
     equal(row.health.shown, true)
-    equal(row.health.points[1][1], "TOPLEFT", "a Compact name beside the icons: the whole row is the name line")
+    equal(row.health.points[1][1], "TOPLEFT", "a Compact name beside the icons: only the name's column")
+    equal(row.health.points[1][4], 3, "inside the border")
+    equal(row.health.points[1][5], -3)
     equal(row.health.points[2][1], "BOTTOMRIGHT")
-    equal(row.health.points[2][4], -3, "inside the border")
+    equal(row.health.points[2][3], "BOTTOMLEFT", "measured from the row's left edge")
+    equal(row.health.points[2][4], 6 + 110 - 2, "up to the first icon, less a small gap")
+    equal(row.health.points[2][5], 3)
+    local firstIcon = row.container.slots[1].button.points[1]
+    equal(firstIcon[4], 6 + 110, "the first icon starts just after the fill")
     equal(row.height, 30, "the row keeps its size")
     equal(row.name.parent, row.layer, "the name draws above the bar")
     equal(row.layer.level, row.health.level + 1)
     equal(row.container.level, row.health.level + 2, "the DoT icons above both")
-    equal(row.health.barColor[1], 0.53, "purple for your target")
+    near3(row.health.barColor, 0x87 / 255, 0x87 / 255, 0xed / 255, "purple for your target")
     equal(row.health.barColor[4], 0.8)
-    equal(pinnedRow(state, "focus").health.barColor[1], 0.9, "red for your focus")
+    near3(pinnedRow(state, "focus").health.barColor, 0xe6 / 255, 0x1a / 255, 0x1a / 255, "red for your focus")
     dot(state, 6222, "Wolf")
-    equal(shownRows(state)[1].health.barColor[1], 0.33, "dark grey for the others")
+    near3(shownRows(state)[1].health.barColor, 0x54 / 255, 0x54 / 255, 0x54 / 255, "dark grey for the others")
     state.settings.WTF_TRACKER_COMPACT_NAMEPOSITION:SetValue("above")
     row = pinnedRow(state, "target")
     equal(row.health.points[1][1], "TOPLEFT", "a name above the icons: its own line")
@@ -5317,15 +5785,17 @@ test("nameplate dots follow the per-slot nameplate choices", function()
             {spellID = 5782, name = "Fear"}}})
     local keys = {}
     for index, slot in ipairs(containerIn(bubbleOn(state, "nameplate1")).slots) do keys[index] = slot.key end
-    equal(table.concat(keys, ","), "corruption", "no Immolate by choice, no Fear by default")
+    equal(table.concat(keys, ","), "corruption,control", "no Immolate by choice; Fear on by default")
     local cursed = dotsFixture()
     local curseDot = containerIn(bubbleOn(cursed, "nameplate1")).slots[1]
     equal(curseDot.key, "curse")
     equal(curseDot.candidates.includeDispelTypes.Curse, true, "the dot uses the same Curse match")
-    state.settings.WTF_PLATE_CONTROL:SetValue(true)
+    local row = dotsRow(dotsPage(state), "control")
+    row.plate:SetChecked(false)
+    row.plate.scripts.OnClick(row.plate)
     keys = {}
     for index, slot in ipairs(containerIn(bubbleOn(state, "nameplate1")).slots) do keys[index] = slot.key end
-    equal(table.concat(keys, ","), "corruption,control")
+    equal(table.concat(keys, ","), "corruption", "the DoTs page's switch")
 end)
 test("learning a DoT rebuilds the bubbles", function()
     local state = dotsFixture()

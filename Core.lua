@@ -387,16 +387,53 @@ function WTF.SanitizeAnnouncement(text, default)
 end
 
 -- Tracker and nameplate slots, in display order, with default colors as the
--- Settings color swatch stores them (AARRGGBB) and whether each shows as a
--- nameplate dot by default. Crowd control is not a DoT to keep up.
+-- Settings color swatch stores them (AARRGGBB), and whether each is a DoT to
+-- keep up (crowd control is not). Every slot shows as a nameplate dot by
+-- default (author, 1.2.0).
 WTF.DOT_SLOTS = {
-    {key = "curse", label = "Curse", color = "ff9e40d9", plate = true},
-    {key = "bane", label = "Bane", color = "ffe62626", plate = true},
-    {key = "corruption", label = "Corruption", color = "ffffffff", plate = true},
-    {key = "immolate", label = "Immolate", color = "ffff8019", plate = true},
-    {key = "siphon", label = "Siphon Life", color = "ff4dd94d", plate = true},
-    {key = "control", label = "Fear and control", color = "ffffd91a", plate = false},
+    {key = "curse", label = "Curse", color = "ff9e40d9", dot = true},
+    {key = "bane", label = "Bane", color = "ffe62626", dot = true},
+    {key = "corruption", label = "Corruption", color = "ffffffff", dot = true},
+    {key = "immolate", label = "Immolate", color = "ffff8019", dot = true},
+    {key = "siphon", label = "Siphon Life", color = "ff4dd94d", dot = true},
+    {key = "control", label = "Fear and control", color = "ffffd91a", dot = false},
 }
+
+-- The DoT order (author-approved, player request: configurable, with the
+-- rotation order above as the default): every slot key once. Unknown or
+-- doubled keys are dropped and missing ones added in the default order.
+function WTF.SanitizeDotOrder(value)
+    local valid, seen, order = {}, {}, {}
+    for _, slot in ipairs(WTF.DOT_SLOTS) do
+        valid[slot.key] = true
+    end
+    if type(value) == "table" then
+        for _, key in ipairs(value) do
+            if valid[key] and not seen[key] then
+                seen[key] = true
+                order[#order + 1] = key
+            end
+        end
+    end
+    for _, slot in ipairs(WTF.DOT_SLOTS) do
+        if not seen[slot.key] then
+            order[#order + 1] = slot.key
+        end
+    end
+    return order
+end
+
+-- WTF.DOT_SLOTS in the saved order.
+function WTF.OrderedDotSlots()
+    local byKey, slots = {}, {}
+    for _, slot in ipairs(WTF.DOT_SLOTS) do
+        byKey[slot.key] = slot
+    end
+    for _, key in ipairs(WTF.db.tracker.order) do
+        slots[#slots + 1] = byKey[key]
+    end
+    return slots
+end
 
 -- Defaults that changed (author-approved): once, a slot still on its old
 -- default moves to the new one; a color the user picked stays, also later.
@@ -410,10 +447,26 @@ function WTF.SanitizeColor(value, default)
     return default
 end
 
--- A slot's saved color as r, g, b from 0 to 1.
-function WTF.SlotColor(key)
-    local hex = WTF.db.tracker.colors[key]
+-- A saved AARRGGBB color as r, g, b from 0 to 1 (its alpha is not used).
+local function HexColor(hex)
     return tonumber(hex:sub(3, 4), 16) / 255, tonumber(hex:sub(5, 6), 16) / 255, tonumber(hex:sub(7, 8), 16) / 255
+end
+
+function WTF.SlotColor(key)
+    return HexColor(WTF.db.tracker.colors[key])
+end
+
+-- DoT tracker panel colors (author-approved, player request): each colors its
+-- panel's outline or row border and its health fill. Defaults are the colors
+-- before 1.2.0: the warlock class color, red, and the others' dark grey.
+WTF.TRACKER_PANEL_COLORS = {
+    {key = "target", label = "Target panel color", color = "ff8787ed"},
+    {key = "focus", label = "Focus panel color", color = "ffe61a1a"},
+    {key = "list", label = "Other mobs panel color", color = "ff545454"},
+}
+
+function WTF.PanelColor(key)
+    return HexColor(WTF.db.tracker.panelColors[key])
 end
 
 WTF.PLATE_DOTS_OFFSET_MIN = 0
@@ -439,8 +492,11 @@ end
 
 -- DoT tracker panel opacity, per panel (author-approved: its own setting for
 -- the target, focus, and other-mobs panels), in percent; 100 is today's look.
-WTF.TRACKER_PANELS = {{key = "target", label = "Target panel opacity"},
-    {key = "focus", label = "Focus panel opacity"}, {key = "list", label = "Other mobs panel opacity"}}
+WTF.TRACKER_PANELS = {
+    {key = "target", heading = "Target", name = "target panel", label = "Target panel opacity"},
+    {key = "focus", heading = "Focus", name = "focus panel", label = "Focus panel opacity"},
+    {key = "list", heading = "Others", name = "other mobs' panel", label = "Other mobs panel opacity"},
+}
 WTF.PANEL_OPACITY_MIN = 10
 WTF.PANEL_OPACITY_MAX = 100
 WTF.DEFAULT_PANEL_OPACITY = 100
@@ -575,6 +631,8 @@ function WTF.SanitizeDB(db)
         colors = {},
         onPlates = {},
         colorsVersion = COLORS_VERSION,
+        panelColors = {},
+        order = WTF.SanitizeDotOrder(tracker.order),
     }
     for _, key in ipairs({"lastBane", "lastCurse", "lastControl"}) do
         db.tracker[key] = type(tracker[key]) == "string" and tracker[key] or nil
@@ -592,6 +650,10 @@ function WTF.SanitizeDB(db)
     for _, key in ipairs({"target", "focus", "list"}) do
         db.tracker.sections[key] = SanitizePosition(sections[key])
     end
+    local panelColors = type(tracker.panelColors) == "table" and tracker.panelColors or {}
+    for _, panel in ipairs(WTF.TRACKER_PANEL_COLORS) do
+        db.tracker.panelColors[panel.key] = WTF.SanitizeColor(panelColors[panel.key], panel.color)
+    end
     local colors = type(tracker.colors) == "table" and tracker.colors or {}
     local onPlates = type(tracker.onPlates) == "table" and tracker.onPlates or {}
     for _, slot in ipairs(WTF.DOT_SLOTS) do
@@ -603,7 +665,7 @@ function WTF.SanitizeDB(db)
         if type(onPlates[slot.key]) == "boolean" then
             db.tracker.onPlates[slot.key] = onPlates[slot.key]
         else
-            db.tracker.onPlates[slot.key] = slot.plate
+            db.tracker.onPlates[slot.key] = true
         end
     end
     local alerts = type(db.alerts) == "table" and db.alerts or {}

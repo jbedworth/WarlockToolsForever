@@ -4,6 +4,29 @@ Player-facing changes for each Warlock Tools Forever release, newest first. The
 release builder copies the section for the TOC version into the GitHub release
 notes and the CurseForge changelog, and fails if that section is missing.
 
+## 1.2.0
+
+Thanks to Myia and others for their feedback.
+
+### Features
+- DoT tracker: the DoT Tracker settings page has sections: **General** (the theme, the nameplate dots, mob health, and sizes, which every panel shares), then **Target**, **Focus**, and **Others**, each with that panel's own settings.
+- DoT tracker: panel colors, in each panel's section: **Target panel color**, **Focus panel color**, and **Other mobs panel color**. Each colors its panel's outline (the other mobs: their row border) and its health fill, at once, also in combat. The defaults are the colors you know, except that the other mobs' rows now have a dark grey border instead of a brown one.
+- A new **DoTs** settings page replaces the DoT Colors page. It has one row per DoT: its icon, its name, **On nameplates**, and its color. Drag a row up or down to put your DoTs in the order you want, on the tracker's rows and on the nameplate dots. **Reset order** puts back the default order: Curse, Bane, Corruption, Immolate, Siphon Life, Fear and control. An order change made in combat reaches the tracker when combat ends; colors change at once. **On nameplates** is greyed out while **Show DoT dots on nameplates** is off. The page's Defaults button restores the order, the colors, and the nameplate dots.
+
+### Fixes
+- DoT tracker: with several mobs of the same name, a mob you DoTed could get no row, or a row with another mob's timers, when you tabbed to another mob while a spell such as Immolate was still casting. WTF now finds the mob when the cast starts.
+- DoT tracker: one spell that landed could make WTF forget another spell that was still casting, so its mob got no row. It no longer does.
+- DoT tracker: with Dyre's Toolkit, a Ctrl-drag now moves a locked DoT tracker panel, as on the other Dyre's AddOns' frames. Before, no part of a locked panel took the mouse, so the drag never started. The rows still let clicks through while Ctrl is up.
+- DoT tracker: a target or focus that died no longer shows for a moment as one of the other mobs. A mob seen dead stays off the list until combat ends.
+- DoT tracker: a dotted mob that you tab away from now keeps its timers and health in the other mobs' list, bound to its own nameplate, also when the game hides nameplate details in combat. Before, its row could stay dim beside its own nameplate.
+
+### Other changes
+- DoT tracker: while you have not moved the list of other mobs, it again moves up under the target and focus rows that show, so no empty gap stays where a hidden focus row was. A list that you moved stays where you put it.
+- DoT tracker: in combat, a mob whose nameplate goes away (nameplates turned off and on, or a mob out of nameplate range) keeps its row until combat ends, instead of for 10 seconds. Its timers come back with its nameplate.
+- DoT tracker: with **Show mob health** on and a Compact name left or right of the icons, the health fill is only behind the name, not behind the icons.
+- Size sliders are labeled without '(%)': their values already show the % sign.
+- Nameplate dots: for a new character, every DoT, also Fear and control, is on nameplates by default. Your saved choices stay as they are.
+
 ## 1.1.1
 
 ### Fixes

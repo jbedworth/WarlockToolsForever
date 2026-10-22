@@ -223,8 +223,14 @@ module only after the author agrees its behavior.
   where the one tracker frame was (`tracker.position`, kept from older
   versions, else the default) at the old offsets (target 0, focus one row
   plus the outline gap, list two), so nothing moves for current players. A
-  section stays where it is put: the list no longer moves up when a pinned
-  row hides. The list frame is one row tall (it snaps by its first row); its
+  dragged section stays where it is put. A list not yet dragged (author-
+  approved, player feedback: an empty focus panel left a row-sized gap)
+  hangs below the lowest stacked pinned row the game shows, as before 1.1.0:
+  a pinned row that was dragged away does not count, a hidden target row
+  keeps its space when the focus row shows (the secure focus row cannot move
+  in combat), and while frames are unlocked it sits below both. The list is
+  a plain frame, so it moves also in combat, and only when its place
+  changes. The list frame is one row tall (it snaps by its first row); its
   other rows hang below it. `/wtf reset` clears every section and the stack
   place. The target and focus sections hold secure rows, so they move only
   out of combat (a drop in combat waits); `/wtf debug_tracker` says which are
@@ -250,16 +256,26 @@ module only after the author agrees its behavior.
   slider). So a panel opacity change fades the panel frame at once (also in
   combat) and rebuilds the rows for the bars (out of combat; in combat, when
   it ends). Separate from the nameplate dot opacity.
-- Each row has slots, in this order (author-approved): Curse (Weakness,
+- Each row has slots, by default in this order (author-approved): Curse (Weakness,
   Recklessness, Elements, Shadow, Tongues, Exhaustion; one at a time), Bane
   (Agony, Doom, Havoc), Corruption, Immolate, Siphon Life, and Fear and
   control (Fear, Howl of Terror, Death Coil, Banish), from Forever's spell
-  list and talents. Nameplate dots and the DoT Colors page use the same order. Single-target channels
+  list and talents. The DoTs page (author-approved, player request) changes
+  it for the rows and the nameplate dots. Single-target channels
   (Drain Life, Drain Soul, Drain Mana, Wrack) are not tracked
   (author-approved). A list row appears when the player's cast of a
   tracked spell succeeds on a hostile mob (cast events, target name, and
-  `UnitGUID` are readable in combat) and leaves when the mob dies (`UnitIsDead`
-  on its unit), after 10 s with no unit showing it, or when combat ends. A
+  `UnitGUID` are readable in combat). The mob is found when the cast starts
+  (`UNIT_SPELLCAST_SENT`: the first unit with that name, target first) and
+  its GUID kept with that cast, then used at `UNIT_SPELLCAST_SUCCEEDED`; a
+  success drops only its own pending cast (player report: with same-named
+  mobs, a tab before Immolate landed gave the new target's GUID). A cast by
+  name on a same-named mob that is not the target (a mouseover macro) can
+  still pick the target. A row leaves when the mob dies (`UnitIsDead`
+  on its unit), when combat ends, or, out of combat, after 10 s with no unit
+  showing it; in combat a row with no unit stays until combat ends (player
+  feedback: nameplates off and on, or out of plate range, lost rows), and it
+  binds again by GUID when a unit shows the mob. A
   ninth mob replaces the oldest list row. Sample rows (author-approved, for
   positioning) show out of combat while frames are unlocked.
 - On Forever the combat log is restricted at all times and every aura API
@@ -277,7 +293,17 @@ module only after the author agrees its behavior.
   button. WTF never reads timers or whether an aura is present. A dimmed,
   desaturated icon behind each slot shows a missing or expired spell. Pinned
   rows are bound to `target` and `focus` for good; list rows to the mob's
-  nameplate token, else target or focus, else "none".
+  nameplate token, else target or focus, else "none". A plate is matched by
+  its GUID, or, when that is secret (player report: a dotted target you
+  tabbed away from stayed dim beside its own plate), by a remembered
+  token-to-GUID map (`tracker.plates`), learned from `UnitIsUnit` with the
+  target or focus (whose GUIDs are readable) on target, focus, and plate
+  changes and at each new row; a token is forgotten when its plate goes or is
+  reused. `/wtf debug_tracker` reports the plates (shown, readable GUID,
+  known, the target's plate) and each row's unit and hold. Known limit
+  (author-accepted, in README): when plate GUIDs are secret, a mob never
+  targeted or focused (a mouseover DoT) has no known plate, so its row stays
+  unbound (dim, no health) until you target or focus it, or combat ends.
 - Themes (author-approved), on the DoT Tracker page and saved per character,
   **Bars** by default: **Compact**, a row with the name and an icon per spell
   family the player knows; **Bars**, a block per mob with the name above one
@@ -315,12 +341,11 @@ module only after the author agrees its behavior.
   size.
 - Mob health (author-approved, player request): "Show mob health"
   (`tracker.health`, default off) makes the line with the mob's name the
-  health bar (author-approved), filled in the panel's color: the warlock
-  purple for the target, the focus red for the focus, dark grey for the
-  others, at 80% so the text reads. It spans the name line, at least as wide
+  health bar (author-approved), filled in the panel's color (see Panel
+  colors), at 80% so the text reads. It spans the name line, at least as wide
   as the DoTs: its own line across the row in Bars and for a Compact name
-  above or below the icons, the whole row inside the border for a Compact
-  name beside them. Rows keep their size. A child frame draws over its
+  above or below the icons; for a Compact name beside them (player request),
+  only the name's column, from inside the border to the icons less 2. Rows keep their size. A child frame draws over its
   parent's regions, so the name, health text, and dim icons go on a layer
   frame one level above the bar, and the engine's container one above that;
   and
@@ -356,9 +381,21 @@ module only after the author agrees its behavior.
   `RegisterStateDriver(row, "visibility", "[@target,harm,nodead] show; hide")`
   (focus: `[@focus,exists,harm,nodead]`); the list
   (`WarlockToolsForeverTrackerList`) is an ordinary frame.
-- Locked, tracker rows let clicks through (`EnableMouse(not db.locked)`; the
-  pinned rows' own mouse, a secure frame's, changes only out of combat); their
-  slot buttons always take clicks. Unlocked, the rows take the mouse to drag.
+- Locked, tracker rows let clicks through (the pinned rows' own mouse, a
+  secure frame's, changes only out of combat); their slot buttons always take
+  clicks. Unlocked, the rows take the mouse to drag. With Dyre's Toolkit, while
+  Ctrl is held out of combat (`MODIFIER_STATE_CHANGED`), the locked rows take
+  the mouse too, so a Ctrl-drag goes to the toolkit's `BeginDrag` and moves
+  that panel freely (the family's locked Ctrl-drag; player report: no part of
+  a locked panel took the mouse). Not changed during a drag, so its drop
+  arrives; turned off at `PLAYER_REGEN_DISABLED`, which comes before the
+  lockdown.
+- A mob seen dead on any unit (`UNIT_HEALTH`, or `NAME_PLATE_UNIT_REMOVED`
+  as its plate goes) loses its row, and its GUID is kept until combat ends,
+  so a late cast does not list it again. A target or focus that leaves with
+  no unit showing its mob (a dead mob's plate goes) is held off the list
+  until a unit shows it again (player report: a dying target showed for a
+  moment as an Other row).
 - List rows only display: a secure button cannot change its unit in combat,
   and the restricted environment has no `UnitGUID` or `UnitName`, so secure
   code cannot tell which nameplate belongs to a row. Nameplate AddOns only
@@ -696,6 +733,12 @@ module only after the author agrees its behavior.
   through `UIErrorsFrame` (stone clicks, trade placement, macro slots, shard
   deletion stopping). `/wtf reset` in combat reports once.
 
+### Slider labels (author-approved, family-wide)
+
+- A percent slider's value shows its % sign (Options' `SliderOptions(...,
+  true)` or a `"%d%%"` label formatter), so its label has no "(%)": "Display
+  size", "Bar size". A test fails on any WTF setting label with "(%)".
+
 ### Slot colors (author-approved)
 
 - One color per slot (`WTF.DOT_SLOTS` in Core: Curse purple, Bane red,
@@ -703,13 +746,49 @@ module only after the author agrees its behavior.
   yellow; author-approved),
   shared by the tracker's bars and the nameplate dots so the colors become a
   quick visual code. Saved per character as `AARRGGBB` hex strings, the
-  format of the Settings color swatch, and editable on the DoT Colors page
-  with a nameplate switch per slot. The tracker's bars take their color only
+  format of the Settings color swatch, and editable on the DoTs page with a
+  nameplate switch per slot. The tracker's bars take their color only
   as they are built (see the panel opacity rule: the engine owns them
   afterwards), so a new color rebuilds the tracker's rows, out of combat; the
   nameplate dots are WTF's own textures and change at once. When defaults change, a
   one-time step (`colorsVersion`) moves slots still on an old default to the
   new one and keeps colors the user picked.
+- DoT Tracker page sections (author): "General" first (theme, nameplate
+  dots, mob health, sizes, and Reset size: what every panel shares), then
+  "Target", "Focus", and "Others", each with that panel's own settings (its
+  color, then its opacity), from Core's `TRACKER_PANELS`. Headings are
+  `CreateSettingsListSectionHeaderInitializer`. Per-panel health and sizes
+  are not built (author: not yet, unless trivial; it is not: every layout
+  function reads one shared size set).
+- Panel colors (author-approved, player request): a swatch in each panel's
+  section, `tracker.panelColors.target/focus/list` (`AARRGGBB`, Core's
+  `TRACKER_PANEL_COLORS`; the alpha is not used, as the panel opacity does
+  that). Defaults are the colors before 1.2.0: the warlock class color
+  (`ff8787ed`), the focus red (`ffe61a1a`), the others' dark grey
+  (`ff545454`). Each colors its panel's row border, the pinned rows'
+  outline, and the health fill; for the other mobs it replaces their brown
+  row border (author's call). All are WTF's own backdrops and StatusBar, not
+  engine objects, so a change applies at once, also in combat.
+- DoT order (author-approved, player request: configurable, the rotation
+  order as the default): `tracker.order`, every slot key once (repaired on
+  load: unknown and doubled keys dropped, missing ones added in the default
+  order). Blizzard's Settings list has no control to reorder a list, so the
+  "DoTs" page (author: one page for the DoTs, replacing DoT Colors and DoT
+  Order) is a canvas page: one row per slot, in the order, with its icon,
+  name, an "On nameplates" check (`tracker.onPlates`, default on for every
+  slot since 1.2.0; disabled, with a tooltip saying why, while "Show DoT
+  dots on nameplates" is off or no DoT is known), and a color swatch that
+  opens `ColorPickerFrame:SetupColorPickerAndShow` as the Settings swatch
+  does (Blizzard_SettingControls.lua, SettingsColorSwatchMixin; Cancel
+  restores). Rows reorder by drag and drop, as DQT's hit list (Box.lua): a
+  gold line at the drop place from an `OnUpdate` set only during the drag, a
+  drop outside the page cancels, a drop next to the row changes nothing.
+  "Reset order" restores the order; the page's Defaults restores the order,
+  the colors, and the nameplate switches. Engine slots
+  are placed only while rows are built, so a change rebuilds the rows (out
+  of combat; in combat, when it ends) and the nameplate dots. "Order
+  applied" is not offered: when a DoT was applied is secret, and slots
+  cannot move in combat.
 
 Keep each module narrow. Do not add automation that plays for the user,
 general frameworks, or speculative modules without agreement.

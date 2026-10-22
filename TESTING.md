@@ -311,8 +311,19 @@ and printing.
       show in the purple pinned row, the other mob in the list below, with
       icons, countdowns, sweeps, and draining bars; an expired spell shows dim.
 - [ ] Tab to the other mob: the pinned row follows and the old target joins
-      the list. Set a focus: the red-outlined row appears; clear it: the list
-      stays where it is.
+      the list. Set a focus: the red-outlined row appears; clear it: a list
+      you have not moved goes up under the target row, with no gap; drag the
+      list, then clear the focus again: it stays where you put it.
+- [ ] Same-named mobs (player report): pull two or three mobs with the same
+      name. Target one, start Immolate, and tab to another before it lands:
+      the first mob gets a list row with its Immolate; the new target's row
+      shows only its own DoTs. Repeat with Corruption (instant) and with
+      quick tabbing between casts: every dotted mob has its own row.
+- [ ] Nameplates in combat: DoT three mobs, then press V (enemy nameplates
+      off): the list rows stay (names, dim icons) for more than 10 seconds;
+      press V again: each row shows its timers again. Move away until a
+      listed mob's plate goes: its row stays until combat ends. After combat
+      the list clears.
 - [ ] Tracker sections: after the update, with no drag yet, the target row,
       focus row, and list sit where they were before (also for a tracker you
       had moved). Unlocked, drag each one by its rows on its own; each snaps
@@ -327,17 +338,46 @@ and printing.
       change.
 - [ ] Click a dim slot in the target and focus rows, also in combat: the
       spell is cast on that unit; Bane and Curse slots use the last one cast.
-- [ ] A mob that dies leaves the list; the list hides after combat.
+- [ ] A mob that dies leaves the list; the list hides after combat. Kill
+      your target and your focus (also the last mob of a pull): neither shows
+      as an Other row, not even for a moment.
+- [ ] Plates up for two mobs, in combat: DoT one, tab to the other. The
+      first one's Other row shows its timers and health at once. If not,
+      run `/wtf debug_tracker` right then and note the "plates" line
+      (readableGUID, known, targetPlate) and the row's unit= and held=.
+- [ ] Known limit (author-accepted): DoT a mob with a mouseover macro
+      without targeting or focusing it. With plate GUIDs secret in combat,
+      its Other row may stay dim (no timers, no health); target or focus it
+      once and the row shows them. README says so.
+- [ ] With Dyre's Toolkit and frames locked: hold Ctrl and drag the target,
+      focus, and Others panels: each moves freely (no snap) and stays after
+      /reload. Without Ctrl the drag does nothing and clicks pass through the
+      rows to the world; the pinned slots still cast. In combat, Ctrl-drag
+      does nothing; BugSack stays empty.
 - [ ] With "Show DoT dots on nameplates" on, fight two mobs: grey dots turn
       to their colors as you DoT, back to grey as DoTs expire; no bubbles out
       of combat or on friendly plates. Check the height setting with your
       nameplate AddOn, and that `TempPortraitAlphaMask` makes the dots round.
       The height slider shows a gold mark at 50, and no other slider in the
       Settings panel shows one.
-- [ ] The DoT Colors page: a new color recolors the nameplate dots at once
-      and the tracker's bars at once out of combat (in combat, when it ends),
-      with BugSack empty; Defaults restores them; nameplate switches add and
-      remove dots.
+- [ ] DoT Tracker page: the sections are General, Target, Focus, and
+      Others, in that order; each panel's section has its color and its
+      opacity, and nothing else.
+- [ ] Panel colors: with no change, the target and focus rows look as
+      before and the other mobs' rows have a dark grey border. Change each of
+      the three, out of combat and in combat: its outline (or row border) and
+      health fill change at once, with BugSack empty; /reload keeps them;
+      the page's Defaults restores them.
+- [ ] DoTs page: each row shows the DoT's icon, name, On nameplates, and its
+      color. Drag a row up or down: a gold line shows where it drops; a drop
+      outside the page changes nothing. The rows (both themes, all three
+      panels) and the nameplate dots follow at once out of combat; a change
+      in combat reaches the rows when combat ends. A swatch click opens the
+      color picker; the bars and dots take the color (Cancel puts it back).
+      On nameplates adds and removes dots; with Show DoT dots on nameplates
+      off it is greyed, and its tooltip says why. Reset order restores the
+      order; Defaults restores the order, colors, and dots; BugSack stays
+      empty; /reload keeps it all.
 - [ ] Spells you have not learned yet (shown greyed in the spellbook) appear
       in neither theme nor on the nameplate dots.
 - [ ] With the default Bars theme: each mob shows its name and a bar line per
@@ -363,7 +403,9 @@ and printing.
 - [ ] Mob health: turn on Show mob health: the line with each mob's name is
       its health bar, purple on the target row, red on the focus row, dark
       grey on the others, at least as wide as the row's DoTs (both themes,
-      every name position); the name, text, and icons stay readable on top;
+      every name position; with a Compact name left or right of the icons,
+      only behind the name, not the icons); the name, text, and icons stay
+      readable on top;
       it drains
       as the mob loses health, also in combat, on the target, focus, and list
       rows; no Lua error or "secret" error in BugGrabber. Health text Number,

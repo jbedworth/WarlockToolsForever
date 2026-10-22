@@ -19,10 +19,11 @@ local MAX_NAMEPLATE_UNITS = 40
 
 local dots = {free = {}, byUnit = {}, all = {}, known = {}, inCombat = false, available = false}
 
--- The dots shown: slots whose spells you know and that you chose for nameplates.
+-- The dots shown, in the DoT order: slots whose spells you know and that you
+-- chose for nameplates.
 local function KnownDots()
     local known = {}
-    for _, slot in ipairs(WTF.DOT_SLOTS) do
+    for _, slot in ipairs(WTF.OrderedDotSlots()) do
         if WTF.TrackerKnowsSlot(slot.key) and WTF.db.tracker.onPlates[slot.key] then
             known[#known + 1] = slot
         end
@@ -36,7 +37,7 @@ function WTF.HasTrackableDots()
         return false
     end
     for _, slot in ipairs(WTF.DOT_SLOTS) do
-        if slot.plate and WTF.TrackerKnowsSlot(slot.key) then
+        if slot.dot and WTF.TrackerKnowsSlot(slot.key) then
             return true
         end
     end
