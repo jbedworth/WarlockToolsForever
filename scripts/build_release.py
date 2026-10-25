@@ -20,7 +20,7 @@ from pathlib import Path
 
 
 ADDON = "WarlockToolsForever"
-RUNTIME_FILES = ("Commands.lua", "Core.lua", "Layout.lua", "Shards.lua", "Stones.lua", "Announce.lua", "Tracker.lua",
+RUNTIME_FILES = ("Commands.lua", "Core.lua", "Layout.lua", "AuraEngine.lua", "Shards.lua", "Stones.lua", "Announce.lua", "Tracker.lua",
                  "Dots.lua", "Control.lua", "Probe.lua", "Options.lua")
 TEXT_FILES = (ADDON + ".toc",) + RUNTIME_FILES + ("LICENSE",)
 # Runtime textures shipped in the package; none since 1.3.0, when the shield
@@ -36,6 +36,11 @@ TGA_SIZES = (16, 32, 64, 128, 256)
 INTERFACE = 16001
 GAME_VERSION = "1.60.1"
 TARGET_BUILD = 70450
+# Classic Era (one package serves both; the TOC lists both Interfaces).
+CLASSIC_INTERFACE = 11509
+CLASSIC_GAME_VERSION = "1.15.9"
+CLASSIC_TARGET_BUILD = 70003
+TOC_INTERFACE = f"{INTERFACE}, {CLASSIC_INTERFACE}"
 ZIP_TIMESTAMP = (1980, 1, 1, 0, 0, 0)
 FILE_MODE = stat.S_IFREG | 0o644
 SOURCE_COMMIT_RE = re.compile(r"[0-9a-f]{40}", re.ASCII)
@@ -139,8 +144,8 @@ def _validate_files(files, expected_version=None):
             metadata[key] = value.strip()
         elif line and not line.startswith("#"):
             loads.append(line)
-    if metadata.get("Interface") != str(INTERFACE):
-        raise ValueError(f"TOC Interface must be {INTERFACE}")
+    if metadata.get("Interface") != TOC_INTERFACE:
+        raise ValueError(f"TOC Interface must be {TOC_INTERFACE}")
     version = validate_version(metadata.get("Version", ""))
     if expected_version is not None and version != validate_version(expected_version):
         raise ValueError("Archive version does not match expected version")
@@ -168,7 +173,8 @@ def wowup_metadata(version):
             "version": version,
             "filename": archive_filename(version),
             "nolib": False,
-            "metadata": [{"flavor": "forever", "interface": INTERFACE}],
+            "metadata": [{"flavor": "forever", "interface": INTERFACE},
+                         {"flavor": "classic", "interface": CLASSIC_INTERFACE}],
         }],
     }
 
@@ -186,6 +192,9 @@ def _manifest(version, archive_name, digest, tag=""):
         "interface": INTERFACE,
         "game_version": GAME_VERSION,
         "target_build": TARGET_BUILD,
+        "classic_interface": CLASSIC_INTERFACE,
+        "classic_game_version": CLASSIC_GAME_VERSION,
+        "classic_target_build": CLASSIC_TARGET_BUILD,
     }
 
 
@@ -268,7 +277,8 @@ def _release_notes(version, changes):
 
 ## Notes
 
-- For WoW: Forever. Tested on Forever beta {GAME_VERSION}, build {TARGET_BUILD},
+- For WoW: Forever and WoW Classic Era {CLASSIC_GAME_VERSION} (build {CLASSIC_TARGET_BUILD},
+  Interface {CLASSIC_INTERFACE}). Tested on Forever beta {GAME_VERSION}, build {TARGET_BUILD},
   Interface {INTERFACE}. WTF runs on later beta builds while the client provides
   the APIs it needs, and disables itself with one chat message if they are
   missing.

@@ -7,6 +7,34 @@ small, independent quality-of-life modules for Warlocks. Each module has an
 enable switch on the main settings page and its own settings subpage. Add a
 module only after the author agrees its behavior.
 
+### Aura slots on Forever and Classic (built 1.3.2; John: "how can we get those up and working on pre-forever?")
+
+- The DoT tracker, the nameplate dots, the Control bar, the Focus box, and
+  the Fear plate timers get their aura slots from `WTF.CreateAuraContainer`
+  (AuraEngine.lua). On Forever it is Blizzard's engine
+  (`CustomAuraContainerTemplate`, Blizzard_AuraContainer), unchanged. Where
+  the template is missing (Classic Era, Anniversary), it is a plain-Lua
+  container with the same methods (`AddAuraSlot` with `candidateFilters` and
+  `initializeFrame`, `SetUnit`, `UpdateAllAuras`,
+  `SetAuraSlotCandidateFilters`): the same rows, colors, sizes, and places.
+  It reads your auras on the bound unit with
+  `C_UnitAuras.GetAuraDataByIndex(unit, i, "HARMFUL|PLAYER")` (readable in
+  combat there, nothing secret), matches each slot's filters (spell IDs, or a
+  dispel type minus excluded IDs), and fills the regions the initializer
+  handed it: icon, cooldown sweep, a StatusBar draining from the aura's
+  `duration` and `expirationTime`, the spell name, and "N s" / "N m". One
+  frame follows `UNIT_AURA`, target, focus, and plate events for the bound
+  units; one OnUpdate (every 0.1 s) redraws only while a timed slot shows,
+  and is cleared when none does.
+- `WTF.AuraEngineKind()`: "engine", "lua", or nil. The "stays off" lines
+  (tracker, Control bar) appear only with neither.
+- Not built: a combat log (CLEU) source. Rows bind to unit tokens, as on
+  Forever, so a mob with no unit (no plate, not your target or focus) shows
+  no timers on Classic either. CLEU could add those timers on Classic only
+  (Forever refuses CLEU).
+- On Classic the Bane slot holds Curse of Agony and Curse of Doom (by their
+  IDs) and the Curse slot your other curses; per-client slots are later work.
+
 ### Moved out in 1.3.0 (author-approved, 2026-10-22)
 
 So that WTF stops duplicating Dyre's other AddOns, and players meet them on
@@ -55,7 +83,18 @@ their other classes ("virality"):
   white between.
   Updates on `BAG_UPDATE_DELAYED` and limit changes; on by default, with a
   show switch; it moves with the one lock below; its place is saved per
-  character and reset by `/wtf reset`.
+  character and reset by `/wtf reset`. It keeps UIParent's strata, MEDIUM
+  (the Stones bar too): HIGH covered the Settings panel on Classic Era (John:
+  "it now renders on top of dialogs"). Its gold outline takes its frame's
+  strata (`WTF.CreateMover`). At the old default (CENTER -260,-160) it sat
+  under Shadowed Unit Frames' player frame (also MEDIUM) and could not be
+  grabbed, so the default place moved instead. Its default
+  place is a fraction of UIParent, 55% across and 42% up (John: "near the
+  center of the screen, about 50-60% across"), so it holds at any resolution
+  and UI scale, clear of the player and target frames of the default UI and
+  unit frame AddOns.
+  `/wtf debug_shards` reports its setting, shown/visible, point, place,
+  scale, alpha, text, icon, strata, level, and region count.
 - Deletes Soul Shards (item 6265) that a shard source creates above the carried
   limit, with no prompt or popup. The client allows `DeleteCursorItem` only
   during a hardware event (verified: from event handlers it raised
@@ -702,7 +741,7 @@ general frameworks, or speculative modules without agreement.
 
 ## Project structure
 
-- Runtime files: WarlockToolsForever.toc, Commands.lua, Core.lua, Layout.lua, Shards.lua, Stones.lua, Announce.lua, Tracker.lua, Dots.lua, Control.lua, Probe.lua, Options.lua, loaded in
+- Runtime files: WarlockToolsForever.toc, Commands.lua, Core.lua, Layout.lua, AuraEngine.lua, Shards.lua, Stones.lua, Announce.lua, Tracker.lua, Dots.lua, Control.lua, Probe.lua, Options.lua, loaded in
   that order. Core also owns the hardware-input hooks
   (every key press and world click) that item deletion and trade placement
   wait for.
@@ -813,7 +852,7 @@ general frameworks, or speculative modules without agreement.
   bullets under `### Features`, `### Fixes`, and `### Other changes`, in that
   order, leaving out an empty one. The builder's section ends only at the
   next `## `, so the `###` headings stay in the release notes.
-- Package only WarlockToolsForever.toc, Commands.lua, Core.lua, Layout.lua, Shards.lua, Stones.lua, Announce.lua, Tracker.lua, Dots.lua, Control.lua, Probe.lua, Options.lua, and LICENSE
+- Package only WarlockToolsForever.toc, Commands.lua, Core.lua, Layout.lua, AuraEngine.lua, Shards.lua, Stones.lua, Announce.lua, Tracker.lua, Dots.lua, Control.lua, Probe.lua, Options.lua, and LICENSE
   (no textures, no sound files) under the top-level
   `WarlockToolsForever/` folder, named
   `WarlockToolsForever-<version>-forever.zip`, with the builder's

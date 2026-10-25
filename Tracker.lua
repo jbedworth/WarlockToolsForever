@@ -57,7 +57,6 @@ local PADDING = 6
 local UNSEEN_SECONDS = 10
 local MAX_NAMEPLATE_UNITS = 40
 local AURA_FILTER = "HARMFUL|PLAYER"
-local CONTAINER_TEMPLATE = "CustomAuraContainerTemplate"
 local BROWN = {0.28, 0.16, 0.07, 0.85}
 local PLACEHOLDER_ALPHA = 0.3
 local DEFAULT_POINT = {"CENTER", "CENTER", -260, 120}
@@ -103,14 +102,9 @@ local tracker = {rows = {}, pinned = {}, casts = {}, spellSlots = {}, known = {}
     dead = {}, available = false}
 
 function WTF.CheckTrackerCapabilities()
-    if type(C_XMLUtil) ~= "table" or type(C_XMLUtil.GetTemplateInfo) ~= "function" then
-        return false, "C_XMLUtil.GetTemplateInfo"
-    end
-    if not C_AddOns.IsAddOnLoaded("Blizzard_AuraContainer") then
-        C_AddOns.LoadAddOn("Blizzard_AuraContainer")
-    end
-    if not C_XMLUtil.GetTemplateInfo(CONTAINER_TEMPLATE) then
-        return false, CONTAINER_TEMPLATE
+    -- Forever's engine aura slots, else AuraEngine.lua's plain-Lua ones.
+    if not WTF.AuraEngineKind() then
+        return false, WTF.AURA_ENGINE_MISSING
     end
     for _, name in ipairs({"RegisterStateDriver", "UnregisterStateDriver"}) do
         if type(_G[name]) ~= "function" then
@@ -632,7 +626,7 @@ local function CreateRow(parent, unit)
             label:SetText(SlotLabel(slot.key))
         end
     end
-    local container = CreateFrame("AuraContainer", nil, row, CONTAINER_TEMPLATE)
+    local container = WTF.CreateAuraContainer(row)
     if row.layer then
         container:SetFrameLevel(row:GetFrameLevel() + 2)
     end
@@ -1457,6 +1451,16 @@ function WTF.InitializeTracker()
         return
     end
     BuildSpellSets()
+    -- After combat: a delayed /wtf reset. Made here, past the class gate, so a
+    -- non-Warlock registers no events (John: "no macros, no frames, no events").
+    local placeEvents = CreateFrame("Frame")
+    placeEvents:RegisterEvent("PLAYER_REGEN_ENABLED")
+    placeEvents:SetScript("OnEvent", function()
+        if tracker.placeDirty then
+            tracker.placeDirty = false
+            Place()
+        end
+    end)
     -- Where the one tracker frame was: sections not yet dragged hang from it.
     tracker.stack = CreateFrame("Frame", nil, UIParent)
     tracker.stack:EnableMouse(false)
@@ -1490,15 +1494,6 @@ function WTF.InitializeTracker()
     BuildRows()
 end
 
--- After combat: a delayed /wtf reset.
-local placeEvents = CreateFrame("Frame")
-placeEvents:RegisterEvent("PLAYER_REGEN_ENABLED")
-placeEvents:SetScript("OnEvent", function()
-    if tracker.placeDirty then
-        tracker.placeDirty = false
-        Place()
-    end
-end)
 
 -- /wtf debug_tracker: the spell IDs each slot accepts, what pinned slots
 -- recast, and the listed mobs.

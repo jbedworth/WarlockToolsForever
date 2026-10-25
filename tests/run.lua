@@ -24,7 +24,7 @@ local function contains(actual, fragment, context)
     end
 end
 
-local RUNTIME_FILES = {"Commands.lua", "Core.lua", "Layout.lua", "Shards.lua", "Stones.lua", "Announce.lua", "Tracker.lua",
+local RUNTIME_FILES = {"Commands.lua", "Core.lua", "Layout.lua", "AuraEngine.lua", "Shards.lua", "Stones.lua", "Announce.lua", "Tracker.lua",
     "Dots.lua", "Control.lua", "Probe.lua", "Options.lua"}
 local SHARD = 6265
 local SPELLS = {[1120] = "Drain Soul", [11675] = "Drain Soul", [8288] = "Drain Soul", [686] = "Shadow Bolt", [172] = "Corruption",
@@ -905,6 +905,8 @@ local function fixture(options)
         function object:IsForbidden() return self.forbidden == true end
         function object:CreateMaskTexture() return widget("MaskTexture", nil, self) end
         function object:GetFrameLevel() return self.level or 1 end
+        function object:SetFrameStrata(value) self.strata = value end
+        function object:GetFrameStrata() return self.strata or "MEDIUM" end
         function object:SetShown(value)
             if value then self:Show() else self:Hide() end
         end
@@ -1070,6 +1072,38 @@ local function fixture(options)
     end
 
     for _, name in ipairs(options.remove or {}) do env[name] = nil end
+    -- options.classicSpellBook: Classic Era and Anniversary's spellbook API,
+    -- with no C_SpellBook skill lines or item info, and the legacy
+    -- GetSpellBookItemName(index, "pet"). options.petSpellbook: your demon's.
+    -- Its IsSpellKnown takes only a SpellBookSpellBank enum, as Classic Era's
+    -- (player report: "bad argument #2 to 'IsSpellKnown'" for `true`).
+    -- options.noSpellBank: no Enum.SpellBookSpellBank, only the legacy
+    -- IsSpellKnown(spellID, isPet).
+    state.petSpellbook = options.petSpellbook or state.petSpellbook
+    if options.classicSpellBook then
+        env.C_SpellBook.IsSpellKnown = function(id, bank)
+            if bank ~= nil and bank ~= 0 and bank ~= 1 then
+                error("bad argument #2 to 'IsSpellKnown' (Usage: local isKnown = "
+                    .. "C_SpellBook.IsSpellKnown(spellID [, spellBank]))")
+            end
+            if bank == 1 then return (state.petKnown or {})[id] == true end
+            return state.known[id] == true
+        end
+        env.C_SpellBook.GetNumSpellBookSkillLines = nil
+        env.C_SpellBook.GetSpellBookSkillLineInfo = nil
+        env.C_SpellBook.GetSpellBookItemInfo = nil
+        env.GetSpellBookItemName = function(index, book)
+            local item = book == "pet" and (state.petSpellbook or {})[index]
+            if item then return item.name, "", item.spellID end
+        end
+    end
+    if options.noSpellBank then
+        env.Enum.SpellBookSpellBank = nil
+        env.IsSpellKnown = function(id, isPet)
+            if isPet then return (state.petKnown or {})[id] == true end
+            return state.known[id] == true
+        end
+    end
     state.wtf = {}
     for _, path in ipairs(options.files or RUNTIME_FILES) do
         local chunk, message = loadfile(path)
@@ -1219,11 +1253,34 @@ test("other classes get one message and commands are refused", function()
     contains(state.last(), "Warlock Tools Forever is unavailable")
     equal(state.categories["Warlock Tools Forever"], nil, "no settings page")
 end)
+test("debug_shards says whether the shard counter was made, shown, and where (Classic report)", function()
+    -- As on Classic Era and Anniversary: no aura engine, no skill-line spellbook API.
+    local state = fixture({noAuraContainer = true})
+    state.env.C_SpellBook.GetNumSpellBookSkillLines = nil
+    state.clear()
+    state.slash("debug_shards")
+    local all = table.concat(state.messages, "\n")
+    contains(all, "debug_shards counter setting=true shown=true visible=true point=CENTER BOTTOMLEFT 550 336")
+    local counter = state.wtf.shardCounter
+    equal(counter.points[#counter.points][4], 1000 * 0.55, "55% across the screen, at any width")
+    equal(counter.points[#counter.points][5], 800 * 0.42, "a little below the middle")
+    equal(counter.mover.strata, counter:GetFrameStrata(), "the gold outline is on the counter's strata, never under it")
+    contains(all, "strata=MEDIUM level=1")
+    equal(state.wtf.shardCounter.strata, nil, "UIParent's strata, so dialogs and the Settings panel stay above it")
+    equal(state.env.WarlockToolsForeverStones.strata, nil, "the Stones bar too")
+    contains(all, "text=0")
+    state.settings.WTF_SHARDS_COUNTER:SetValue(false)
+    state.clear()
+    state.slash("debug_shards")
+    contains(table.concat(state.messages, "\n"), "debug_shards counter setting=false shown=false")
+end)
 test("diagnostics still run when WTF is unavailable", function()
     local state = fixture({class = "MAGE"})
     state.clear()
     state.slash("debug_shards")
     contains(state.messages[1], "debug_shards item=6265 name=Soul Shard")
+    contains(table.concat(state.messages, "\n"),
+        "debug_shards counter not created: startup did not reach the shard counter (WTF available=false)")
     state.clear()
     state.slash("debug_restrictions")
     contains(state.messages[1], "debug_restrictions combat=false")
@@ -1235,7 +1292,8 @@ test("a missing client API disables WTF with one message naming it", function()
     equal(state.categories["Warlock Tools Forever"], nil, "no settings page")
 end)
 test("a mixed install of old and new files is reported at login", function()
-    local state = fixture({files = {"Commands.lua", "Core.lua", "Layout.lua", "Shards.lua", "Stones.lua", "Announce.lua",
+    local state = fixture({files = {"Commands.lua", "Core.lua", "Layout.lua", "AuraEngine.lua", "Shards.lua",
+        "Stones.lua", "Announce.lua",
         "Tracker.lua", "Dots.lua", "Control.lua", "Options.lua"}})
     equal(state.wtf.available, false)
     contains(state.last(), "missing ReportRestrictions")
@@ -2113,8 +2171,9 @@ test("debug_shards lists bags, the source spell, and recent gains", function()
     contains(state.messages[4], "NUM_BAG_SLOTS=4 NUM_TOTAL_EQUIPPED_BAG_SLOTS=nil itemCount=0")
     contains(state.messages[6], "bag=1 slots=12 family=4 soul=true items=1 shards=1 shardSlotsByID=1 noInfo=0")
     contains(state.messages[10], "count=3 limit=12 keep=3 source=soul bag")
-    contains(state.messages[11], "debug_shards stopped=nil lastAttempt=none")
-    contains(state.messages[12], "gain 0.0s ago +1 count=3 keep=3 created=true combat=false last=UNIT_SPELLCAST_CHANNEL_START 11675 1.0s before")
+    contains(state.messages[11], "debug_shards counter setting=true shown=true")
+    contains(state.messages[12], "debug_shards stopped=nil lastAttempt=none")
+    contains(state.messages[13], "gain 0.0s ago +1 count=3 keep=3 created=true combat=false last=UNIT_SPELLCAST_CHANNEL_START 11675 1.0s before")
 end)
 local function reported(state, fragment)
     for _, message in ipairs(state.messages) do
@@ -4600,17 +4659,209 @@ test("learning a rank in combat updates every row after combat", function()
     equal(slotByKey(pinnedRow(state, "focus").container, "corruption").ids[990003], true)
     equal(pinnedRow(state, "target").casts[5].attributes.macrotext1, "/use [@target,harm,nodead] Siphon Life")
 end)
-test("without the aura container the tracker stays off and the rest runs", function()
-    local state = fixture({noAuraContainer = true})
+test("with neither the aura container nor aura reads the tracker stays off and the rest runs", function()
+    local state = fixture({noAuraContainer = true, remove = {"C_UnitAuras"}})
     equal(state.wtf.available, true)
     equal(state.env.WarlockToolsForeverTracker, nil)
-    local found
-    for _, message in ipairs(state.messages) do
-        if message:find("The DoT tracker stays off: this client lacks CustomAuraContainerTemplate.", 1, true) then
-            found = true
-        end
+    local all = table.concat(state.messages, "\n")
+    contains(all, "The DoT tracker stays off: this client lacks CustomAuraContainerTemplate and "
+        .. "C_UnitAuras.GetAuraDataByIndex.")
+    contains(all, "The control bar stays off: this client lacks CustomAuraContainerTemplate and "
+        .. "C_UnitAuras.GetAuraDataByIndex.")
+end)
+
+-- Classic Era and Anniversary: no engine aura slots, but auras readable in
+-- combat (AuraEngine.lua's plain-Lua containers).
+local CORRUPTION, FEAR_ID = 172, 5782
+
+local function classicAura(state, spellId, name, duration, left, dispelName)
+    return {spellId = spellId, name = name, icon = 1000 + spellId, duration = duration,
+        expirationTime = state.now + left, dispelName = dispelName}
+end
+
+-- Runs every OnUpdate (the plain-Lua containers' redraw) for this much time.
+local function tick(state, seconds)
+    state.now = state.now + seconds
+    for _, frame in ipairs(state.frames) do
+        if frame.scripts.OnUpdate then frame.scripts.OnUpdate(frame, seconds) end
     end
-    equal(found, true)
+end
+
+local function ticking(state)
+    for _, frame in ipairs(state.frames) do
+        if frame.scripts.OnUpdate then return true end
+    end
+    return false
+end
+
+test("on Classic the DoT tracker reads your auras itself, with the engine's look and timers", function()
+    local state = trackerFixture({noAuraContainer = true, db = {tracker = {theme = "bars"}}})
+    equal(state.wtf.AuraEngineKind(), "lua")
+    local row = pinnedRow(state, "target")
+    equal(row.container.kind, "Frame", "a plain-Lua container, not the engine's")
+    local slot = slotByKey(row.container, "corruption")
+    equal(slot.button.shown, false, "no Corruption yet: the dim line shows")
+    equal(ticking(state), false, "nothing tracked: no OnUpdate")
+    state.combat = true
+    state.units.target.auras = {classicAura(state, CORRUPTION, "Corruption", 18, 12)}
+    state.emit("UNIT_AURA", "target")
+    equal(slot.button.shown, true, "read in combat, as Classic allows")
+    local display = slot.button.display
+    equal(display.spellName.text, "Corruption")
+    equal(display.bar.maxValue, 18)
+    equal(display.bar.value, 12)
+    equal(display.text.text, "12 s")
+    tick(state, 2)
+    equal(display.bar.value, 10, "the bar drains")
+    equal(display.text.text, "10 s")
+    state.units.target.auras = {classicAura(state, CORRUPTION, "Corruption", 18, 18)}
+    state.emit("UNIT_AURA", "target")
+    equal(display.bar.value, 18, "a refresh restarts it")
+    state.units.target.auras = {}
+    state.emit("UNIT_AURA", "target")
+    equal(slot.button.shown, false, "removed")
+    equal(ticking(state), false, "and the redraw stops")
+end)
+test("on Classic a target swap shows the new target's auras, and list rows read their plates", function()
+    local state = trackerFixture({noAuraContainer = true})
+    state.units.nameplate4.auras = {classicAura(state, CORRUPTION, "Corruption", 18, 9)}
+    dot(state, CORRUPTION, "Wolf")
+    local list = shownRows(state)[1]
+    equal(list.container.unit, "nameplate4")
+    equal(slotByKey(list.container, "corruption").button.shown, true, "the Wolf's Corruption on its row")
+    local wolf = state.units.nameplate4
+    state.units.target = wolf
+    state.emit("PLAYER_TARGET_CHANGED")
+    local slot = slotByKey(pinnedRow(state, "target").container, "corruption")
+    equal(slot.button.shown, true, "the new target's Corruption")
+    equal(slot.button.display.text.text, "9 s")
+    state.units.target = {name = "Boar", guid = "Creature-9"}
+    state.emit("PLAYER_TARGET_CHANGED")
+    equal(slot.button.shown, false, "a target without it")
+end)
+test("on Classic the Curse slot takes your curses by type and the nameplate dots follow", function()
+    local state = trackerFixture({noAuraContainer = true, db = {tracker = {plateDots = true}}})
+    state.combat = true
+    state.emit("PLAYER_REGEN_DISABLED")
+    state.units.nameplate3.auras = {classicAura(state, 704, "Curse of Recklessness", 120, 100, "Curse")}
+    state.emit("NAME_PLATE_UNIT_ADDED", "nameplate3")
+    local bubble
+    for _, frame in ipairs(state.frames) do
+        if frame.colored and frame.container and frame.container.unit == "nameplate3" then bubble = frame end
+    end
+    equal(bubble ~= nil, true, "a bubble on the plate")
+    local curse
+    for _, each in ipairs(bubble.container.slots) do
+        if each.key == "curse" then curse = each end
+    end
+    equal(curse.button.shown, true, "the curse dot shows")
+    equal(bubble.colored.curse ~= nil, true, "colored")
+    state.units.nameplate3 = nil
+    state.emit("NAME_PLATE_UNIT_REMOVED", "nameplate3")
+    equal(bubble.container.unit, "none", "released with its plate")
+end)
+test("on Classic the Control bar and the Focus box show your Fear's time left", function()
+    local state = controlFixture({noAuraContainer = true})
+    local boar = state.units.nameplate3
+    state.units.focus = boar
+    state.emit("PLAYER_FOCUS_CHANGED")
+    boar.auras = {classicAura(state, FEAR_ID, "Fear", 20, 15)}
+    castAt(state, FEAR_ID, "nameplate3")
+    state.emit("UNIT_AURA", "focus")
+    local box = state.env.WarlockToolsForeverControlFocus
+    local fear = box.container.slots[1]
+    equal(fear.button.shown, true, "the Focus box's Fear")
+    equal(fear.button.display.text.text, "15 s")
+    local imp = state.units.nameplate4
+    imp.auras = {classicAura(state, FEAR_ID, "Fear", 20, 8)}
+    state.units.focus = imp
+    state.emit("PLAYER_FOCUS_CHANGED")
+    equal(fear.button.display.text.text, "8 s", "a new focus shows its own Fear at once, with no aura event")
+    state.units.focus = nil
+    state.emit("PLAYER_FOCUS_CHANGED")
+    local row = controlRow(state, 1)
+    equal(row.shown, true, "its row, once it is not your focus")
+    local slot = row.container.slots[1]
+    state.emit("UNIT_AURA", row.container.unit)
+    equal(slot.button.shown, true)
+    tick(state, 5)
+    equal(slot.button.display.text.text, "10 s")
+end)
+test("on Classic with a demon out, login completes, so unlocking shows the DoT tracker and Control bar samples", function()
+    -- Player report: with an Imp out, the Control bar's Seduction check called
+    -- C_SpellBook.GetSpellBookItemInfo, which Classic lacks, and stopped
+    -- login before WTF joined Dyre's Toolkit, so unlocking did nothing.
+    for _, toolkit in ipairs({true, false}) do
+        local state = trackerFixture({noAuraContainer = true, classicSpellBook = true, toolkit = toolkit or nil,
+            known = {[FEAR_ID] = true, [710] = true}, petSpellbook = {{spellID = 3110, name = "Firebolt"}}})
+        local label = toolkit and "with Dyre's Toolkit" or "on its own"
+        equal(state.categories["Warlock Tools Forever"] ~= nil, true, label .. ": the settings exist")
+        if toolkit then
+            equal(state.toolkit.info.addon, "WarlockToolsForever", "WTF joined the toolkit")
+        end
+        equal(pinnedRow(state, "target").name.text ~= "Target (sample)", true, label .. ": no samples while locked")
+        state.slash("unlock")
+        equal(state.wtf.db.locked, false, label .. ": unlocked")
+        equal(pinnedRow(state, "target").shown, true, label .. ": the target sample row")
+        equal(pinnedRow(state, "target").name.text, "Target (sample)")
+        equal(#shownRows(state), 2, label .. ": the list's sample rows")
+        equal(state.env.WarlockToolsForeverControlRow1.shown, true, label .. ": the Control bar's sample row")
+        equal(state.env.WarlockToolsForeverControlRow1.name.text, "Fear (sample)")
+        equal(state.env.WarlockToolsForeverControl.mover.shown, true, label .. ": its gold outline, to drag by")
+        state.slash("lock")
+        equal(state.wtf.db.locked, true)
+        equal(state.env.WarlockToolsForeverControlRow1.shown, false, label .. ": locked: the samples go")
+        equal(#shownRows(state), 0)
+        equal(state.env.WarlockToolsForeverControl.mover.shown, false)
+    end
+end)
+test("on Classic Era a non-Warlock gets one line and nothing past the class gate", function()
+    -- Player report: "not playing a warlock, so it shouldn't have been loaded".
+    local state = fixture({class = "PALADIN", noAuraContainer = true, classicSpellBook = true,
+        petSpellbook = {{spellID = 3110, name = "Firebolt"}}})
+    equal(state.wtf.available, false)
+    contains(state.last(), "is for Warlocks, so it stays off on this character.")
+    equal(#state.macros, 0, "no macros")
+    for _, frame in ipairs(state.frames) do
+        equal(frame.name, nil, "no named frames: " .. tostring(frame.name))
+        equal(next(frame.events), nil, "no events: " .. tostring(next(frame.events)))
+        equal(next(frame.unitEvents), nil, "no unit events: " .. tostring(next(frame.unitEvents)))
+        equal(frame.scripts.OnUpdate, nil, "no OnUpdate")
+    end
+    equal(state.categories["Warlock Tools Forever"], nil, "no settings page")
+    local count = #state.messages
+    state.combat = true
+    for _, event in ipairs({"PLAYER_REGEN_DISABLED", "UNIT_PET", "SPELLS_CHANGED", "BAG_UPDATE_DELAYED",
+        "PLAYER_TARGET_CHANGED", "UNIT_AURA", "PLAYER_REGEN_ENABLED"}) do
+        state.emit(event, "player")
+    end
+    equal(#state.messages, count, "nothing answers")
+end)
+test("on Classic Era a Warlock with a demon out logs in with no IsSpellKnown error", function()
+    -- Player report: "Control.lua:843: bad argument #2 to 'IsSpellKnown'" for
+    -- Seduction (6358), from passing `true` where Era takes the enum.
+    for _, noSpellBank in ipairs({false, true}) do
+        local label = noSpellBank and "legacy IsSpellKnown" or "the SpellBookSpellBank enum"
+        local state = controlFixture({noAuraContainer = true, classicSpellBook = true, noSpellBank = noSpellBank,
+            known = {[FEAR] = true, [712] = true}, petSpellbook = {{spellID = 3110, name = "Firebolt"}}})
+        equal(state.wtf.available, true, label)
+        equal(state.categories["Warlock Tools Forever"] ~= nil, true, label .. ": login completes")
+        equal(macroBody(state, "! Fear") ~= nil, true, label .. ": the Fear macro")
+        equal(macroBody(state, "! Seduction"), nil, label .. ": an Imp: no Seduction")
+        state.petKnown = {[6358] = true}
+        state.emit("UNIT_PET", "player")
+        contains(macroBody(state, "! Seduction"), "pet:Succubus/Incubus", label .. ": a Succubus by its ID")
+        state.petKnown = nil
+        state.petSpellbook = {{spellID = 99002, name = "Seduction"}}
+        state.emit("UNIT_PET", "player")
+        contains(macroBody(state, "! Seduction"), "pet:Succubus/Incubus", label .. ": by name in the pet spellbook")
+    end
+end)
+test("Forever keeps the engine's aura containers", function()
+    local state = trackerFixture()
+    equal(state.wtf.AuraEngineKind(), "engine")
+    equal(pinnedRow(state, "target").container.kind, "AuraContainer")
+    equal(pinnedRow(state, "target").container.template, "CustomAuraContainerTemplate")
 end)
 
 test("the Curse slot matches your Curse-type debuffs, not by ID and never your Bane", function()

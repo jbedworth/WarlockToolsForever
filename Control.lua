@@ -71,7 +71,6 @@ local FORGET_SLACK = 5
 local ANNOUNCE_REPEAT_SECONDS = 3
 local MAX_NAMEPLATE_UNITS = 40
 local AURA_FILTER = "HARMFUL|PLAYER"
-local CONTAINER_TEMPLATE = "CustomAuraContainerTemplate"
 
 -- WTF's Bars theme: the name line, then a bar line with an icon.
 local WIDTH = 200
@@ -160,14 +159,9 @@ local function IsDead(unit)
     return not WTF.IsSecret(dead) and dead == true
 end
 
+-- Forever's engine aura slots, else AuraEngine.lua's plain-Lua ones.
 local function HasAuraContainer()
-    if type(C_XMLUtil) ~= "table" or type(C_XMLUtil.GetTemplateInfo) ~= "function" then
-        return false
-    end
-    if not C_AddOns.IsAddOnLoaded("Blizzard_AuraContainer") then
-        C_AddOns.LoadAddOn("Blizzard_AuraContainer")
-    end
-    return C_XMLUtil.GetTemplateInfo(CONTAINER_TEMPLATE) ~= nil
+    return WTF.AuraEngineKind() ~= nil
 end
 
 -- Spell IDs by kind: the Classic ones and the spellbook's of the same names.
@@ -591,7 +585,7 @@ local function CreateFocusBox()
     placeholder:SetAlpha(PLACEHOLDER_ALPHA)
     placeholder:SetSize(ICON, ICON)
     placeholder:SetPoint("LEFT", line, "LEFT", 1, 0)
-    local container = CreateFrame("AuraContainer", nil, display, CONTAINER_TEMPLATE)
+    local container = WTF.CreateAuraContainer(display)
     container:SetPoint("TOPLEFT", display, "TOPLEFT")
     container:SetSize(1, 1)
     container:AddAuraSlot("fear", AURA_FILTER, {
@@ -643,7 +637,7 @@ local function CreateRow(index)
     placeholder:SetAlpha(PLACEHOLDER_ALPHA)
     placeholder:SetSize(ICON, ICON)
     placeholder:SetPoint("LEFT", line, "LEFT", 1, 0)
-    local container = CreateFrame("AuraContainer", nil, row, CONTAINER_TEMPLATE)
+    local container = WTF.CreateAuraContainer(row)
     container:SetPoint("TOPLEFT", row, "TOPLEFT")
     container:SetSize(1, 1)
     container:AddAuraSlot("control", AURA_FILTER, {
@@ -846,18 +840,35 @@ local function PetKnows(spellID)
     if type(C_SpellBook) ~= "table" or type(C_SpellBook.IsSpellKnown) ~= "function" then
         return false
     end
-    if C_SpellBook.IsSpellKnown(spellID, true) == true then
+    -- The second argument is a SpellBookSpellBank enum (Pet = 1); Classic Era
+    -- rejects `true` (player report: "bad argument #2 to 'IsSpellKnown'").
+    -- Without the enum, the legacy IsSpellKnown(spellID, isPet), else the scan.
+    local bank = type(Enum) == "table" and type(Enum.SpellBookSpellBank) == "table"
+        and Enum.SpellBookSpellBank.Pet or nil
+    if bank ~= nil then
+        if C_SpellBook.IsSpellKnown(spellID, bank) == true then
+            return true
+        end
+    elseif type(IsSpellKnown) == "function" and IsSpellKnown(spellID, true) == true then
         return true
     end
-    local bank = Enum and Enum.SpellBookSpellBank and Enum.SpellBookSpellBank.Pet
     local name = C_Spell.GetSpellName(spellID)
-    if not bank or not name or type(C_SpellBook.HasPetSpells) ~= "function" then
+    if not name or type(C_SpellBook.HasPetSpells) ~= "function" then
         return false
     end
+    -- Classic Era and Anniversary have no C_SpellBook.GetSpellBookItemInfo,
+    -- only GetSpellBookItemName(index, "pet") (player report: with a demon
+    -- out, the missing function stopped WTF's login, so unlocking did nothing).
     local count = C_SpellBook.HasPetSpells()
     for index = 1, (type(count) == "number" and count or 0) do
-        local item = C_SpellBook.GetSpellBookItemInfo(index, bank)
-        if type(item) == "table" and item.name == name then
+        local itemName
+        if bank ~= nil and type(C_SpellBook.GetSpellBookItemInfo) == "function" then
+            local item = C_SpellBook.GetSpellBookItemInfo(index, bank)
+            itemName = type(item) == "table" and item.name
+        elseif type(GetSpellBookItemName) == "function" then
+            itemName = GetSpellBookItemName(index, "pet")
+        end
+        if itemName == name then
             return true
         end
     end
@@ -956,7 +967,7 @@ local function CreatePlateTimer()
     local timer = CreateFrame("Frame", nil, UIParent)
     timer:SetSize(PLATE_TIMER_WIDTH, PLATE_TIMER_HEIGHT)
     timer:EnableMouse(false)
-    local container = CreateFrame("AuraContainer", nil, timer, CONTAINER_TEMPLATE)
+    local container = WTF.CreateAuraContainer(timer)
     container:SetPoint("TOPLEFT")
     container:SetSize(1, 1)
     container:AddAuraSlot("fear", AURA_FILTER, {
@@ -1116,7 +1127,7 @@ end
 
 function WTF.InitializeControl()
     if not HasAuraContainer() then
-        WTF.Report("The control bar stays off: this client lacks " .. CONTAINER_TEMPLATE .. ".")
+        WTF.Report("The control bar stays off: this client lacks " .. WTF.AURA_ENGINE_MISSING .. ".")
         return
     end
     BuildSpellSets()

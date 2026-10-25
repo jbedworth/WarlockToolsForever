@@ -222,7 +222,7 @@ From the Git Bash repository root:
 
 ```sh
 .tools/luarocks-3.13.0-win32/win32/lua5.1/bin/lua5.1.exe tests/run.lua
-.tools/luarocks-3.13.0-win32/win32/lua5.1/bin/luac5.1.exe -p Commands.lua Core.lua Layout.lua Shards.lua Stones.lua Announce.lua Tracker.lua Dots.lua Control.lua Probe.lua Options.lua tests/run.lua
+.tools/luarocks-3.13.0-win32/win32/lua5.1/bin/luac5.1.exe -p Commands.lua Core.lua Layout.lua AuraEngine.lua Shards.lua Stones.lua Announce.lua Tracker.lua Dots.lua Control.lua Probe.lua Options.lua tests/run.lua
 .tools/python-3.13.7/python.exe -m unittest discover -s tests -p 'test_*.py'
 ```
 
@@ -471,6 +471,17 @@ and printing.
       bar. Change or clear your focus: the Banish bar goes. Click the Banish
       row: it banishes your focus, with no marker and no target change;
       with no focus it does nothing.
+- [ ] Classic Era (and Anniversary): no "stays off" line for the DoT
+      tracker or the Control bar. DoT two mobs (Corruption, Curse of Agony,
+      Immolate) with enemy nameplates on: the target row shows your DoTs
+      with icons, draining bars, and time left; tab to the other mob: the
+      first gets a list row with its timers, the target row shows the new
+      target's. A DoT that ends or is dispelled leaves its slot dim. With
+      "Show DoT dots on nameplates" on, each plate's bubble shows a dot per
+      DoT. Fear one mob: its Control bar row shows the Fear time; with it as
+      your focus, the Focus box shows it, and a click fears it again. Banish
+      a demon or elemental with "! Banish": its row shows the Banish time.
+      BugSack stays empty.
 - [ ] Every WTF macro and row click works with `/use`: "! Healthstone" and
       "! Soulstone" (left-click uses, right-click creates the rank), "! Fear",
       "! Banish", "! Seduction", a pinned DoT slot click on the target and on

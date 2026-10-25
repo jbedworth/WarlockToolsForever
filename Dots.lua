@@ -14,7 +14,6 @@ local PADDING = 3
 local GREY = {0.35, 0.35, 0.35}
 local CIRCLE_MASK = "Interface\\CharacterFrame\\TempPortraitAlphaMask"
 local AURA_FILTER = "HARMFUL|PLAYER"
-local CONTAINER_TEMPLATE = "CustomAuraContainerTemplate"
 local MAX_NAMEPLATE_UNITS = 40
 
 local dots = {free = {}, byUnit = {}, all = {}, known = {}, inCombat = false, available = false}
@@ -92,7 +91,7 @@ local function CreateBubble()
     bubble:SetBackdropBorderColor(0.6, 0.5, 0.3)
     bubble:EnableMouse(false)
     bubble.colored = {}
-    local container = CreateFrame("AuraContainer", nil, bubble, CONTAINER_TEMPLATE)
+    local container = WTF.CreateAuraContainer(bubble)
     container:SetPoint("TOPLEFT")
     container:SetSize(1, 1)
     for index, slot in ipairs(dots.known) do

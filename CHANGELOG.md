@@ -4,6 +4,19 @@ Player-facing changes for each Warlock Tools Forever release, newest first. The
 release builder copies the section for the TOC version into the GitHub release
 notes and the CurseForge changelog, and fails if that section is missing.
 
+## 1.3.2
+
+### Features
+- WoW Classic Era and Anniversary: the DoT tracker, the nameplate DoT dots, the Fear and Banish bar, the Focus box, and the Fear timers on nameplates now work there, with the same look and settings. They read your auras directly where the game has no aura engine for AddOns; Forever is unchanged.
+
+### Fixes
+- Classic Era and Anniversary: with a demon out, a Lua error stopped WTF's login partway, so unlocking frames did nothing (no sample rows to move the DoT tracker and the Fear and Banish bar). WTF now reads your demon's spellbook the way those clients allow, including the "bad argument #2 to 'IsSpellKnown'" error.
+- On a character that is not a Warlock, WTF now also registers no events at all: it prints its one line and stays off.
+- Soul Shards: a fresh install or `/wtf reset` places the shard counter a little right of and below the screen's center (55% across), at any resolution and UI scale, away from the player and target frames of the default UI and unit frame AddOns; a counter you placed stays where it is.
+
+### Other changes
+- `/wtf debug_shards` now says whether the shard counter is shown and where, with its frame strata and level.
+
 ## 1.3.1
 
 ### Fixes

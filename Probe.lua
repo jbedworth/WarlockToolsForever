@@ -29,17 +29,21 @@ end
 -- The player's own recent casts, to learn whether spell IDs and cast targets
 -- stay readable in combat. Values are kept only as already-safe text.
 local casts = {}
-local castFrame = CreateFrame("Frame")
-castFrame:RegisterUnitEvent("UNIT_SPELLCAST_SENT", "player")
-castFrame:RegisterUnitEvent("UNIT_SPELLCAST_SUCCEEDED", "player")
-castFrame:SetScript("OnEvent", function(_, event, _, first, second, third)
-    if event == "UNIT_SPELLCAST_SENT" then
-        casts.sent = {time = GetTime(), target = WTF.Describe(first), spell = WTF.Describe(third)}
-    else
-        casts.succeeded = {time = GetTime(), spell = WTF.Describe(second)}
-        casts.succeededID = not WTF.IsSecret(second) and type(second) == "number" and second or nil
-    end
-end)
+
+-- Core starts this past the class gate, so a non-Warlock registers nothing.
+function WTF.InitializeProbe()
+    local castFrame = CreateFrame("Frame")
+    castFrame:RegisterUnitEvent("UNIT_SPELLCAST_SENT", "player")
+    castFrame:RegisterUnitEvent("UNIT_SPELLCAST_SUCCEEDED", "player")
+    castFrame:SetScript("OnEvent", function(_, event, _, first, second, third)
+        if event == "UNIT_SPELLCAST_SENT" then
+            casts.sent = {time = GetTime(), target = WTF.Describe(first), spell = WTF.Describe(third)}
+        else
+            casts.succeeded = {time = GetTime(), spell = WTF.Describe(second)}
+            casts.succeededID = not WTF.IsSecret(second) and type(second) == "number" and second or nil
+        end
+    end)
+end
 
 local function ReportRestrictionStates()
     if type(C_RestrictedActions) ~= "table" or type(C_RestrictedActions.GetAddOnRestrictionState) ~= "function"

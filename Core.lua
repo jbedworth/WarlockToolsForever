@@ -235,10 +235,11 @@ local REQUIRED_NAMESPACE = {
     "DeleteCharacterMacro", "ApplyControlMacros",
     "InitializeControl", "RefreshControl", "ResetControlPosition", "ReportControlDebug", "SanitizeControl", "InitializeAnnounce", "FormatAnnouncement", "ReportAnnounceDebug", "DebugEmote", "FriendlyTargetNames",
     "WhisperHealthstoneGift",
+    "AuraEngineKind", "CreateAuraContainer",
     "CheckTrackerCapabilities", "InitializeTracker", "ResetTrackerPosition", "RefreshTracker",
     "ReportTrackerDebug", "TrackerCandidateFilters", "TrackerKnowsSlot", "SetTrackerTheme",
     "InitializePlateDots", "RefreshPlateDots", "HasTrackableDots", "ApplyTrackerColors", "ApplyDotColors",
-    "ReportRestrictions", "InitializeOptions", "OpenSettings",
+    "ReportRestrictions", "InitializeProbe", "InitializeOptions", "OpenSettings",
 }
 
 local function CheckInstalledFiles()
@@ -705,6 +706,8 @@ end
 -- A plain child, so it can show and hide also in combat.
 function WTF.CreateMover(frame)
     local mover = CreateFrame("Frame", nil, frame, "BackdropTemplate")
+    -- On its frame's strata, so the outline is never under what covers it.
+    mover:SetFrameStrata(frame:GetFrameStrata())
     mover:SetPoint("TOPLEFT", -4, 4)
     mover:SetPoint("BOTTOMRIGHT", 4, -4)
     mover:SetBackdrop({edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border", edgeSize = 14})
@@ -920,6 +923,7 @@ events:SetScript("OnEvent", function(self, event, loadedName)
     WTF.InitializeTracker()
     WTF.InitializeControl()
     WTF.InitializePlateDots()
+    WTF.InitializeProbe()
     WTF.InitializeOptions()
     JoinToolkit()
     WTF.RefreshGrid()

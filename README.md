@@ -14,6 +14,11 @@ because builds change often. At login it checks for the APIs it needs and
 disables itself with one message if any are missing. It runs on Warlocks only;
 on other classes it prints one message and stays off.
 
+On WoW Classic Era and Anniversary, the DoT tracker, the nameplate DoT dots,
+and the Fear and Banish bar read your auras themselves (those clients have no
+aura engine for AddOns), with the same look and settings. As on Forever, a
+mob shows its timers while a nameplate, your target, or your focus shows it.
+
 ## Dyre's Shields Up and Dyre's Buff Reminders
 
 In version 1.3.0, four features moved out of WTF into two of Dyre's AddOns

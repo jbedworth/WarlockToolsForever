@@ -39,7 +39,16 @@ local COUNTER_SIZE = 40
 -- bright shard (in client, red on the magenta icon was hard to read).
 local COUNTER_ICON_SHADE = 0.45
 local COUNTER_FONT_GROWTH = 2
-local COUNTER_DEFAULT_POINT = {"CENTER", "CENTER", -260, -160}
+-- Its default place, as fractions of the screen (UIParent) from the bottom
+-- left, so it holds at any resolution and UI scale: 55% across and a little
+-- below the middle (John: "near the center of the screen, about 50-60%
+-- across"), clear of the character and of the player and target frames of
+-- the default UI and unit frame AddOns (player report, Classic Era: at the old
+-- CENTER -260, -160 it sat under a unit frame AddOn's player frame, Shadowed
+-- Unit Frames', and could not be grabbed). Only fresh
+-- installs and /wtf reset use it; a saved place stays.
+local COUNTER_DEFAULT_X = 0.55
+local COUNTER_DEFAULT_Y = 0.42
 local COUNTER_ICON = "Interface\\Icons\\INV_Misc_Gem_Amethyst_02"
 local GOLD = {1, 0.82, 0}
 local WHITE = {1, 1, 1}
@@ -376,8 +385,8 @@ local function PlaceCounter()
     if position then
         counter:SetPoint(position.point, UIParent, position.relativePoint, position.x, position.y)
     else
-        local point = COUNTER_DEFAULT_POINT
-        counter:SetPoint(point[1], UIParent, point[2], point[3], point[4])
+        counter:SetPoint("CENTER", UIParent, "BOTTOMLEFT", UIParent:GetWidth() * COUNTER_DEFAULT_X,
+            UIParent:GetHeight() * COUNTER_DEFAULT_Y)
     end
 end
 
@@ -625,6 +634,37 @@ function WTF.ReportShardDebug()
         tostring(state.blocked), tostring(DeletionRestricted()),
         state.heldAt and string.format("%.1fs ago", GetTime() - state.heldAt) or "never", tostring(state.channeling),
         tostring(state.secretCasts), tostring(Settling())))
+    -- The counter frame (player report, Classic Era: "the soul shard tracker is
+    -- missing"): whether startup made it, and where and how it shows.
+    if counter then
+        -- Each API's results in locals: some return no values at all.
+        local point, _, relativePoint, x, y = counter:GetPoint(1)
+        local left = counter:GetLeft()
+        local bottom = counter:GetBottom()
+        local shown = counter:IsShown()
+        local visible = counter:IsVisible()
+        local scale = counter:GetEffectiveScale()
+        local alpha = counter:GetAlpha()
+        local text = counter.count:GetText()
+        local icon = counter.icon:GetTexture()
+        local strata = counter:GetFrameStrata()
+        local level = counter:GetFrameLevel()
+        local iconShown = counter.icon:IsShown()
+        local regions = counter:GetNumRegions()
+        local function Round(value)
+            return type(value) == "number" and math.floor(value + 0.5) or value
+        end
+        WTF.Report(string.format(
+            "debug_shards counter setting=%s shown=%s visible=%s point=%s %s %s %s at=%s,%s scale=%s alpha=%s "
+                .. "text=%s icon=%s strata=%s level=%s iconShown=%s regions=%s",
+            tostring(WTF.db.shards.counter), tostring(shown), tostring(visible), tostring(point),
+            tostring(relativePoint), tostring(Round(x)), tostring(Round(y)), tostring(Round(left)),
+            tostring(Round(bottom)), tostring(scale), tostring(alpha), tostring(text), tostring(icon),
+            tostring(strata), tostring(level), tostring(iconShown), tostring(regions)))
+    else
+        WTF.Report("debug_shards counter not created: startup did not reach the shard counter (WTF available="
+            .. tostring(WTF.available) .. ")")
+    end
     local now = GetTime()
     local attempt = state.lastAttempt
     WTF.Report(string.format("debug_shards stopped=%s lastAttempt=%s", tostring(state.stopReason),
