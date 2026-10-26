@@ -485,6 +485,35 @@ their other classes ("virality"):
   as TankHelper's threat display does. They are pooled and rebuilt when the
   known DoTs change.
 
+### Clients without a focus target (built 1.3.3; shared with MTF: one account-wide flag per client)
+
+John, 1.3.3: "@focus and /focus do not work in era". Found in client on Era:
+after `/focus` on a hostile target, `UnitExists("focus")` is false and
+`SecureCmdOptionParse("[@focus,exists] yes; no")` is "no", with no error.
+Both Classic clones ship every focus function, event, and frame, so no API
+tells; the rule learns it, identically in MTF (keep the two the same):
+
+- `WarlockToolsForeverAccountDB.focusWorks`, account-wide (TOC
+  `## SavedVariables`, beside the per-character `WarlockToolsForeverDB`), so
+  one value per client install, shared by every character, as MTF's
+  `MageToolsForeverAccountDB.focusWorks`. Nil at first. It becomes true the first time `PLAYER_FOCUS_CHANGED` comes with
+  `UnitExists("focus")` true, readable and not secret. It never goes back to
+  false on its own; `/wtf reset_focus` clears it. Repair keeps only `true`.
+  A 1.3.3 test build kept it per character in `db.control.focusWorks`; a true
+  one is carried into the account value once at load, and the key goes.
+- Until it is true: the macros keep their `/focus` line (on Forever it sets
+  the focus that teaches WTF; on Era it does nothing) and add the mob under
+  the mouse, then your target, after `[@focus,exists,harm,nodead]`: "! Fear"
+  appends `[@mouseover,harm,nodead][harm,nodead]` to its cast (Shift still
+  fears the mob under the mouse, else your target, without the focus);
+  "! Banish"'s `/tm` and `/use` and "! Seduction"'s `/use` (with its pet
+  condition in each clause) get the same order. Banish rows start from the
+  cast as Fear rows do (not focus-only), rows take no clicks, and the Focus
+  box is hidden (also unlocked).
+- Once it is true, out of combat (macros and secure attributes wait for
+  `PLAYER_REGEN_ENABLED`), the Forever forms, the Focus box, and Banish row
+  clicks come back. `/wtf debug_control` prints `focusWorks=`.
+
 ### Control bar and control announcements (built)
 
 - After MTF's Polymorph bar, for many mobs (author-approved): up to five

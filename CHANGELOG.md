@@ -4,6 +4,11 @@ Player-facing changes for each Warlock Tools Forever release, newest first. The
 release builder copies the section for the TOC version into the GitHub release
 notes and the CurseForge changelog, and fails if that section is missing.
 
+## 1.3.3
+
+### Fixes
+- WoW Classic Era has no focus target, so a plain press of "! Fear" and every press of "! Banish" and "! Seduction" cast nothing there. Until you set a focus that works, the macros now cast on your focus, else the mob under your mouse, else your target, and "! Banish" marks that mob. Every Fear and Banish gets a Control bar row with its time left; the rows take no clicks, and there is no Focus box. The first time a focus works (as on Forever; learned once per game client, for all your characters), WTF switches to the focus macros, the Focus box, and the Banish row clicks, out of combat. `/wtf reset_focus` makes it check again, and `/wtf debug_control` shows what it learned.
+
 ## 1.3.2
 
 ### Features

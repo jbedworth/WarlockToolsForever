@@ -265,6 +265,13 @@ on, also when you tab or move the mouse before it lands.
   in combat; with no focus it is hidden. Your focus's Fear shows there, not
   again in the rows. On the Control settings page, **How Fear and your focus
   work** says all this in chat.
+- **Without a focus target** (WoW Classic Era has none): the macros fear,
+  banish, or seduce the mob under your mouse, else your target, and "! Banish"
+  marks that mob. Every Fear and Banish gets a row with its time left, but the
+  rows take no clicks and there is no Focus box. WTF learns that your focus
+  works the first time you set one (once per game client, for all your
+  characters), and then switches to the focus macros and
+  clicks above (out of combat). `/wtf reset_focus` makes it check again.
 
 - **Raid marker:** the "! Banish" macro puts the moon on your focus, in and
   out of combat, so your group knows it is out of the fight (change the

@@ -482,6 +482,16 @@ and printing.
       your focus, the Focus box shows it, and a click fears it again. Banish
       a demon or elemental with "! Banish": its row shows the Banish time.
       BugSack stays empty.
+- [ ] Classic Era, no focus target: `/wtf debug_control` says
+      `focusWorks=false`. "! Fear" on the mob under the mouse, then on your
+      target, fears each; "! Banish" marks and banishes the mob under the
+      mouse (else your target). Each gets a Control bar row with its time
+      left; the rows take no clicks; there is no Focus box, also unlocked.
+      On Forever, the first focus you set makes `focusWorks=true`, and after
+      combat the macros, the Focus box, and the Banish row click are as
+      before; log in to another character on the same client: it says
+      `focusWorks=true` at once (one account-wide value per client).
+      `/wtf reset_focus` sets it back to false for every character.
 - [ ] Every WTF macro and row click works with `/use`: "! Healthstone" and
       "! Soulstone" (left-click uses, right-click creates the rank), "! Fear",
       "! Banish", "! Seduction", a pinned DoT slot click on the target and on

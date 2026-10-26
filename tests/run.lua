@@ -1111,6 +1111,14 @@ local function fixture(options)
         setfenv(chunk, env)
         chunk("WarlockToolsForever", state.wtf)
     end
+    -- A client whose focus works, as Forever, unless options.focusWorks is
+    -- false (Classic Era: the macros fall back and rows take no clicks).
+    -- options.accountDB: the account-wide saved table, as another character left it.
+    local accountDB = options.accountDB
+    if accountDB == nil and options.focusWorks ~= false then
+        accountDB = {focusWorks = true}
+    end
+    env.WarlockToolsForeverAccountDB = accountDB
     env.WarlockToolsForeverDB = options.db
     state.env = env
     state.emit("ADDON_LOADED", "WarlockToolsForever")
@@ -3344,12 +3352,14 @@ test("the Control page explains how Fear, Banish, and your focus work", function
     equal(button.buttonText, "Show in chat")
     state.clear()
     button.buttonClick()
-    equal(#state.messages, 4, "one chat line each")
+    equal(#state.messages, 5, "one chat line each")
     equal(state.messages[1], "WTF: \"! Fear\" makes the mob under your mouse (else your target) your focus and "
         .. "fears it. Shift-press it to fear another mob and keep your focus.")
     contains(state.messages[2], "Click it to fear your focus again; with no focus it does nothing.")
     contains(state.messages[3], "Every other mob you fear gets its own row")
     contains(state.messages[4], "\"! Banish\" works the same way")
+    contains(state.messages[5], "Where the game has no focus (Classic Era), the macros fear or banish the mob "
+        .. "under your mouse, else your target")
     local macros = initializerFor(page, "WTF_CONTROL_MACROS")
     contains(macros.tooltip, "\"! Fear\" makes the mob under your mouse (else your target) your focus and fears it")
     contains(macros.tooltip, "The Focus box above the Control bar shows your focus's Fear")
@@ -4856,6 +4866,126 @@ test("on Classic Era a Warlock with a demon out logs in with no IsSpellKnown err
         state.emit("UNIT_PET", "player")
         contains(macroBody(state, "! Seduction"), "pet:Succubus/Incubus", label .. ": by name in the pet spellbook")
     end
+end)
+-- Clients without a focus target (John, 1.3.3: "@focus and /focus do not work
+-- in era"; rule shared with MTF): until a focus is seen to work, the macros
+-- fall back, rows take no clicks, and the Focus box is hidden.
+local CHAIN_FEAR = "#showtooltip Fear\n/focus [nomod:shift,@mouseover,harm,nodead][nomod:shift,harm,nodead]"
+    .. "\n/use [mod:shift,@mouseover,harm,nodead][mod:shift,harm,nodead][@focus,exists,harm,nodead]"
+    .. "[@mouseover,harm,nodead][harm,nodead] Fear"
+local CHAIN_BANISH = "#showtooltip Banish\n/focus [@mouseover,harm,nodead][nocombat,harm,nodead]"
+    .. "\n/tm [@focus,harm,nodead,exists][@mouseover,harm,nodead][harm,nodead] !5"
+    .. "\n/use [@focus,exists,harm,nodead][@mouseover,harm,nodead][harm,nodead] Banish"
+
+test("a client whose focus is not yet seen gets fallback macros, no Focus box, and click-free rows", function()
+    local state = controlFixture({focusWorks = false, known = {[FEAR] = true, [BANISH] = true, [712] = true}})
+    equal(state.wtf.accountDB.focusWorks, nil, "nothing learned yet")
+    equal(macroBody(state, "! Fear"), CHAIN_FEAR, "focus, else the mob under the mouse, else your target")
+    equal(#CHAIN_FEAR <= 255, true, "fits a macro")
+    equal(macroBody(state, "! Banish"), CHAIN_BANISH, "the moon goes on the mob it banishes")
+    state.petKnown = {[6358] = true}
+    state.emit("UNIT_PET", "player")
+    equal(macroBody(state, "! Seduction"), "#showtooltip Seduction\n/focus [@mouseover,harm,nodead][nocombat,harm,nodead]"
+        .. "\n/use [@focus,exists,harm,nodead,pet:Succubus/Incubus][@mouseover,harm,nodead,pet:Succubus/Incubus]"
+        .. "[harm,nodead,pet:Succubus/Incubus] Seduction")
+    equal(state.drivers[focusBox(state)], "hide", "no Focus box")
+    equal(focusBox(state).attributes.macrotext1, nil)
+    state.slash("unlock")
+    equal(state.drivers[focusBox(state)], "hide", "not even unlocked")
+    state.slash("lock")
+    -- A Banish at your target, with no focus (as on Era): its row starts from the cast.
+    castAt(state, BANISH, "nameplate4")
+    local row = controlRow(state, 1)
+    equal(row.shown, true, "a Banish row from the cast")
+    equal(row.name.text, "Imp")
+    equal(row.boundUnit, "target", "its time read through your target")
+    local holder = state.env.WarlockToolsForeverControlClick1
+    equal(holder.shown, false, "no click area")
+    equal(holder.attributes.macrotext1, nil, "no click")
+    -- A Fear at the mob under the mouse.
+    state.units.mouseover = state.units.nameplate3
+    state.units.target = nil
+    state.emit("UNIT_SPELLCAST_SENT", "player", "Boar", "fear-1", FEAR)
+    state.emit("UNIT_SPELLCAST_SUCCEEDED", "player", "fear-1", FEAR)
+    equal(controlRow(state, 2).shown, true, "a Fear row from the cast")
+    equal(controlRow(state, 2).boundUnit, "nameplate3", "its time read through its nameplate")
+    equal(state.env.WarlockToolsForeverControlClick2.attributes.macrotext1, nil)
+    state.clear()
+    state.slash("debug_control")
+    contains(state.messages[1], "focusWorks=false")
+end)
+test("once a focus is seen, the Forever forms, the Focus box, and clicks come back, out of combat", function()
+    local state = controlFixture({focusWorks = false})
+    state.combat = true
+    state.units.focus = state.units.nameplate4
+    state.emit("PLAYER_FOCUS_CHANGED")
+    equal(state.wtf.accountDB.focusWorks, true, "learned at once")
+    equal(state.env.WarlockToolsForeverAccountDB.focusWorks, true, "in the account-wide saved table")
+    equal(state.wtf.db.control.focusWorks, nil, "not per character")
+    equal(macroBody(state, "! Banish"), CHAIN_BANISH, "macros change only out of combat")
+    equal(state.drivers[focusBox(state)], "hide")
+    state.combat = false
+    state.emit("PLAYER_REGEN_ENABLED")
+    equal(macroBody(state, "! Banish"), "#showtooltip Banish\n/focus [@mouseover,harm,nodead][nocombat,harm,nodead]"
+        .. "\n/tm [@focus,harm,nodead,exists] !5\n/use [@focus,exists,harm,nodead] Banish")
+    contains(macroBody(state, "! Fear"), "[@focus,exists,harm,nodead] Fear")
+    equal(state.drivers[focusBox(state)], "[@focus,exists,harm,nodead] show; hide")
+    banishAt(state, "nameplate4")
+    equal(state.env.WarlockToolsForeverControlClick1.attributes.macrotext1, CLICK_BANISH, "the Banish click")
+    -- It never goes back on its own: no focus, or a focus that does not exist.
+    state.units.focus = nil
+    state.emit("PLAYER_FOCUS_CHANGED")
+    equal(state.wtf.accountDB.focusWorks, true)
+end)
+test("a missing focus teaches nothing; the flag is one per client, for every character, and repaired", function()
+    local state = controlFixture({focusWorks = false})
+    state.emit("PLAYER_FOCUS_CHANGED")
+    equal(state.wtf.accountDB.focusWorks, nil, "no focus: nothing learned")
+    state.units.focus = state.units.nameplate4
+    state.emit("PLAYER_FOCUS_CHANGED")
+    -- Another character on the same client, with its own fresh settings.
+    local other = controlFixture({focusWorks = false, accountDB = state.env.WarlockToolsForeverAccountDB})
+    equal(other.wtf.accountDB.focusWorks, true, "learned once, for every character")
+    equal(macroBody(other, "! Banish"):find("][harm,nodead]", 1, true), nil, "no fallback")
+    equal(other.drivers[focusBox(other)], "[@focus,exists,harm,nodead] show; hide", "the Focus box")
+    for _, damaged in ipairs({"yes", false, 1}) do
+        local repaired = controlFixture({focusWorks = false, accountDB = {focusWorks = damaged}})
+        equal(repaired.wtf.accountDB.focusWorks, nil, "only true is kept: " .. tostring(damaged))
+    end
+    local broken = controlFixture({focusWorks = false, accountDB = "not a table"})
+    equal(broken.wtf.accountDB.focusWorks, nil, "a damaged table is replaced")
+end)
+test("a 1.3.3 test build's per-character flag moves to the account once", function()
+    local state = controlFixture({focusWorks = false, db = {control = {focusWorks = true}}})
+    equal(state.wtf.accountDB.focusWorks, true, "carried into the account value")
+    equal(state.wtf.db.control.focusWorks, nil, "the per-character key goes")
+    equal(macroBody(state, "! Banish"):find("][harm,nodead]", 1, true), nil, "the focus macros")
+    local untouched = controlFixture({focusWorks = false, db = {control = {focusWorks = "yes"}}})
+    equal(untouched.wtf.accountDB.focusWorks, nil, "only a true one moves")
+    equal(untouched.wtf.db.control.focusWorks, nil)
+end)
+test("/wtf reset_focus forgets the flag and the macros fall back again", function()
+    local state = controlFixture()
+    equal(state.wtf.accountDB.focusWorks, true)
+    state.clear()
+    state.slash("debug_control")
+    contains(state.messages[1], "focusWorks=true")
+    state.clear()
+    state.slash("reset_focus")
+    contains(state.last(), "Focus check reset")
+    equal(state.wtf.accountDB.focusWorks, nil)
+    equal(state.env.WarlockToolsForeverAccountDB.focusWorks, nil, "cleared for every character")
+    equal(macroBody(state, "! Banish"), CHAIN_BANISH)
+    equal(state.drivers[focusBox(state)], "hide")
+    state.combat = true
+    state.units.focus = state.units.nameplate3
+    state.emit("PLAYER_FOCUS_CHANGED")
+    state.slash("reset_focus")
+    equal(state.wtf.accountDB.focusWorks, nil, "also in combat")
+    equal(macroBody(state, "! Banish"), CHAIN_BANISH, "the macro waited, so it still falls back")
+    state.combat = false
+    state.emit("PLAYER_REGEN_ENABLED")
+    equal(macroBody(state, "! Banish"), CHAIN_BANISH)
 end)
 test("Forever keeps the engine's aura containers", function()
     local state = trackerFixture()

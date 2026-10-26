@@ -161,6 +161,8 @@ WTF.CONTROL_HELP = {
     "Every other mob you fear gets its own row, and a Fear timer under its nameplate.",
     "\"! Banish\" works the same way: it makes the mob your focus, marks it with the moon, and banishes it. "
         .. "Click its row to banish your focus again.",
+    "Where the game has no focus (Classic Era), the macros fear or banish the mob under your mouse, else "
+        .. "your target; rows show the time left but take no clicks, and there is no Focus box.",
 }
 
 function WTF.ReportControlHelp()

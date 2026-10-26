@@ -239,7 +239,7 @@ local REQUIRED_NAMESPACE = {
     "CheckTrackerCapabilities", "InitializeTracker", "ResetTrackerPosition", "RefreshTracker",
     "ReportTrackerDebug", "TrackerCandidateFilters", "TrackerKnowsSlot", "SetTrackerTheme",
     "InitializePlateDots", "RefreshPlateDots", "HasTrackableDots", "ApplyTrackerColors", "ApplyDotColors",
-    "ReportRestrictions", "InitializeProbe", "InitializeOptions", "OpenSettings",
+    "ReportRestrictions", "ResetFocusWorks", "InitializeProbe", "InitializeOptions", "OpenSettings",
 }
 
 local function CheckInstalledFiles()
@@ -874,7 +874,20 @@ SLASH_WARLOCKTOOLSFOREVER1 = PRIMARY_SLASH
 SLASH_WARLOCKTOOLSFOREVER2 = BACKUP_SLASH
 SlashCmdList[SLASH_KEY] = WTF.HandleCommand
 
+-- Account-wide settings, one set per client install (shared with MTF): only
+-- focusWorks, which only true survives. A 1.3.3 test build kept it per
+-- character in db.control; a true one is carried over once, and SanitizeControl
+-- drops the old key.
+local function LoadAccountDB(saved, character)
+    saved = type(saved) == "table" and saved or {}
+    local old = type(character) == "table" and type(character.control) == "table"
+        and character.control.focusWorks == true
+    return {focusWorks = (saved.focusWorks == true or old) or nil}
+end
+
 local function LoadDB()
+    WarlockToolsForeverAccountDB = LoadAccountDB(WarlockToolsForeverAccountDB, WarlockToolsForeverDB)
+    WTF.accountDB = WarlockToolsForeverAccountDB
     WarlockToolsForeverDB = WTF.SanitizeDB(WarlockToolsForeverDB)
     WTF.db = WarlockToolsForeverDB
 end

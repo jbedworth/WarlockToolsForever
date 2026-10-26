@@ -37,6 +37,18 @@ local _, WTF = ...
 -- focus again. A countdown on each
 -- feared mob's nameplate shows which one is about to break; clicking the
 -- nameplate targets it.
+--
+-- Clients without a focus target (rule shared with MTF; John, 1.3.3: "@focus
+-- and /focus do not work in era"; in client on Era, /focus leaves
+-- UnitExists("focus") false and [@focus,exists] false, with no error, and the
+-- UI source has every focus function, so no API tells): the account-wide
+-- WarlockToolsForeverAccountDB.focusWorks (one per client install, as MTF's)
+-- starts nil and becomes true the first time PLAYER_FOCUS_CHANGED comes with a
+-- readable, not secret UnitExists("focus") true. It never goes back to false
+-- on its own; /wtf reset_focus clears it. Until it is true, the macros try
+-- your focus, then the mob under the mouse, then your target; Banish rows
+-- start from the cast as Fear rows do; rows take no clicks; and the Focus box
+-- is hidden. Once it is true, out of combat, the Forever forms come back.
 
 -- Classic IDs; every spellbook spell of the same name counts too. Enslave
 -- Demon and Howl of Terror only announce: an enslaved demon is your pet, and
@@ -157,6 +169,11 @@ end
 local function IsDead(unit)
     local dead = UnitIsDead(unit)
     return not WTF.IsSecret(dead) and dead == true
+end
+
+-- Whether this client has a focus target, as learned (see the file's head).
+function WTF.FocusWorks()
+    return WTF.accountDB.focusWorks == true
 end
 
 -- Forever's engine aura slots, else AuraEngine.lua's plain-Lua ones.
@@ -335,7 +352,7 @@ local function Layout()
     local sample = not WTF.db.locked
     anchor.mover:SetShown(sample)
     -- A Fear on your focus shows in the Focus box, not twice.
-    local focusGUID = control.focusBox and ReadGUID("focus")
+    local focusGUID = control.focusBox and WTF.FocusWorks() and ReadGUID("focus")
     if control.focusBox then
         local name = ReadName("focus")
         control.focusBox.display.name:SetText(sample and not name and FOCUS_SAMPLE
@@ -377,7 +394,8 @@ local function ApplyClicks()
     if box then
         box:SetScale(settings.scale / 100)
         local fear = C_Spell.GetSpellName(WTF.CONTROL_SPELLS[1].ids[1])
-        local known = settings.enabled and fear and KnowsAny()
+        -- No Focus box on a client whose focus has not been seen to work.
+        local known = settings.enabled and fear and KnowsAny() and WTF.FocusWorks()
         box:SetAttribute("type1", known and "macro" or nil)
         box:SetAttribute("macrotext1", known and WTF.RecastMacro(fear) or nil)
         -- Only unit conditions decide a secure frame's visibility in combat:
@@ -447,7 +465,7 @@ end
 
 local function Track(row, guid, mobName, spell, spellName)
     row.guid, row.mobName = guid, mobName
-    if spell.click then
+    if spell.click and WTF.FocusWorks() then
         row.clickName, row.clickSpell, row.clickKey = mobName, spellName, spell.key
         row.focusOnly = true
     end
@@ -469,9 +487,11 @@ local function ShowTooltip(holder)
         GameTooltip:SetText("Click: " .. holder.spellName .. " your focus again.", 1, 1, 1)
         GameTooltip:AddLine("No marker and no target change. With no focus it does nothing.", 0.7, 0.7, 0.7,
             true)
-    else
+    elseif WTF.FocusWorks() then
         GameTooltip:SetText("Banish your focus (\"! Banish\"), then click its row to cast it again.", 0.7, 0.7,
             0.7)
+    else
+        GameTooltip:SetText("Your Fears and Banishes show here with their time left.", 0.7, 0.7, 0.7)
     end
     GameTooltip:Show()
 end
@@ -708,7 +728,8 @@ local function OnCastSent(target, castGUID, spellID)
         return
     end
     local guid, unit
-    if spell.click then
+    local focusOnly = spell.click and WTF.FocusWorks()
+    if focusOnly then
         guid = LockFocusGUID(target)
         unit = guid and "focus"
         control.lastLook = {"focus only"}
@@ -726,7 +747,7 @@ local function OnCastSent(target, castGUID, spellID)
     control.casts[castGUID] = {target = target, spellID = spellID, guid = guid}
     -- A pull's Fear or Banish starts out of combat and lands in it: set the
     -- click now, while the game still allows it.
-    if spell.click and guid and not InCombatLockdown() then
+    if focusOnly and guid and not InCombatLockdown() then
         local row = RowFor(guid, target)
         if row and not row.guid then
             row.clickName, row.clickSpell, row.clickKey = target, C_Spell.GetSpellName(spellID), spell.key
@@ -821,6 +842,10 @@ local FOCUS_LINE = "/focus [@mouseover,harm,nodead][nocombat,harm,nodead]"
 -- "! Fear": without Shift, the mob under the mouse, else your target, becomes the focus.
 local FEAR_FOCUS_LINE = "/focus [nomod:shift,@mouseover,harm,nodead][nomod:shift,harm,nodead]"
 local FEAR_CAST = "/use [mod:shift,@mouseover,harm,nodead][mod:shift,harm,nodead][@focus,exists,harm,nodead] "
+-- Until a focus is seen to work, each macro falls back to the mob under the
+-- mouse, then your target (the /focus line stays: on Forever it sets the focus
+-- that teaches WTF; on Era it does nothing).
+local FALLBACK = "[@mouseover,harm,nodead][harm,nodead"
 
 local function KnowsAnyOf(ids)
     if type(C_SpellBook) ~= "table" or type(C_SpellBook.IsSpellKnown) ~= "function" then
@@ -887,12 +912,21 @@ function WTF.ControlMacroBody(macro)
     if not spell then
         return nil
     end
+    local chain = not WTF.FocusWorks()
     if macro.mouseover then
-        return "#showtooltip " .. spell .. "\n" .. FEAR_FOCUS_LINE .. "\n" .. FEAR_CAST .. spell
+        -- FEAR_CAST ends in "] ": the fallback joins its clauses with no space.
+        return "#showtooltip " .. spell .. "\n" .. FEAR_FOCUS_LINE .. "\n"
+            .. (chain and FEAR_CAST:sub(1, -2) .. FALLBACK .. "] " or FEAR_CAST) .. spell
     end
+    local condition = macro.condition or ""
     local lines = {"#showtooltip " .. spell, FOCUS_LINE}
-    lines[#lines + 1] = WTF.MarkLine("focus", macro.marker and WTF.db.control.markers[macro.marker])
-    lines[#lines + 1] = "/use [@focus,exists,harm,nodead" .. (macro.condition or "") .. "] " .. spell
+    local mark = WTF.MarkLine("focus", macro.marker and WTF.db.control.markers[macro.marker])
+    if mark and chain then
+        mark = mark:gsub(" !", FALLBACK .. "] !", 1)
+    end
+    lines[#lines + 1] = mark
+    lines[#lines + 1] = "/use [@focus,exists,harm,nodead" .. condition .. "]"
+        .. (chain and FALLBACK:gsub("nodead", "nodead" .. condition) .. "]" or "") .. " " .. spell
     return table.concat(lines, "\n")
 end
 
@@ -1097,6 +1131,14 @@ events:SetScript("OnEvent", function(_, event, unit, first, second, third)
         end
         ApplyClicks()
     else
+        if event == "PLAYER_FOCUS_CHANGED" and not WTF.FocusWorks() then
+            local exists = UnitExists("focus")
+            if not WTF.IsSecret(exists) and exists == true then
+                WTF.accountDB.focusWorks = true
+                WTF.ApplyControlMacros()
+                ApplyClicks()
+            end
+        end
         -- Your target or focus changed: learn its plate before rebinding.
         WTF.LearnPlates()
         Rebind()
@@ -1160,10 +1202,22 @@ function WTF.InitializeControl()
     WTF.ApplyControlMacros()
 end
 
+-- /wtf reset_focus: forget that this client's focus works, so the macros fall
+-- back again until a focus is seen (out of combat; in combat, after it).
+function WTF.ResetFocusWorks()
+    WTF.accountDB.focusWorks = nil
+    WTF.Report("Focus check reset: the macros try your focus, then the mob under the mouse, then your target, "
+        .. "until a focus is seen to work.")
+    if control.available then
+        WTF.ApplyControlMacros()
+        ApplyClicks()
+    end
+end
+
 -- /wtf debug_control: the IDs, each row's mob and click, and the last mark.
 function WTF.ReportControlDebug()
-    WTF.Report(string.format("debug_control available=%s known=%s", tostring(control.available),
-        tostring(control.available and KnowsAny())))
+    WTF.Report(string.format("debug_control available=%s known=%s focusWorks=%s", tostring(control.available),
+        tostring(control.available and KnowsAny()), tostring(WTF.FocusWorks())))
     if not control.available then
         return
     end
