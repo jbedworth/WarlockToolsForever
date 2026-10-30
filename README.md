@@ -240,6 +240,50 @@ while the dots are off. Raise the bubble with **Dot height
 above nameplates** if it overlaps your nameplate AddOn, and make it see-through
 with **Nameplate dot opacity** (100%, fully solid, by default).
 
+### Predictive DoT damage (WoW Classic Era)
+
+On Classic Era, a purple block on your target's health bar (the game's target
+frame), on each hostile nameplate's health bar, and on each DoT tracker row's
+health bar (with **Show mob health** on) shows the damage your
+Corruption, Curse of Agony, Immolate (its damage over time), and Siphon Life
+still have to deal to that mob. The block ends where the mob's health ends and
+grows to the left. A red skull and **DIES** show when your DoTs will deal
+at least the health the mob has left: just left of the target frame's bar,
+just right of a nameplate's bar (past the target arrows on Platynator), and
+on a DoT tracker row in place of the health number (the percent stays), at
+the same size on every frame.
+
+- **Exact after the first tick:** WTF reads each tick of your DoTs from the
+  combat log, so talents, spell power, and resists count; a resisted tick
+  counts as a tick. WTF remembers each rank's tick for all your characters,
+  so the next cast starts from it, scaled to your spell power then. Before
+  any tick of a rank it guesses from the rank and your spell power. Curse of
+  Agony's ticks grow as it runs, and the block knows that.
+- **Every mob you DoT counts,** also one no nameplate shows yet: its block
+  shows as soon as its nameplate or your target frame does. A DoT tracker
+  row whose mob has no nameplate now keeps the mob's last health and its
+  block, which still shrinks with each tick.
+- **Your DoTs only:** another Warlock's DoTs do not count.
+- **Settings:** under **DoT damage prediction** on the DoT Tracker page,
+  **Show Predictive DoT Damage**, **Also on nameplates**, and **Show DIES**
+  (all on by default). DoT tracker rows show the block when both **Show
+  Predictive DoT Damage** and **Show mob health** are on. **Block fill**
+  (Stripes, Solid, or the bar's own texture), **Block color** (purple, red,
+  orange, white, or green), **Block opacity** (70% by default), and **Block
+  outline** set one look for every bar; on a bar of the same color the block
+  is drawn lighter, so it stands out. `/wtf debug_predict` lists each mob's DoTs, their ticks, and
+  the damage to come.
+- **WoW: Forever:** the game keeps the combat log from AddOns there, so the
+  settings are greyed out and nothing shows. Support for Forever comes later.
+- **Other frame AddOns:** the block also goes on the health bars of
+  **Threat Plates**, **Plater**, and **Platynator** nameplates, **Shadowed
+  Unit Frames'** target frame, **BetterBlizzFrames'** target frame (also
+  with its smooth bars), and **EllesmereUI's** nameplates and target frame
+  (Plater, Platynator, BetterBlizzFrames, and EllesmereUI are not tested in
+  game yet). Without them, it goes on the game's own bars. A
+  vertical health bar gets no block. `/wtf debug_predict` says which AddOn's
+  bar each one is on.
+
 ## Control bar
 
 A bar for each mob you **Fear** or **Banish**, with the mob's name and the time
@@ -349,6 +393,7 @@ panel) to move just that one, freely; not in combat.
 | `/wtf debug_announce` | Diagnostics: the latest summon and Soulstone cast events |
 | `/wtf debug_emote` | Diagnostics: two test emotes from a timer, one per chat function, and which the game blocks |
 | `/wtf debug_tracker` | Diagnostics: the spell IDs each tracker slot accepts, and tracked mobs |
+| `/wtf debug_predict` | Diagnostics: each mob's DoTs, ticks, and damage to come (Classic Era) |
 | `/wtf debug_control` | Diagnostics: the control bar's spell IDs, rows, and clicks |
 
 `/warlocktools` works the same as `/wtf`, in case another AddOn uses `/wtf`.

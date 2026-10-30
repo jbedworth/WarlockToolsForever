@@ -4,6 +4,17 @@ Player-facing changes for each Warlock Tools Forever release, newest first. The
 release builder copies the section for the TOC version into the GitHub release
 notes and the CurseForge changelog, and fails if that section is missing.
 
+## 1.4.0
+
+### Features
+- WoW Classic Era: Predictive DoT damage. A purple block on your target's health bar, on each hostile nameplate, and on each DoT tracker row's health bar (with Show mob health on) shows the damage your Corruption, Curse of Agony, Immolate, and Siphon Life still have to deal, and a skull with "DIES" shows when that is at least the mob's health: just left of the target frame's bar, just right of a nameplate's bar (past the target arrows on Platynator), and on a DoT tracker row in place of the health number, keeping the percent, at the same size on every frame. It is exact after each DoT's first tick, read from the combat log, and WTF remembers each spell rank's tick for all your characters, scaled to your spell power, so the next cast starts close. A tracker row whose mob has no nameplate now keeps the mob's last health and its block. Tracker rows show it when both Show Predictive DoT Damage and Show mob health are on. Turn it off with Show Predictive DoT Damage, or only its nameplate part or "DIES", under DoT damage prediction on the DoT Tracker settings page. `/wtf debug_predict` lists each mob's DoTs.
+
+- The block has one look on every bar, set under DoT damage prediction: Block fill (diagonal stripes by default, solid, or the bar's own texture), Block color (purple by default, red, orange, white, green), Block opacity (70% by default), and Block outline (a thin line, on by default). On a bar of the same color, such as a DoT tracker row in purple, the block is drawn lighter.
+- The prediction also shows on Threat Plates, Plater, and Platynator nameplates, Shadowed Unit Frames' and BetterBlizzFrames' target frames (also with its smooth bars), and otherwise on the game's own bars.
+
+### Other changes
+- WoW: Forever: the DoT damage prediction settings are greyed out for now, as the game keeps the combat log from AddOns there. Forever support comes later.
+
 ## 1.3.3
 
 ### Fixes

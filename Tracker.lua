@@ -478,6 +478,38 @@ local function PercentText(unit, both)
     return string.format(both and "%d%% |" or "%d%%", percent)
 end
 
+local function ReadGUID(unit)
+    local guid = UnitGUID(unit)
+    if WTF.IsSecret(guid) or type(guid) ~= "string" then
+        return nil
+    end
+    return guid
+end
+
+-- The health a row's bar last showed, when readable (Classic Era): a list row
+-- that loses its unit keeps its bar and DoT prediction (John, 1.4.0: "a row
+-- with no unit token still has the GUID's prediction"). Only where the
+-- prediction runs: on Forever health is secret in combat and the prediction
+-- is off, so there such a row hides its bar, as before.
+local function KnownHealth(row)
+    local known = row.knownHealth
+    if known and row.guid and known.guid == row.guid then
+        return known
+    end
+end
+
+-- Where DIES goes on a row (John, 1.4.0: keep the percent, never cover the
+-- numbers): in place of the health number, which hides while DIES shows
+-- (with "both", the percent loses its "|"); with the percent only, just
+-- left of it, over the end of the name; with no text, at the bar's end.
+local function RowDiesPlace(row)
+    if row.healthNumber then
+        return {"LEFT", row.healthNumber, "LEFT", 0}
+    elseif row.healthPercent then
+        return {"RIGHT", row.healthPercent, "LEFT", -2}
+    end
+end
+
 local function UpdateHealth(row)
     local bar = row.health
     if not bar then
@@ -486,23 +518,42 @@ local function UpdateHealth(row)
     local unit = row.boundUnit
     if not unit or unit == "none" or not UnitExists(unit) or type(UnitHealth) ~= "function"
         or type(UnitHealthMax) ~= "function" then
-        bar:Hide()
         if row.healthPercent then
             row.healthPercent:SetText("")
         end
         if row.healthNumber then
             row.healthNumber:SetText("")
         end
+        local known = KnownHealth(row)
+        if not known then
+            bar:Hide()
+            WTF.DrawRowPrediction(bar, nil)
+            return
+        end
+        bar:SetMinMaxValues(0, known.max)
+        bar:SetValue(known.health)
+        bar:Show()
+        WTF.DrawRowPrediction(bar, row.guid, known.health, RowDiesPlace(row))
         return
     end
-    bar:SetMinMaxValues(0, UnitHealthMax(unit))
-    bar:SetValue(UnitHealth(unit))
+    local health, maxHealth = UnitHealth(unit), UnitHealthMax(unit)
+    local guid = row.guid or ReadGUID(unit)
+    if guid and WTF.PredictAvailable() and not WTF.IsSecret(health) and type(health) == "number" and not WTF.IsSecret(maxHealth)
+            and type(maxHealth) == "number" then
+        row.knownHealth = {guid = guid, health = health, max = maxHealth}
+    else
+        row.knownHealth = nil
+    end
+    bar:SetMinMaxValues(0, maxHealth)
+    bar:SetValue(health)
     bar:Show()
+    local dies = WTF.DrawRowPrediction(bar, guid, health, RowDiesPlace(row))
     if row.healthPercent then
-        row.healthPercent:SetText(PercentText(unit, row.healthNumber ~= nil))
+        row.healthPercent:SetText(PercentText(unit, row.healthNumber ~= nil and not dies))
     end
     if row.healthNumber then
-        row.healthNumber:SetText(type(AbbreviateNumbers) == "function" and AbbreviateNumbers(UnitHealth(unit)) or "")
+        row.healthNumber:SetText((not dies and type(AbbreviateNumbers) == "function")
+            and AbbreviateNumbers(UnitHealth(unit)) or "")
     end
 end
 
@@ -833,14 +884,6 @@ end
 
 -- Binding list rows -------------------------------------------------------------
 
-local function ReadGUID(unit)
-    local guid = UnitGUID(unit)
-    if WTF.IsSecret(guid) or type(guid) ~= "string" then
-        return nil
-    end
-    return guid
-end
-
 -- The unit token showing this mob now: its nameplate (by GUID, else Core's
 -- plate memory), else target or focus.
 local function FindUnit(guid)
@@ -863,7 +906,10 @@ end
 
 local function Bind(row, unit)
     local wanted = unit or "none"
+    -- Still the same unit, maybe for another mob: only the health and its
+    -- DoT prediction change.
     if row.boundUnit == wanted then
+        UpdateHealth(row)
         return
     end
     row.boundUnit = wanted
@@ -1239,6 +1285,24 @@ end
 
 -- New slot colors (DoT Colors page): the bars take a color only as they are
 -- built, so the rows are rebuilt (out of combat; in combat, when it ends).
+-- DoT prediction changed for one mob (Predict.lua), or for every mob: redraw
+-- the health and its block on the rows that show it.
+function WTF.RefreshTrackerPrediction(guid)
+    if not tracker.available then
+        return
+    end
+    for _, row in ipairs(tracker.rows) do
+        if row.guid and (guid == nil or row.guid == guid) then
+            UpdateHealth(row)
+        end
+    end
+    for _, pinned in pairs(tracker.pinned) do
+        if guid == nil or ReadGUID(pinned.unit) == guid then
+            UpdateHealth(pinned)
+        end
+    end
+end
+
 function WTF.ApplyTrackerColors()
     if tracker.available then
         BuildRows()

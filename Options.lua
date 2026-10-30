@@ -442,8 +442,76 @@ local function AddPanelSection(page, layout, panel, colors)
     AddDefaultTick(initializer, WTF.PANEL_OPACITY_MIN, WTF.PANEL_OPACITY_MAX, WTF.DEFAULT_PANEL_OPACITY)
 end
 
+-- DoT damage prediction (John, 1.4.0): greyed where the client has no combat
+-- log for it (Forever, until phase 2); saved values stay as they are.
+local PREDICT_NEEDS = " Needs the combat log, as on Classic Era; WoW: Forever support comes later."
+
+local function AddPredictSection(page, layout)
+    Heading(layout, "DoT damage prediction", "A purple block on the health bar for the damage your DoTs "
+        .. "still have to deal." .. PREDICT_NEEDS)
+    local function Refresh()
+        WTF.RefreshPredict()
+    end
+    local enabled = Flag(page, "WTF_PREDICT_ENABLED", "Show Predictive DoT Damage", "predict", "enabled", true,
+        "Predictive DoT damage: a purple block on your target's health bar, ending where its health ends, "
+            .. "and, with Show mob health on, on each DoT tracker row's, for the damage your "
+            .. "Corruption, Curse of Agony, Immolate, and Siphon Life still have to deal. Each DoT's tick is "
+            .. "learned from its first tick; until then it is a guess from its rank and your spell power."
+            .. PREDICT_NEEDS, Refresh)
+    local plates = Flag(page, "WTF_PREDICT_PLATES", "Also on nameplates", "predict", "plates", true,
+        "The same block on each hostile nameplate's health bar." .. PREDICT_NEEDS, Refresh)
+    local dies = Flag(page, "WTF_PREDICT_DIES", "Show DIES", "predict", "dies", true,
+        "\"DIES\" in red on the health bar when your DoTs will deal at least the mob's health." .. PREDICT_NEEDS,
+        Refresh)
+    local function Choice(variable, name, key, choices, default, tooltip)
+        local setting = Proxy(page, variable, Settings.VarType.String, name, default,
+            function() return WTF.db.predict[key] end,
+            function(value)
+                WTF.db.predict[key] = WTF.SanitizeChoice(value, choices, default)
+                Refresh()
+            end)
+        return Settings.CreateDropdown(page, setting, function()
+            local container = Settings.CreateControlTextContainer()
+            for _, choice in ipairs(choices) do
+                container:Add(choice.key, choice.label)
+            end
+            return container:GetData()
+        end, tooltip .. PREDICT_NEEDS)
+    end
+    local fill = Choice("WTF_PREDICT_FILL", "Block fill", "fill", WTF.PREDICT_FILLS, "stripes",
+        "Stripes: WTF's diagonal stripes. Solid: one flat color. Bar texture: the texture of the bar it sits on. "
+            .. "The same look on the target frame, nameplates, and DoT tracker rows.")
+    local color = Choice("WTF_PREDICT_COLOR", "Block color", "color", WTF.PREDICT_COLORS, "purple",
+        "The block's color. On a bar of the same color, as a DoT tracker row in the panel's purple, the block is "
+            .. "drawn lighter, so it stands out.")
+    local opacitySetting = Proxy(page, "WTF_PREDICT_OPACITY", Settings.VarType.Number, "Block opacity",
+        WTF.DEFAULT_PREDICT_OPACITY,
+        function() return WTF.db.predict.opacity end,
+        function(value)
+            WTF.db.predict.opacity = WTF.SanitizeWhole(value, WTF.PREDICT_OPACITY_MIN, WTF.PREDICT_OPACITY_MAX,
+                WTF.DEFAULT_PREDICT_OPACITY)
+            Refresh()
+        end)
+    local opacity = Settings.CreateSlider(page, opacitySetting,
+        SliderOptions(WTF.PREDICT_OPACITY_MIN, WTF.PREDICT_OPACITY_MAX, 5, true),
+        "How solid the block is, in percent." .. PREDICT_NEEDS)
+    AddDefaultTick(opacity, WTF.PREDICT_OPACITY_MIN, WTF.PREDICT_OPACITY_MAX, WTF.DEFAULT_PREDICT_OPACITY)
+    local outline = Choice("WTF_PREDICT_OUTLINE", "Block outline", "outline", WTF.PREDICT_OUTLINES, "solid",
+        "A thin line around the block, a little lighter than its color.")
+    for _, initializer in ipairs({fill, color, opacity, outline}) do
+        initializer:SetParentInitializer(enabled, function() return WTF.db.predict.enabled end)
+    end
+    for _, initializer in ipairs({enabled, plates, dies, fill, color, opacity, outline}) do
+        if type(initializer.AddModifyPredicate) == "function" then
+            initializer:AddModifyPredicate(function() return WTF.PredictAvailable() end)
+        end
+    end
+    plates:SetParentInitializer(enabled, function() return WTF.db.predict.enabled end)
+    dies:SetParentInitializer(enabled, function() return WTF.db.predict.enabled end)
+end
+
 -- Sections (author): General (what every panel shares) first, then one per
--- panel: Target, Focus, and Others.
+-- panel: Target, Focus, and Others; then DoT damage prediction.
 local function AddTrackerPage(parent)
     local page, layout = Settings.RegisterVerticalLayoutSubcategory(parent, TRACKER_TITLE)
     Heading(layout, "General", "Settings that every DoT tracker panel shares, and the nameplate dots.")
@@ -525,6 +593,7 @@ local function AddTrackerPage(parent)
     for _, panel in ipairs(WTF.TRACKER_PANELS) do
         AddPanelSection(page, layout, panel, colors[panel.key])
     end
+    AddPredictSection(page, layout)
 end
 
 -- One color per slot, shared by the tracker's bars and the nameplate dots.

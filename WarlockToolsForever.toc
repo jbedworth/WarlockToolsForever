@@ -2,7 +2,7 @@
 ## Title: Warlock Tools Forever
 ## Notes: Quality-of-life tools for Warlocks in WoW Forever
 ## Author: Dyre
-## Version: 1.3.3
+## Version: 1.4.0
 ## IconTexture: Interface\Icons\INV_Misc_Gem_Amethyst_02
 ## Category: Warlock
 ## Group: DyresToolkit
@@ -19,6 +19,7 @@ Stones.lua
 Announce.lua
 Tracker.lua
 Dots.lua
+Predict.lua
 Control.lua
 Probe.lua
 Options.lua

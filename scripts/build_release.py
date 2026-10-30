@@ -21,12 +21,13 @@ from pathlib import Path
 
 ADDON = "WarlockToolsForever"
 RUNTIME_FILES = ("Commands.lua", "Core.lua", "Layout.lua", "AuraEngine.lua", "Shards.lua", "Stones.lua", "Announce.lua", "Tracker.lua",
-                 "Dots.lua", "Control.lua", "Probe.lua", "Options.lua")
+                 "Dots.lua", "Predict.lua", "Control.lua", "Probe.lua", "Options.lua")
 TEXT_FILES = (ADDON + ".toc",) + RUNTIME_FILES + ("LICENSE",)
-# Runtime textures shipped in the package; none since 1.3.0, when the shield
-# display (and its crescents) moved to Dyre's Shields Up. A texture added later
-# must be an uncompressed 32-bit, square, power-of-two TGA. No sounds.
-MEDIA_FILES = ()
+# Runtime textures shipped in the package: since 1.4.0 the DoT prediction
+# block's stripes (scripts/make_stripes.py; the shield crescents went to Dyre's
+# Shields Up in 1.3.0). Each must be an uncompressed 32-bit, square,
+# power-of-two TGA. No sounds.
+MEDIA_FILES = ("Textures/Stripes.tga",)
 PACKAGE_FILES = TEXT_FILES + MEDIA_FILES
 TGA_HEADER_SIZE = 18
 TGA_TRUECOLOR = 2

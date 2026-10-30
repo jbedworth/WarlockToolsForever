@@ -485,6 +485,154 @@ their other classes ("virality"):
   as TankHelper's threat display does. They are pooled and rebuilt when the
   known DoTs change.
 
+### DoT damage prediction (built 1.4.0, phase 1: Classic Era; John: "go")
+
+Predict.lua. Research and John's rulings: the shared notes'
+wtf-dot-damage-prediction-research.md. Phase 2 (Forever, an estimate from
+your casts and `UNIT_COMBAT`, no DIES) is not built; it waits for John.
+
+- Gated on APIs (the same gate as Dyre's Crit Mayhem): the combat log is used
+  when `C_CombatLog.IsCombatLogRestricted` is absent or false and
+  `C_CombatLog.GetCurrentEventInfo` (or the deprecated
+  `CombatLogGetCurrentEventInfo`) exists. Otherwise (Forever) Predict.lua
+  makes no frame and registers no event, and the three settings are greyed
+  (modify predicate) with "WoW: Forever support comes later".
+- By mob GUID, from `COMBAT_LOG_EVENT_UNFILTERED` with source you:
+  `SPELL_AURA_APPLIED`/`REFRESH` start a DoT (a refresh starts its ticks
+  over and keeps a learned tick of the same rank), `SPELL_PERIODIC_DAMAGE`
+  (Siphon Life: `SPELL_PERIODIC_LEECH`) ticks, `SPELL_PERIODIC_MISSED` (a
+  resisted, absorbed, or immune tick) is a tick seen with nothing to learn,
+  `SPELL_AURA_REMOVED` ends it. Aura events count only with aura type
+  "DEBUFF" (field 15);
+  `UNIT_DIED`, `UNIT_DESTROYED`, or `PARTY_KILL` with that dest ends the mob.
+  A `C_Timer` drops each DoT 0.5 s after its last tick, for an end out of
+  combat log range. Others' DoTs never count.
+- The rank: the combat log's spell ID, or, with a 0 ID, the spell name and
+  the rank of your last `UNIT_SPELLCAST_SUCCEEDED` of that family.
+- Damage to come: the sum of the ticks left (those not seen, or due by time
+  when some were missed). Each DoT keeps an average tick: the mean of its
+  ticks this cast (John, from the Does It Die comparison, 2026-10-29); before
+  its first tick, the saved tick of that rank, else the rank's base (Classic
+  tooltip values, RANKS) plus `GetSpellBonusDamage(school)` times duration /
+  15 (at most 1; Immolate's over-time part 0.65, Siphon Life 0.5), less
+  3.75% per level for ranks below level 20. The base values and
+  coefficients are a first guess only (medium confidence); the learned tick
+  is exact.
+- Curse of Agony: its ramp (0.5, 1, 1.5, four ticks each) applies to the
+  rank's base per tick only; the rest of the average (spell power) is even
+  over the ticks. A tick of amount a at weight w stands for the average
+  a - base x w + base. Found in game on TBC by Does It Die's port; not yet
+  confirmed on Era.
+- Saved ticks (author-approved, 2026-10-29): account-wide, in
+  `WarlockToolsForeverAccountDB.ticks[rank spell ID] = {tick, power}`: the
+  average to one decimal and the spell power the DoT was cast at, written at
+  each tick. A new cast of that rank starts from base + (tick - base) x
+  power now / saved power (no rescale when the saved power is 0 or the tick
+  is not above the base). Repaired on load (Core's LoadTicks); ranks not in
+  RANKS are dropped at login, so at most 25 entries.
+- Drawing: Blizzard's target frame bar (`TargetFrame.healthbar`, else
+  `TargetFrameHealthBar`), each DoT tracker row's health bar (John, 1.4.0:
+  when both "Show mob health" and "Show Predictive DoT Damage" are on, with
+  no switch of its own and mob health never turned on for it; `UpdateHealth` calls `WTF.DrawRowPrediction` with
+  the row's GUID and the health it shows, at the bar's own frame level, under
+  the row's text layer), and each hostile, not forbidden nameplate's
+  `UnitFrame.HealthBarsContainer.healthBar` (Era's Blizzard_NamePlates.xml;
+  else `UnitFrame.healthBar`). The block is WTF's own StatusBar, a child of
+  the bar, from the bar's left edge to its fill texture's right edge, filled
+  from the right (`SetReverseFill`) with `min(damage, health)` out of the
+  health left: it ends at the health and is never wider than it. DIES when
+  the damage is at least the health (John, after his Era test: the first
+  "DIES" text was hidden under a row's texts, ran into a nameplate's name,
+  and was small on the target frame): a badge, a red skull (the game's level
+  skull, `UI-TargetingFrame-Skull`, tinted red; not the raid marker's, which
+  a mob marked by /tm shows on the same frames) and "DIES" in red with
+  `THICKOUTLINE`, at the bar's level + 12 (above a row's text layer and
+  slots), at UI scale whatever the bar's own scale (found in client:
+  Platynator's scaled-down display made it a few pixels tall), placed by kind
+  for every adapter of that kind unless the adapter gives its own (`dies`):
+  unit frames just left of the bar, vertically centered (14 pt; found in
+  client: centered, it ran into SUF's name; SUF writes its name on the
+  bar's left and health on its right, Blizzard and BetterBlizzFrames the
+  name above and the health text in the middle, so left of the bar is the
+  free side); nameplates just right of the bar (11 pt, clear of the name
+  above and Plater's raid marker on the left); Platynator 22 px right of the
+  bar, past its target arrows, vertically centered, in strata LOW above its
+  BACKGROUND display (found in client: above the bar it ran under the
+  centered name); tracker rows (10 pt) in place of the health number,
+  which hides while DIES shows (with "both", the percent drops its "|";
+  found in client: at the bar's end it covered "| 137"), just left of the
+  percent with the percent only, else at the bar's right end. Nothing is drawn on target-of-target or other unit frames. A secret or missing health, a mob you cannot attack, or no damage
+  hides the block. The target frame's block is made at login.
+- Tracker rows are per GUID (John: "a row with no unit token still has the
+  GUID's prediction"): where the prediction runs, a list row keeps the last
+  readable health of its mob (`row.knownHealth`, dropped when the row gets
+  another mob) and shows it, with the block, while it has no unit. On
+  Forever (prediction off) such a row hides its health, as before. `Bind`
+  to the same unit still updates the health, so a reused row never keeps
+  the old mob's.
+- Redrawn on its combat log events (also the tracker rows, through
+  `WTF.RefreshTrackerPrediction(guid)`), `UNIT_HEALTH`, `UNIT_MAXHEALTH`,
+  `PLAYER_TARGET_CHANGED`, and `NAME_PLATE_UNIT_ADDED`/`REMOVED`, and when a
+  tracker row is bound or rebuilt; no polling.
+- Settings (`db.predict`, repaired on load; on by default): `enabled` "Show
+  Predictive DoT Damage" (John, 1.4.0), `plates` "Also on nameplates",
+  `dies` "Show DIES", in their own section at the end of the DoT Tracker
+  page. A test build's `tracker` switch is dropped on load.
+- The block's look (John, 1.4.0: "make them look the same everywhere"; his
+  Era screenshot showed no block on a purple tracker row): one `Style` for
+  every overlay (every adapter and the tracker rows). The overlay's own
+  StatusBar fill is clear and only measures the span; a texture over it is
+  the block, and four 1 px textures its outline. `fill`: Stripes (default;
+  Textures\Stripes, white stripes at full alpha over 40% gaps, tiled with
+  REPEAT, tinted by the color, no animation), Solid (WHITE8X8), or Bar
+  texture (the bar's own fill: its atlas, else its file). `color`: Purple
+  (default), Red, Orange, White, Green (Core's PREDICT_COLORS). `opacity`
+  20-100%, default 70. `outline`: None or Solid (default), the color 40%
+  lighter, 30% more solid. On a bar whose own fill color is within 0.15
+  (sum of red, green, blue) of the block's, the block is 50% lighter.
+  Restyled only when a setting or the bar's color or art changes.
+- Frame adapters (John, 1.4.0: ThreatPlates, Plater, then EllesmereUI; SUF
+  next): `PLATE_ADAPTERS` and `UNIT_ADAPTERS` in Predict.lua, one entry per
+  AddOn, each returning the StatusBar for a plate or for "target"/"focus",
+  else nil; the first match wins, Blizzard's bar last. Each path is read
+  field by field (`Field`, `StatusBar`), so a missing or changed AddOn gives
+  nil, never an error. Paths read from the AddOns' source on Era:
+  - Threat Plates 13.3.3: `plate.TPFrame` while `.Active` (Nameplate.lua
+    `ShowBlizzardNameplate`), bar `.visual.Healthbar` (or `.healthbar`).
+  - Plater: `plate.unitFrame.healthBar` with the `Plater` global (Plater.lua;
+    DetailsFramework `CreateHealthBar`), also with "use UIParent".
+  - Shadowed Unit Frames v4.3.9: `ShadowUF.Units.unitFrames[unit].healthBar`
+    (modules/units.lua, modules/health.lua).
+  - EllesmereUI (not installed anywhere; from Does It Die only, unverified):
+    `EllesmereNameplates_NS.plates[unit]` while its `.nameplate` is this
+    plate, bar `.health`; `EllesmereUIUnitFrames_Target`/`_Focus`, `.Health`.
+  - Platynator 527 (John, 1.4.0; read in its source on Era; its TOC lists
+    11509 and 16001): with the `Platynator` global, the shown display frame
+    among the plate's own children (`.widgets`, `Install`, `SetUnit`) whose
+    `.unit` is the plate's unit; its widget with `details.kind == "health"`
+    holds the bar at `.statusBar`. Its manager installs one display per
+    plate and style in its own `NAME_PLATE_UNIT_ADDED` handler
+    (`SetParent(nameplate)`, `SetUnit`) and uninstalls with `SetUnit(nil)`
+    and `Hide` (Display/Initialize.lua, Display/Nameplate.lua,
+    Display/Widgets.lua). Its CallbackRegistry is private, so there is no
+    event to hook; the plate's children are read at each draw.
+  - BetterBlizzFrames v2.1.8 (Era source, classics/): restyles Blizzard's
+    frames; it moves, resizes, and re-textures `TargetFrameHealthBar` but
+    keeps it, so Blizzard's entry covers it (the block re-anchors to a new
+    fill). It adds no target or focus bar of its own, no reverse fill, and
+    no nameplates. Its "smooth bars" option (shared/smoothBars.lua) hides the
+    stock fill (alpha 0) and shows an eased StatusBar child,
+    `TargetFrameHealthBar.bbfSmoothOverlay`, mirroring values, color, and
+    texture: the BetterBlizzFrames entry puts the block on that one.
+  The bar is resolved again at each draw, and a block on a bar the unit
+  left is hidden (`UseBar`: Threat Plates letting a plate go, recycled
+  plates). `NAME_PLATE_UNIT_ADDED` draws at once and once more on the next
+  frame (`C_Timer.After(0)`), after the AddOns' own handlers for the event.
+  Each draw re-anchors when the fill texture or reverse fill changed (SUF
+  can reverse-fill: the block is mirrored) and sets the frame level; a
+  vertical bar gets no block. The focus frame is drawn too where a focus
+  exists. `/wtf debug_predict` prints "Frames:" with the AddOn per unit.
+
 ### Clients without a focus target (built 1.3.3; shared with MTF: one account-wide flag per client)
 
 John, 1.3.3: "@focus and /focus do not work in era". Found in client on Era:
@@ -770,14 +918,14 @@ general frameworks, or speculative modules without agreement.
 
 ## Project structure
 
-- Runtime files: WarlockToolsForever.toc, Commands.lua, Core.lua, Layout.lua, AuraEngine.lua, Shards.lua, Stones.lua, Announce.lua, Tracker.lua, Dots.lua, Control.lua, Probe.lua, Options.lua, loaded in
+- Runtime files: WarlockToolsForever.toc, Commands.lua, Core.lua, Layout.lua, AuraEngine.lua, Shards.lua, Stones.lua, Announce.lua, Tracker.lua, Dots.lua, Predict.lua, Control.lua, Probe.lua, Options.lua, loaded in
   that order. Core also owns the hardware-input hooks
   (every key press and world click) that item deletion and trade placement
   wait for.
   Commands parses `/wtf`; Core owns saved settings and their defaults, the
   login banner, class and install checks, slash conflict reporting, and
   startup, and the moved-feature lines; Layout owns snapping; Shards, Stones,
-  Announce, Tracker, Dots, and Control own their modules; Probe owns
+  Announce, Tracker, Dots, Predict, and Control own their modules; Probe owns
   `/wtf debug_restrictions`; Options owns the settings pages.
 - tests/run.lua holds the Lua 5.1 mock suite. tests/test_*.py cover the release
   helpers in scripts/. .github/workflows/ holds CI, opt-in publishing, and the
@@ -798,8 +946,10 @@ general frameworks, or speculative modules without agreement.
   `## Category: Warlock`, which groups WTF only when the toolkit is missing;
   keep it identical to the CurseForge main category, since the list groups by
   exact text.
-- WTF ships no runtime assets and no sound files (the shield textures went
-  to Dyre's Shields Up in 1.3.0); add none without agreement.
+- WTF ships one runtime asset, Textures/Stripes.tga (John, 1.4.0: the DoT
+  prediction block's stripes; made by scripts/make_stripes.py, 32 x 32
+  uncompressed 32-bit), and no sound files (the shield textures went to
+  Dyre's Shields Up in 1.3.0); add no more without agreement.
 - Git origin: git@github.com:jbedworth/WarlockToolsForever.git. Inspect Git
   state before acting and preserve user work. Text is LF under .gitattributes.
 
@@ -881,8 +1031,8 @@ general frameworks, or speculative modules without agreement.
   bullets under `### Features`, `### Fixes`, and `### Other changes`, in that
   order, leaving out an empty one. The builder's section ends only at the
   next `## `, so the `###` headings stay in the release notes.
-- Package only WarlockToolsForever.toc, Commands.lua, Core.lua, Layout.lua, AuraEngine.lua, Shards.lua, Stones.lua, Announce.lua, Tracker.lua, Dots.lua, Control.lua, Probe.lua, Options.lua, and LICENSE
-  (no textures, no sound files) under the top-level
+- Package only WarlockToolsForever.toc, Commands.lua, Core.lua, Layout.lua, AuraEngine.lua, Shards.lua, Stones.lua, Announce.lua, Tracker.lua, Dots.lua, Predict.lua, Control.lua, Probe.lua, Options.lua, LICENSE, and
+  Textures/Stripes.tga (no sound files) under the top-level
   `WarlockToolsForever/` folder, named
   `WarlockToolsForever-<version>-forever.zip`, with the builder's
   BigWigs-format `release.json` (flavor `forever`) attached for WowUp.

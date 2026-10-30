@@ -116,6 +116,15 @@ the automated test method, and the in-client checklist.
 
 ### Client observations
 
+- DoT damage prediction (1.4.0) on Classic Era, confirmed in client by John:
+  the block, its styles, and the DIES badge work, and he judged it
+  shippable, on Blizzard's target frame and nameplates, Shadowed Unit
+  Frames' and BetterBlizzFrames' target frames, Threat Plates', Plater's, and
+  Platynator's
+  nameplates, and the DoT tracker rows (the block, the DIES badge's place,
+  and the row's health text).
+  `UnitHealth`/`UnitHealthMax` give real mob health on Era (328, 328).
+
 - Out of combat in the open world, every `Enum.AddOnRestrictionType` state is
   inactive, yet `C_CombatLog.IsCombatLogRestricted()` is true and
   `issecretvalue` exists. Registering `COMBAT_LOG_EVENT_UNFILTERED` fails and
@@ -194,6 +203,12 @@ the automated test method, and the in-client checklist.
 
 ### Open client questions
 
+- DoT prediction with Plater's "use UIParent" option, and with
+  BetterBlizzFrames' smooth bars: not named in John's tests.
+- EllesmereUI is Forever and Retail only, and John uses it on Forever: its
+  nameplates and target frame (paths from Does It Die only) wait for the
+  prediction's phase 2 on Forever.
+
 1. Restrictions in instances and during encounters.
 2. Whether the tracker's engine slots show timers in combat with the
    `HARMFUL|PLAYER` filter (EllesmereUI adds `INCLUDE_NAME_PLATE_ONLY` on
@@ -222,7 +237,7 @@ From the Git Bash repository root:
 
 ```sh
 .tools/luarocks-3.13.0-win32/win32/lua5.1/bin/lua5.1.exe tests/run.lua
-.tools/luarocks-3.13.0-win32/win32/lua5.1/bin/luac5.1.exe -p Commands.lua Core.lua Layout.lua AuraEngine.lua Shards.lua Stones.lua Announce.lua Tracker.lua Dots.lua Control.lua Probe.lua Options.lua tests/run.lua
+.tools/luarocks-3.13.0-win32/win32/lua5.1/bin/luac5.1.exe -p Commands.lua Core.lua Layout.lua AuraEngine.lua Shards.lua Stones.lua Announce.lua Tracker.lua Dots.lua Predict.lua Control.lua Probe.lua Options.lua tests/run.lua
 .tools/python-3.13.7/python.exe -m unittest discover -s tests -p 'test_*.py'
 ```
 
@@ -482,6 +497,53 @@ and printing.
       your focus, the Focus box shows it, and a click fears it again. Banish
       a demon or elemental with "! Banish": its row shows the Banish time.
       BugSack stays empty.
+- [ ] Classic Era, DoT damage prediction: on a mob with full health, cast
+      Corruption, then Curse of Agony, Immolate, and Siphon Life. A purple
+      block grows left from the end of the target frame's health, the mob's
+      nameplate health, and (with Show mob health on) its DoT tracker row's
+      health; it shrinks with each tick and is gone when the DoTs end. Move
+      away until the mob's nameplate goes: its tracker row keeps its health
+      bar and block, and the block still shrinks with each tick. `/wtf debug_predict` shows each DoT as "guessed" before its
+      first tick and "learned" after it, with the tick size the combat log
+      shows; the next cast of that rank, on any mob or another character,
+      shows "saved" before its first tick. With spell power gear, Curse of
+      Agony's first ticks are smaller than its last, and the block after one
+      tick matches the sum of the rest of its ticks in the combat log (the
+      ramp on the base only). On a mob with less health left than the block (a low mob, or
+      DoTs on a nearly dead one), a skull and "DIES" show in red with a
+      black outline: just left of the target frame's bar (clear of SUF's
+      name and health text), just right of the nameplate's bar (not over the
+      name; on Platynator further right, past its target arrows, never
+      under the name), and on the tracker row in place of the health
+      number ("38%" stays, "| 137" hides while DIES shows); the same size on
+      every frame. Nothing on
+      target-of-target. Turn Does It Die off: its skulls look alike. Each switch under DoT
+      damage prediction hides its part; "Show Predictive DoT Damage" hides
+      all of it. On Forever the three switches are greyed and nothing shows,
+      and a tracker row with no unit still hides its health.
+- [ ] Classic Era, block look: by default the block is purple diagonal
+      stripes with a thin lighter outline, the same on the target frame,
+      nameplates (each frame AddOn), and DoT tracker rows, where it stands
+      out from the row's own purple health. Each Block fill, color, opacity,
+      and outline choice changes every block at once, also in combat.
+- [ ] Classic Era, Platynator: the block and the DIES badge (right of the
+      bar) on Platynator's health bars; `/wtf debug_predict` says
+      `nameplateN=Platynator`. Plates that come and go, and a style change
+      in Platynator's settings, keep each block on its own mob.
+- [ ] Classic Era, BetterBlizzFrames: the block lines up with the target
+      frame's green fill after BBF's size, texture, and class-color changes,
+      and with "smooth bars" on it follows the eased fill
+      (`target=BetterBlizzFrames`).
+- [ ] Classic Era, frame AddOns (one at a time, the others off): with
+      Threat Plates, then Plater (also with its "use UIParent" option), the
+      block and "DIES" show on that AddOn's nameplate health bars, and
+      `/wtf debug_predict` says `nameplateN=Threat Plates` or `=Plater`.
+      Change the AddOn's bar texture and size: the block follows. With
+      Shadowed Unit Frames, the block shows on SUF's target frame
+      (`target=Shadowed Unit Frames`), also with its health bar set to
+      reverse fill. EllesmereUI (nameplates and target frame) is not
+      installed yet: test it when it is. No Lua errors with any of them on
+      or off.
 - [ ] Classic Era, no focus target: `/wtf debug_control` says
       `focusWorks=false`. "! Fear" on the mob under the mouse, then on your
       target, fears each; "! Banish" marks and banishes the mob under the

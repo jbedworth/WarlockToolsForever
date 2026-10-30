@@ -239,8 +239,8 @@ class ReleaseTests(unittest.TestCase):
         files["WarlockToolsForever.toc"] += b"\n## Version: " + self.version.encode() + b"\n"
         self.reject_files(files)
 
-    def test_tga_validator_for_future_media(self):
-        # WTF ships no textures; the validator stays tested for future assets.
+    def test_tga_validator(self):
+        # The validator WTF's own textures pass (Textures/Stripes.tga).
         icon = (bytes((0, 0, 2)) + bytes(9) + (64).to_bytes(2, "little")
                 + (64).to_bytes(2, "little") + bytes((32, 0x28)) + bytes(64 * 64 * 4))
         builder._validate_tga("icon.tga", icon)
@@ -257,19 +257,22 @@ class ReleaseTests(unittest.TestCase):
             with self.subTest(header=data[:18]), self.assertRaises(ValueError):
                 builder._validate_tga("icon.tga", data)
 
-    def test_package_ships_no_shield_files_and_no_sounds(self):
+    def test_package_ships_only_the_stripes_texture_and_no_sounds(self):
         # 1.3.0: the shield display moved to Dyre's Shields Up, the sounds come
-        # from Dyre's Shields Up and Dyre's Buff Reminders.
-        self.assertEqual(builder.MEDIA_FILES, ())
+        # from Dyre's Shields Up and Dyre's Buff Reminders. 1.4.0: the DoT
+        # prediction block's stripes are WTF's one texture.
+        self.assertEqual(builder.MEDIA_FILES, ("Textures/Stripes.tga",))
+        builder._validate_tga("Stripes.tga", (ROOT / "Textures" / "Stripes.tga").read_bytes())
         for name in ("Shield.lua", "Chimes.lua", "Alerts.lua", "Reminders.lua"):
             self.assertNotIn(name, builder.RUNTIME_FILES)
             self.assertFalse((ROOT / name).exists(), name)
-        self.assertFalse((ROOT / "Textures").exists())
+        self.assertEqual(sorted(path.name for path in (ROOT / "Textures").iterdir()), ["Stripes.tga"])
         self.assertFalse((ROOT / "Sounds").exists())
         path, _ = self.build()
         with zipfile.ZipFile(path) as archive:
-            self.assertFalse([name for name in archive.namelist()
-                              if name.lower().endswith((".tga", ".mp3", ".wav", ".ogg"))])
+            self.assertEqual([name for name in archive.namelist()
+                              if name.lower().endswith((".tga", ".mp3", ".wav", ".ogg"))],
+                             ["WarlockToolsForever/Textures/Stripes.tga"])
             self.assertEqual(len(archive.namelist()), len(builder.PACKAGE_FILES))
 
     def test_toc_lists_the_runtime_files_and_the_moved_features_addons(self):

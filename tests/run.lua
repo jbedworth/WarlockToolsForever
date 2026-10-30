@@ -25,7 +25,7 @@ local function contains(actual, fragment, context)
 end
 
 local RUNTIME_FILES = {"Commands.lua", "Core.lua", "Layout.lua", "AuraEngine.lua", "Shards.lua", "Stones.lua", "Announce.lua", "Tracker.lua",
-    "Dots.lua", "Control.lua", "Probe.lua", "Options.lua"}
+    "Dots.lua", "Predict.lua", "Control.lua", "Probe.lua", "Options.lua"}
 local SHARD = 6265
 local SPELLS = {[1120] = "Drain Soul", [11675] = "Drain Soul", [8288] = "Drain Soul", [686] = "Shadow Bolt", [172] = "Corruption",
     [6222] = "Corruption", [980] = "Curse of Agony", [698] = "Ritual of Summoning",
@@ -83,10 +83,12 @@ local function fixture(options)
     env.UnitGetTotalAbsorbs = function(unit) equal(unit, "player") return state.absorb end
     -- Health: the player's is readable; a mob's (state.units[unit].health and
     -- maxHealth) is secret in combat, as on Forever.
+    -- options.era: readable mob health, also in combat, as on Classic Era
+    -- (found in client: 328, 328); a unit with secretHealth is secret anyway.
     local function mobHealth(unit, field, default)
         local data = state.units[unit]
         local value = data and data[field] or default
-        if state.combat and unit ~= "player" then
+        if (state.combat and unit ~= "player" and not options.era) or (data and data.secretHealth) then
             local hidden = secret()
             state.secrets[hidden] = true
             state.hiddenValues = state.hiddenValues or {}
@@ -708,6 +710,12 @@ local function fixture(options)
             if not state.plates[unit] then
                 state.plates[unit] = env.CreateFrame("Frame", nil, nil)
                 state.plates[unit].forbidden = state.units[unit].forbidden
+                -- Era's plate health bar (Blizzard_NamePlates.xml).
+                if options.era then
+                    local unitFrame = env.CreateFrame("Button", nil, state.plates[unit])
+                    unitFrame.HealthBarsContainer = {healthBar = env.CreateFrame("StatusBar", nil, unitFrame)}
+                    state.plates[unit].UnitFrame = unitFrame
+                end
             end
             return state.plates[unit]
         end,
@@ -970,7 +978,15 @@ local function fixture(options)
         function object:SetText(text) self.text = text end
         function object:SetTextColor(...) self.textColor = {...} end
         function object:GetText() return self.text end
-        function object:SetTexture(texture) self.texture = texture end
+        function object:SetTexture(texture, wrapH, wrapV) self.texture, self.atlas, self.wrap = texture, nil, wrapH end
+        function object:GetTexture() return self.texture end
+        function object:SetAtlas(atlas) self.atlas, self.texture = atlas, nil end
+        function object:GetAtlas() return self.atlas end
+        function object:SetVertexColor(...) self.vertex = {...} end
+        function object:SetHorizTile(value) self.horizTile = value end
+        function object:SetVertTile(value) self.vertTile = value end
+        function object:GetStatusBarColor() if self.barColor then return unpack(self.barColor) end end
+        function object:GetChildren() return unpack(self.children) end
         function object:SetChecked(value) self.checked = value == true end
         function object:SetEnabled(value) self.enabled = value == true end
         function object:GetChecked() return self.checked end
@@ -1038,6 +1054,8 @@ local function fixture(options)
             function text:SetFont(font, size, flags) self.font, self.fontSize, self.fontFlags = font, size, flags end
             function text:SetWordWrap(value) self.wordWrap = value end
             function text:SetMaxLines(value) self.maxLines = value end
+            -- About as wide as the client draws it.
+            function text:GetStringWidth() return #(self.text or "") * self.fontSize * 0.6 end
             return text
         end
         -- Unknown methods (layout, colors, and so on) do nothing here.
@@ -1071,6 +1089,17 @@ local function fixture(options)
         end
     end
 
+    -- options.era: the combat log, as on Classic Era (state.log fires one
+    -- event), the target frame's health bar, and spell power by school.
+    -- options.combatLogRestricted: IsCombatLogRestricted is true, as on Forever.
+    state.combatLogRestricted = options.combatLogRestricted
+    state.spellPower = {}
+    env.GetSpellBonusDamage = function(school) return state.spellPower[school] or 0 end
+    if options.era then
+        env.C_CombatLog = env.C_CombatLog or {}
+        env.C_CombatLog.GetCurrentEventInfo = function() return unpack(state.combatLogEvent) end
+        env.TargetFrame = {healthbar = env.CreateFrame("StatusBar", "TargetFrameHealthBar")}
+    end
     for _, name in ipairs(options.remove or {}) do env[name] = nil end
     -- options.classicSpellBook: Classic Era and Anniversary's spellbook API,
     -- with no C_SpellBook skill lines or item info, and the legacy
@@ -1190,6 +1219,13 @@ local function fixture(options)
     end
     function state.last() return state.messages[#state.messages] end
     function state.clear() state.messages = {} end
+    -- One combat log event: the 11 common fields (as in client; the time and
+    -- flags unused), then spellID, name, school, and amount.
+    function state.log(subevent, sourceGUID, destGUID, destName, spellID, spellName, amount)
+        state.combatLogEvent = {state.now, subevent, false, sourceGUID, "Dyre", 0, 0, destGUID, destName, 0, 0,
+            spellID, spellName, 32, amount}
+        state.emit("COMBAT_LOG_EVENT_UNFILTERED")
+    end
     return state
 end
 
@@ -1304,7 +1340,7 @@ test("a mixed install of old and new files is reported at login", function()
         "Stones.lua", "Announce.lua",
         "Tracker.lua", "Dots.lua", "Control.lua", "Options.lua"}})
     equal(state.wtf.available, false)
-    contains(state.last(), "missing ReportRestrictions")
+    contains(state.last(), "missing InitializePredict")
 end)
 
 -- Features that moved out in 1.3.0 ---------------------------------------------
@@ -5132,7 +5168,7 @@ test("the DoT Tracker page: General, then a section per panel with its color and
             names[#names + 1] = heading.heading
         end
     end
-    equal(table.concat(names, ","), "General,Target,Focus,Others")
+    equal(table.concat(names, ","), "General,Target,Focus,Others,DoT damage prediction")
     equal(headings[1].position, 0, "General first")
     equal(page.initializers[1].setting.variable, "WTF_TRACKER_THEME", "the shared settings under General")
     for index, case in ipairs({{"TARGET", "ff8787ed"}, {"FOCUS", "ffe61a1a"}, {"LIST", "ff545454"}}) do
@@ -6035,6 +6071,799 @@ test("without the Settings API WTF runs and /wtf explains", function()
     equal(state.wtf.available, true)
     state.slash("")
     contains(state.last(), "settings page is unavailable")
+end)
+
+-- DoT damage prediction (Classic Era) -------------------------------------------
+
+local ME, BOAR, WOLF = "Player-1", "Creature-1", "Creature-2"
+
+local function predictFixture(extra)
+    local options = {era = true, units = {
+        player = {name = "Dyre", player = true, friend = true, level = 20, guid = ME},
+        target = {name = "Boar", guid = BOAR},
+        nameplate3 = {name = "Boar", guid = BOAR},
+        nameplate4 = {name = "Wolf", guid = WOLF},
+    }}
+    for key, value in pairs(extra or {}) do options[key] = value end
+    return fixture(options)
+end
+
+local function overlayOf(state, bar)
+    for _, frame in ipairs(state.frames) do
+        if frame.kind == "StatusBar" and frame.parent == bar then return frame end
+    end
+end
+
+local function targetOverlay(state) return overlayOf(state, state.env.TargetFrameHealthBar) end
+
+local function plateOverlay(state, unit)
+    state.env.C_NamePlate.GetNamePlateForUnit(unit)
+    return overlayOf(state, state.plates[unit].UnitFrame.HealthBarsContainer.healthBar)
+end
+
+local function shownDamage(overlay)
+    if not overlay or not overlay.shown then return nil end
+    return overlay.value
+end
+
+-- Your DoT lands on a mob, as the combat log says it.
+local function apply(state, spellID, name, guid, mobName)
+    state.log("SPELL_AURA_APPLIED", ME, guid or BOAR, mobName or "Boar", spellID, name, "DEBUFF")
+end
+
+local function tick(state, spellID, name, amount, guid)
+    state.log("SPELL_PERIODIC_DAMAGE", ME, guid or BOAR, "Boar", spellID, name, amount)
+end
+
+test("prediction: without the combat log (Forever) nothing registers, and the settings are greyed", function()
+    local state = predictFixture({combatLogRestricted = true, restrictCombatLog = true})
+    equal(state.wtf.PredictAvailable(), false)
+    apply(state, 6222, "Corruption")
+    equal(targetOverlay(state), nil, "no block")
+    for _, variable in ipairs({"WTF_PREDICT_ENABLED", "WTF_PREDICT_PLATES", "WTF_PREDICT_DIES"}) do
+        local initializer
+        for _, object in ipairs(state.categories["DoT Tracker"].initializers) do
+            if object.setting.variable == variable then initializer = object end
+        end
+        equal(initializer.modifyPredicates[1](), false, variable .. " greyed")
+        contains(initializer.tooltip, "WoW: Forever support comes later")
+    end
+    state.slash("debug_predict")
+    contains(state.last(), "off on this client")
+    local plain = fixture()
+    equal(plain.wtf.PredictAvailable(), false, "no combat log reader: off too")
+end)
+
+test("prediction: a guess from rank and spell power, then each tick learned, ending at the fill", function()
+    local state = predictFixture()
+    equal(state.wtf.PredictAvailable(), true)
+    state.spellPower[6] = 100
+    state.emit("UNIT_SPELLCAST_SUCCEEDED", "player", "cast", 6222)
+    apply(state, 6222, "Corruption")
+    -- Rank 2: 90 over 15 s, learned at level 14: 100 spell power x 0.775.
+    local overlay = targetOverlay(state)
+    equal(shownDamage(overlay), 168, "the guess before the first tick")
+    equal(overlay.minValue, 0)
+    equal(overlay.maxValue, 1000, "out of the health left")
+    equal(overlay.points[2][2], state.env.TargetFrameHealthBar:GetStatusBarTexture(), "ends at the fill")
+    state.now = state.now + 3
+    tick(state, 6222, "Corruption", 30)
+    equal(shownDamage(overlay), 120, "4 ticks of 30 to come")
+    state.now = state.now + 3
+    tick(state, 6222, "Corruption", 30)
+    equal(shownDamage(overlay), 90)
+    equal(state.wtf.PredictedDamage(BOAR), 90)
+    equal(overlay.dies.shown, false, "1000 health left")
+end)
+
+test("prediction: Curse of Agony's ticks grow, so one tick teaches all twelve", function()
+    local state = predictFixture()
+    apply(state, 980, "Curse of Agony")
+    equal(shownDamage(targetOverlay(state)), 84, "rank 1, no spell power")
+    state.now = state.now + 2
+    tick(state, 980, "Curse of Agony", 4)
+    -- Base 7 a tick, ramped 0.5, 1, 1.5; 4 at half is 3.5 base and 0.5 more, spread evenly:
+    -- 3 ticks of 4, 4 of 7.5, and 4 of 11.
+    equal(shownDamage(targetOverlay(state)), 86)
+end)
+
+test("prediction: every DoT on the mob adds up, on the target and on its nameplate only", function()
+    local state = predictFixture()
+    apply(state, 6222, "Corruption")
+    apply(state, 348, "Immolate")
+    -- Corruption 90 (no spell power) and Immolate's 20 over time.
+    equal(shownDamage(targetOverlay(state)), 110)
+    equal(shownDamage(plateOverlay(state, "nameplate3")), 110, "the Boar's plate")
+    equal(shownDamage(plateOverlay(state, "nameplate4")), nil, "the Wolf has none")
+    state.log("SPELL_DAMAGE", ME, BOAR, "Boar", 348, "Immolate", 11)
+    equal(shownDamage(targetOverlay(state)), 110, "Immolate's hit is not a tick")
+    apply(state, 18265, "Siphon Life", WOLF, "Wolf")
+    state.log("SPELL_PERIODIC_LEECH", ME, WOLF, "Wolf", 18265, "Siphon Life", 16)
+    equal(shownDamage(plateOverlay(state, "nameplate4")), 144, "Siphon Life's leech ticks: 9 of 16")
+end)
+
+test("prediction: DIES when the damage to come is at least the health left", function()
+    local state = predictFixture()
+    state.units.target.health = 100
+    state.units.nameplate3.health = 100
+    apply(state, 6222, "Corruption")
+    state.now = state.now + 3
+    tick(state, 6222, "Corruption", 30)
+    local overlay = targetOverlay(state)
+    equal(overlay.value, 100, "the block stops at the health left")
+    equal(overlay.dies.shown, true)
+    equal(overlay.dies.label.text, "DIES")
+    equal(overlay.dies.skull.texture, "Interface\\TargetingFrame\\UI-TargetingFrame-Skull",
+        "the level skull, not the raid marker's")
+    equal(overlay.dies.skull.vertex[1], 1, "tinted red")
+    equal(overlay.dies.skull.vertex[2], 0.1)
+    equal(plateOverlay(state, "nameplate3").dies.shown, true, "on the nameplate too")
+    state.settings.WTF_PREDICT_DIES:SetValue(false)
+    equal(overlay.dies.shown, false, "the DIES switch")
+    equal(overlay.shown, true, "the block stays")
+    state.settings.WTF_PREDICT_DIES:SetValue(true)
+    state.units.target.health = 200
+    state.emit("UNIT_HEALTH", "target")
+    equal(overlay.dies.shown, false, "a heal: no longer dies")
+end)
+
+test("prediction: a DoT ends when it falls off, the mob dies, or its time is up", function()
+    local state = predictFixture()
+    apply(state, 6222, "Corruption")
+    apply(state, 348, "Immolate")
+    state.log("SPELL_AURA_REMOVED", ME, BOAR, "Boar", 348, "Immolate", "DEBUFF")
+    equal(shownDamage(targetOverlay(state)), 90, "Immolate gone")
+    state.log("UNIT_DIED", nil, BOAR, "Boar")
+    equal(shownDamage(targetOverlay(state)), nil, "died")
+    apply(state, 6222, "Corruption")
+    state.now = state.now + 15.5
+    state.runTimers()
+    equal(shownDamage(targetOverlay(state)), nil, "out of time, with no end event in range")
+    equal(state.wtf.PredictedDamage(BOAR), 0)
+end)
+
+test("prediction: ticks missed out of range count by time; a refresh starts over and keeps the tick", function()
+    local state = predictFixture()
+    apply(state, 6222, "Corruption")
+    state.now = state.now + 3
+    tick(state, 6222, "Corruption", 20)
+    state.now = state.now + 6
+    equal(state.wtf.PredictedDamage(BOAR), 40, "two ticks due, unseen: two left")
+    state.log("SPELL_AURA_REFRESH", ME, BOAR, "Boar", 6222, "Corruption", "DEBUFF")
+    equal(shownDamage(targetOverlay(state)), 100, "five ticks of the learned 20")
+end)
+
+test("prediction: others' DoTs never count; a combat log with no spell ID uses your last rank", function()
+    local state = predictFixture()
+    state.log("SPELL_AURA_APPLIED", "Player-2", BOAR, "Boar", 6222, "Corruption", "DEBUFF")
+    equal(shownDamage(targetOverlay(state)), nil, "another Warlock's")
+    state.emit("UNIT_SPELLCAST_SUCCEEDED", "player", "cast", 172)
+    state.log("SPELL_AURA_APPLIED", ME, BOAR, "Boar", 0, "Corruption", "DEBUFF")
+    -- Rank 1: 40 over 12 s.
+    equal(shownDamage(targetOverlay(state)), 40)
+    state.log("SPELL_AURA_APPLIED", ME, BOAR, "Boar", 0, "Shadow Bolt", "DEBUFF")
+    equal(shownDamage(targetOverlay(state)), 40, "not a DoT")
+end)
+
+test("prediction: the switches hide it, the nameplates on their own; a friend or secret health draws none", function()
+    local state = predictFixture()
+    apply(state, 6222, "Corruption")
+    state.settings.WTF_PREDICT_PLATES:SetValue(false)
+    equal(shownDamage(plateOverlay(state, "nameplate3")), nil, "nameplates off")
+    equal(shownDamage(targetOverlay(state)), 90, "the target stays")
+    state.settings.WTF_PREDICT_ENABLED:SetValue(false)
+    equal(shownDamage(targetOverlay(state)), nil, "all off")
+    equal(state.wtf.db.predict.enabled, false, "saved")
+    state.settings.WTF_PREDICT_ENABLED:SetValue(true)
+    state.settings.WTF_PREDICT_PLATES:SetValue(true)
+    equal(shownDamage(plateOverlay(state, "nameplate3")), 90)
+    state.units.target.secretHealth = true
+    state.emit("UNIT_HEALTH", "target")
+    equal(shownDamage(targetOverlay(state)), nil, "a secret health: nothing")
+    state.units.target = {name = "Dyre", guid = BOAR, friend = true}
+    state.emit("PLAYER_TARGET_CHANGED")
+    equal(shownDamage(targetOverlay(state)), nil, "not a mob you can attack")
+end)
+
+test("prediction: settings are repaired, on by default", function()
+    local state = predictFixture({db = {predict = {enabled = "yes", plates = false, tracker = false}}})
+    equal(state.wtf.db.predict.tracker, nil, "a test build's tracker switch is dropped")
+    equal(state.wtf.db.predict.enabled, true)
+    equal(state.wtf.db.predict.plates, false)
+    equal(state.wtf.db.predict.dies, true)
+    local broken = predictFixture({db = {predict = "broken"}})
+    equal(broken.wtf.db.predict.enabled, true)
+end)
+
+test("prediction: a plate that goes hides its block; a new plate of a DoTed mob draws at once", function()
+    local state = predictFixture()
+    apply(state, 6222, "Corruption", WOLF, "Wolf")
+    local overlay = plateOverlay(state, "nameplate4")
+    equal(shownDamage(overlay), 90)
+    state.emit("NAME_PLATE_UNIT_REMOVED", "nameplate4")
+    equal(overlay.shown, false)
+    state.units.nameplate5 = {name = "Wolf", guid = WOLF}
+    state.emit("NAME_PLATE_UNIT_ADDED", "nameplate5")
+    equal(shownDamage(plateOverlay(state, "nameplate5")), 90)
+end)
+
+test("prediction: Curse of Agony ramps its base damage only; spell power is even over the ticks", function()
+    local state = predictFixture()
+    state.spellPower[6] = 120
+    apply(state, 980, "Curse of Agony")
+    -- Rank 1, level 8: 84 + 120 x 0.55 = 150, so 12.5 a tick on average, 7 of it base.
+    equal(shownDamage(targetOverlay(state)), 150, "the whole guess")
+    state.now = state.now + 2
+    tick(state, 980, "Curse of Agony", 9)
+    -- 9 is 3.5 ramped base and 5.5 even spell power: the average stays 12.5.
+    equal(shownDamage(targetOverlay(state)), 141)
+    state.now = state.now + 2
+    tick(state, 980, "Curse of Agony", 9)
+    equal(shownDamage(targetOverlay(state)), 132)
+end)
+
+test("prediction: a resisted or absorbed tick counts as a tick and teaches nothing", function()
+    local state = predictFixture()
+    apply(state, 6222, "Corruption")
+    state.now = state.now + 3
+    tick(state, 6222, "Corruption", 30)
+    state.now = state.now + 2.6
+    state.log("SPELL_PERIODIC_MISSED", ME, BOAR, "Boar", 6222, "Corruption", "RESIST")
+    equal(shownDamage(targetOverlay(state)), 90, "3 ticks of 30 left, not 4")
+    equal(state.env.WarlockToolsForeverAccountDB.ticks[6222].tick, 30, "the learned tick stays")
+end)
+
+test("prediction: only debuffs count, also when an aura ends", function()
+    local state = predictFixture()
+    state.log("SPELL_AURA_APPLIED", ME, BOAR, "Boar", 6222, "Corruption", "BUFF")
+    equal(shownDamage(targetOverlay(state)), nil, "a buff of the same name")
+    apply(state, 6222, "Corruption")
+    state.log("SPELL_AURA_REMOVED", ME, BOAR, "Boar", 6222, "Corruption", "BUFF")
+    equal(shownDamage(targetOverlay(state)), 90, "a buff ending leaves the DoT")
+end)
+
+test("prediction: a learned tick is saved for the rank, for every character, and starts the next cast", function()
+    local state = predictFixture()
+    apply(state, 6222, "Corruption")
+    state.now = state.now + 3
+    tick(state, 6222, "Corruption", 31)
+    state.now = state.now + 3
+    tick(state, 6222, "Corruption", 30)
+    local saved = state.env.WarlockToolsForeverAccountDB.ticks[6222]
+    equal(saved.tick, 30.5, "the average of this cast's ticks, one decimal")
+    equal(saved.power, 0, "with the spell power it was cast at")
+    apply(state, 6222, "Corruption", WOLF, "Wolf")
+    equal(shownDamage(plateOverlay(state, "nameplate4")), 153, "five saved ticks before the first one")
+    state.clear()
+    state.slash("debug_predict")
+    local text = table.concat(state.messages, "\n")
+    contains(text, "tick 0 of 5, saved 30.5")
+    local other = predictFixture({accountDB = state.env.WarlockToolsForeverAccountDB})
+    apply(other, 6222, "Corruption")
+    equal(shownDamage(targetOverlay(other)), 153, "another character on this client")
+    apply(other, 172, "Corruption", WOLF, "Wolf")
+    equal(shownDamage(plateOverlay(other, "nameplate4")), 40, "another rank: its own guess")
+end)
+
+test("prediction: a saved tick is rescaled to your spell power now, its base part kept", function()
+    local state = predictFixture()
+    state.spellPower[6] = 100
+    apply(state, 6222, "Corruption")
+    state.now = state.now + 3
+    tick(state, 6222, "Corruption", 40)
+    equal(state.env.WarlockToolsForeverAccountDB.ticks[6222].power, 100)
+    state.spellPower[6] = 200
+    apply(state, 6222, "Corruption", WOLF, "Wolf")
+    -- Rank 2's base is 18 a tick; the other 22 came from 100 spell power, so 44 from 200.
+    equal(shownDamage(plateOverlay(state, "nameplate4")), 310)
+    local noPower = predictFixture({accountDB = {ticks = {[6222] = {tick = 25, power = 0}}}})
+    noPower.spellPower[6] = 300
+    apply(noPower, 6222, "Corruption")
+    equal(shownDamage(targetOverlay(noPower)), 125, "learned with no spell power: not rescaled")
+end)
+
+test("prediction: saved ticks are repaired, and ranks WTF does not know are dropped", function()
+    local state = predictFixture({accountDB = {ticks = {[6222] = {tick = "x", power = 0}, [172] = {tick = 9, power = 0},
+        [99999] = {tick = 5, power = 1}, [980] = {tick = 7, power = -1}, broken = {tick = 1, power = 0}}}})
+    local ticks = state.env.WarlockToolsForeverAccountDB.ticks
+    equal(ticks[172].tick, 9, "a good entry stays")
+    equal(ticks[6222], nil, "not a number")
+    equal(ticks[980], nil, "a negative spell power")
+    equal(ticks[99999], nil, "not a rank WTF knows")
+    equal(ticks.broken, nil, "not a spell ID")
+    local fresh = predictFixture({accountDB = "broken"})
+    equal(type(fresh.env.WarlockToolsForeverAccountDB.ticks), "table")
+end)
+
+-- The DoT tracker with mob health, on Classic Era: the player's GUID is needed
+-- to read your own combat log events.
+local function trackerPredictFixture(extra)
+    local options = {era = true, db = {tracker = {health = true}}, units = {
+        player = {name = "Dyre", player = true, friend = true, level = 20, guid = ME},
+        target = {name = "Boar", guid = BOAR},
+        nameplate3 = {name = "Boar", guid = BOAR},
+        nameplate4 = {name = "Wolf", guid = WOLF},
+    }}
+    for key, value in pairs(extra or {}) do options[key] = value end
+    return trackerFixture(options)
+end
+
+local function rowOverlay(state, row) return overlayOf(state, row.health) end
+
+test("prediction: the setting is named Show Predictive DoT Damage", function()
+    local state = predictFixture()
+    equal(state.settings.WTF_PREDICT_ENABLED.name, "Show Predictive DoT Damage")
+    equal(state.settings.WTF_PREDICT_TRACKER, nil, "no switch of its own for the tracker")
+    local initializer
+    for _, object in ipairs(state.categories["DoT Tracker"].initializers) do
+        if object.setting.variable == "WTF_PREDICT_ENABLED" then initializer = object end
+    end
+    contains(initializer.tooltip, "Predictive DoT damage")
+end)
+
+test("prediction: each DoT tracker row's health bar gets the block, also with no unit, and DIES", function()
+    local state = trackerPredictFixture()
+    state.units.nameplate4.health = 100
+    dot(state, 6222, "Wolf")
+    local row = shownRows(state)[1]
+    equal(row.guid, WOLF)
+    apply(state, 6222, "Corruption", WOLF, "Wolf")
+    local overlay = rowOverlay(state, row)
+    equal(shownDamage(overlay), 90, "the 90 to come, out of 100")
+    equal(overlay.maxValue, 100, "out of the health the row shows")
+    equal(overlay.points[2][2], row.health:GetStatusBarTexture(), "ends at the row's health fill")
+    equal(overlay.level, row.health:GetFrameLevel(), "under the row's name and texts")
+    equal(overlay.dies.shown, false)
+    state.now = state.now + 3
+    tick(state, 6222, "Corruption", 30, WOLF)
+    equal(shownDamage(overlay), 100, "120 to come: stops at the health")
+    equal(overlay.dies.shown, true)
+    -- The plate goes: the row keeps its last health and the prediction.
+    state.units.nameplate4 = nil
+    state.emit("NAME_PLATE_UNIT_REMOVED", "nameplate4")
+    equal(row.boundUnit, "none")
+    equal(row.health.shown, true, "the last health stays")
+    equal(shownDamage(overlay), 100, "the prediction stays")
+    state.now = state.now + 3
+    tick(state, 6222, "Corruption", 30, WOLF)
+    equal(shownDamage(overlay), 90, "ticks with no unit update the row")
+    equal(overlay.dies.shown, false)
+    state.log("SPELL_AURA_REMOVED", ME, WOLF, "Wolf", 6222, "Corruption", "DEBUFF")
+    equal(shownDamage(overlay), nil, "the DoT ended")
+end)
+
+test("prediction: tracker rows need both Show mob health and Show Predictive DoT Damage", function()
+    -- Both on: the pinned target row and the target frame.
+    local state = trackerPredictFixture()
+    apply(state, 6222, "Corruption")
+    local pinned = pinnedRow(state, "target")
+    equal(shownDamage(rowOverlay(state, pinned)), 90, "both on: the target row")
+    equal(shownDamage(targetOverlay(state)), 90, "and the target frame")
+    -- Prediction off, mob health on: the health bar stays, with no block.
+    state.settings.WTF_PREDICT_ENABLED:SetValue(false)
+    equal(shownDamage(rowOverlay(state, pinned)), nil, "prediction off: no block")
+    equal(pinned.health.shown, true, "the health bar stays")
+    state.settings.WTF_PREDICT_ENABLED:SetValue(true)
+    equal(shownDamage(rowOverlay(state, pinned)), 90, "on again")
+    -- Mob health off, prediction on: no health bar, so no block; the target
+    -- frame keeps its block, and mob health stays off.
+    local noHealth = trackerPredictFixture({db = {tracker = {health = false}}})
+    apply(noHealth, 6222, "Corruption")
+    equal(pinnedRow(noHealth, "target").health, nil, "health off: no bar to draw on")
+    equal(shownDamage(targetOverlay(noHealth)), 90, "the target frame still has it")
+    equal(noHealth.wtf.db.tracker.health, false, "mob health is never turned on for it")
+    -- Both off.
+    local neither = trackerPredictFixture({db = {tracker = {health = false}, predict = {enabled = false}}})
+    apply(neither, 6222, "Corruption")
+    equal(pinnedRow(neither, "target").health, nil)
+    equal(shownDamage(targetOverlay(neither)), nil, "both off: nothing")
+end)
+
+test("prediction: no block on Forever rows; Forever rows keep hiding health with no unit", function()
+    local forever = trackerPredictFixture({combatLogRestricted = true, restrictCombatLog = true})
+    dot(forever, 6222, "Wolf")
+    local row = shownRows(forever)[1]
+    equal(rowOverlay(forever, row), nil)
+    forever.units.nameplate4 = nil
+    forever.emit("NAME_PLATE_UNIT_REMOVED", "nameplate4")
+    equal(row.health.shown, false, "no unit: no health, as before")
+end)
+
+test("prediction: a row reused for another mob drops the old mob's health and block", function()
+    local state = trackerPredictFixture({db = {tracker = {health = true}, predict = {plates = false}}})
+    dot(state, 6222, "Wolf")
+    local row = shownRows(state)[1]
+    apply(state, 6222, "Corruption", WOLF, "Wolf")
+    state.units.nameplate4 = nil
+    state.emit("NAME_PLATE_UNIT_REMOVED", "nameplate4")
+    equal(shownDamage(rowOverlay(state, row)), 90)
+    state.log("UNIT_DIED", nil, WOLF, "Wolf")
+    equal(shownDamage(rowOverlay(state, row)), nil, "the mob died")
+end)
+
+-- Frame adapters: each frame AddOn's own health bar, faked with the fields
+-- WTF reads from it.
+local function plateOf(state, unit) return state.env.C_NamePlate.GetNamePlateForUnit(unit) end
+local function newBar(state, parent) return state.env.CreateFrame("StatusBar", nil, parent) end
+
+local function blizzardPlateOverlay(state, unit)
+    return overlayOf(state, plateOf(state, unit).UnitFrame.HealthBarsContainer.healthBar)
+end
+
+test("adapters: Threat Plates' bar while it draws the plate, else Blizzard's, also after its own handler", function()
+    local state = predictFixture()
+    local plate = plateOf(state, "nameplate3")
+    local bar = newBar(state, plate)
+    plate.TPFrame = {Active = true, visual = {Healthbar = bar}}
+    apply(state, 6222, "Corruption")
+    equal(shownDamage(overlayOf(state, bar)), 90, "on Threat Plates' bar")
+    equal(blizzardPlateOverlay(state, "nameplate3"), nil, "not on Blizzard's hidden one")
+    state.clear()
+    state.slash("debug_predict")
+    contains(state.messages[2], "nameplate3=Threat Plates")
+    plate.TPFrame.Active = false
+    state.emit("UNIT_HEALTH", "nameplate3")
+    equal(shownDamage(overlayOf(state, bar)), nil, "Threat Plates let the plate go: its block hides")
+    equal(shownDamage(blizzardPlateOverlay(state, "nameplate3")), 90, "and Blizzard's bar gets it")
+    -- A new plate Threat Plates takes over in its own handler for the same event.
+    state.units.nameplate5 = {name = "Boar", guid = BOAR}
+    local late = plateOf(state, "nameplate5")
+    local lateBar = newBar(state, late)
+    late.TPFrame = {Active = false, visual = {healthbar = lateBar}}
+    state.emit("NAME_PLATE_UNIT_ADDED", "nameplate5")
+    late.TPFrame.Active = true
+    state.runTimers()
+    equal(shownDamage(overlayOf(state, lateBar)), 90, "the older .healthbar name, once its handler ran")
+    equal(shownDamage(blizzardPlateOverlay(state, "nameplate5")), nil)
+    state.emit("NAME_PLATE_UNIT_REMOVED", "nameplate5")
+    equal(shownDamage(overlayOf(state, lateBar)), nil, "the plate went")
+end)
+
+test("adapters: Plater's unitFrame.healthBar, only with Plater loaded; a new fill texture is followed", function()
+    local state = predictFixture()
+    local plate = plateOf(state, "nameplate3")
+    local bar = newBar(state, state.env.UIParent)
+    plate.unitFrame = {healthBar = bar}
+    apply(state, 6222, "Corruption")
+    equal(overlayOf(state, bar), nil, "no Plater global: not Plater's")
+    equal(shownDamage(blizzardPlateOverlay(state, "nameplate3")), 90)
+    state.env.Plater = {}
+    state.emit("UNIT_HEALTH", "nameplate3")
+    local overlay = overlayOf(state, bar)
+    equal(shownDamage(overlay), 90, "Plater's bar, also parented to UIParent")
+    equal(shownDamage(blizzardPlateOverlay(state, "nameplate3")), nil)
+    equal(overlay.points[2][2], bar:GetStatusBarTexture())
+    bar.fill = newBar(state, bar)
+    bar.level = 7
+    state.emit("UNIT_HEALTH", "nameplate3")
+    equal(overlay.points[#overlay.points][2], bar.fill, "anchored to the new fill texture")
+    equal(overlay.level, 8, "above the bar's new frame level")
+end)
+
+test("adapters: EllesmereUI's pooled plate, only while it is on this Blizzard plate", function()
+    local state = predictFixture()
+    local plate, other = plateOf(state, "nameplate3"), plateOf(state, "nameplate4")
+    local bar = newBar(state, plate)
+    state.env.EllesmereNameplates_NS = {plates = {nameplate3 = {nameplate = plate, health = bar},
+        nameplate4 = {nameplate = plate, health = newBar(state, other)}}}
+    apply(state, 6222, "Corruption")
+    apply(state, 6222, "Corruption", WOLF, "Wolf")
+    equal(shownDamage(overlayOf(state, bar)), 90, "EllesmereUI's bar")
+    equal(shownDamage(blizzardPlateOverlay(state, "nameplate4")), 90, "a pool entry for another plate: Blizzard's")
+end)
+
+test("adapters: Shadowed Unit Frames' target bar, mirrored when reverse-filled, none when vertical", function()
+    local state = predictFixture()
+    local bar = newBar(state, state.env.UIParent)
+    state.env.ShadowUF = {Units = {unitFrames = {target = {healthBar = bar}}}}
+    apply(state, 6222, "Corruption")
+    local overlay = overlayOf(state, bar)
+    equal(shownDamage(overlay), 90, "SUF's target bar")
+    equal(shownDamage(targetOverlay(state)), nil, "not Blizzard's hidden target frame")
+    state.clear()
+    state.slash("debug_predict")
+    contains(state.messages[2], "target=Shadowed Unit Frames")
+    bar.GetReverseFill = function() return true end
+    state.emit("UNIT_HEALTH", "target")
+    equal(overlay.points[#overlay.points - 1][2], bar:GetStatusBarTexture(), "starts at the fill")
+    equal(overlay.points[#overlay.points][2], bar, "ends at the bar's right edge")
+    bar.GetOrientation = function() return "VERTICAL" end
+    state.emit("UNIT_HEALTH", "target")
+    equal(shownDamage(overlay), nil, "a vertical bar: no block")
+    state.env.ShadowUF.Units.unitFrames.target = nil
+    state.emit("PLAYER_TARGET_CHANGED")
+    equal(shownDamage(overlay), nil, "SUF's target frame off")
+    equal(shownDamage(targetOverlay(state)), 90, "back on Blizzard's")
+end)
+
+test("adapters: BetterBlizzFrames keeps Blizzard's bar; with smooth bars, its eased bar gets the block", function()
+    local state = predictFixture()
+    local stock = state.env.TargetFrameHealthBar
+    apply(state, 6222, "Corruption")
+    equal(shownDamage(targetOverlay(state)), 90, "restyled but Blizzard's own bar")
+    -- Moved, resized, and re-textured: the block follows the bar and its fill.
+    stock.fill = newBar(state, stock)
+    state.emit("UNIT_HEALTH", "target")
+    equal(targetOverlay(state).points[#targetOverlay(state).points][2], stock.fill, "the new fill texture")
+    local smooth = newBar(state, stock)
+    stock.bbfSmoothOverlay = smooth
+    state.emit("UNIT_HEALTH", "target")
+    equal(shownDamage(overlayOf(state, smooth)), 90, "on the smooth bar you see")
+    equal(shownDamage(targetOverlay(state)), nil, "not on the hidden stock fill")
+    state.clear()
+    state.slash("debug_predict")
+    contains(state.messages[2], "target=BetterBlizzFrames")
+    stock.bbfSmoothOverlay = "broken"
+    state.emit("UNIT_HEALTH", "target")
+    equal(shownDamage(targetOverlay(state)), 90, "broken: Blizzard's again")
+end)
+
+test("adapters: EllesmereUI's target frame", function()
+    local state = predictFixture()
+    local bar = newBar(state, state.env.UIParent)
+    state.env.EllesmereUIUnitFrames_Target = {Health = bar}
+    apply(state, 6222, "Corruption")
+    equal(shownDamage(overlayOf(state, bar)), 90)
+    equal(shownDamage(targetOverlay(state)), nil)
+end)
+
+test("DIES: a skull badge in bold red, above the bar's texts, placed for each kind of frame", function()
+    local state = trackerPredictFixture()
+    for _, unit in ipairs({"target", "nameplate3"}) do state.units[unit].health = 50 end
+    -- Threat Plates' plate bar and SUF's target bar, beside Blizzard's.
+    local plate = plateOf(state, "nameplate3")
+    local plateBar = newBar(state, plate)
+    plate.TPFrame = {Active = true, visual = {Healthbar = plateBar}}
+    local targetBar = newBar(state, state.env.UIParent)
+    state.env.ShadowUF = {Units = {unitFrames = {target = {healthBar = targetBar}}}}
+    state.emit("UNIT_HEALTH", "target")
+    apply(state, 6222, "Corruption")
+    local row = pinnedRow(state, "target")
+    local cases = {
+        {overlayOf(state, targetBar), targetBar, "RIGHT", "LEFT", -3, 14,
+            "SUF's target frame: left of the bar, clear of its name and health text"},
+        {overlayOf(state, plateBar), plateBar, "LEFT", "RIGHT", 3, 11, "Threat Plates: just right of the bar"},
+        {rowOverlay(state, row), row.health, "RIGHT", "RIGHT", -2, 10, "the tracker row with no health text: its end"},
+    }
+    for _, case in ipairs(cases) do
+        local dies = case[1].dies
+        equal(dies.shown, true, case[7])
+        local point = dies.points[1]
+        equal(point[1], case[3], case[7])
+        equal(point[2], case[2], case[7] .. ": on that bar")
+        equal(point[3], case[4], case[7])
+        equal(point[4], case[5], case[7])
+        equal(dies.label.fontSize, case[6], case[7] .. ": size")
+        equal(dies.label.fontFlags, "THICKOUTLINE", case[7] .. ": a thick black outline")
+        equal(dies.level, case[2]:GetFrameLevel() + 12, case[7] .. ": above the bar's texts")
+    end
+    equal(cases[3][1].dies.level > (row.layer.level or 0), true, "above the row's name and health text")
+end)
+
+-- A Platynator display frame, as its source has it: a child of the plate
+-- with .widgets, Install, SetUnit, and .unit.
+local function platynatorDisplay(state, parent, unit)
+    local display = state.env.CreateFrame("Frame", nil, parent)
+    local bar = newBar(state, display)
+    display.widgets = {{details = {kind = "text"}}, {details = {kind = "health"}, statusBar = bar}}
+    display.Install, display.SetUnit = function() end, function() end
+    display.unit = unit
+    return display, bar
+end
+
+test("adapters: Platynator's health widget on the plate's display for the unit, found again when it changes", function()
+    local state = predictFixture()
+    local plate = plateOf(state, "nameplate3")
+    local display, bar = platynatorDisplay(state, plate, "nameplate3")
+    apply(state, 6222, "Corruption")
+    equal(overlayOf(state, bar), nil, "no Platynator global: not Platynator's")
+    state.env.Platynator = {}
+    state.emit("UNIT_HEALTH", "nameplate3")
+    equal(shownDamage(overlayOf(state, bar)), 90, "Platynator's health widget")
+    equal(shownDamage(blizzardPlateOverlay(state, "nameplate3")), nil, "not Blizzard's hidden bar")
+    local dies = overlayOf(state, bar).dies
+    equal(dies.points[1][1], "LEFT", "DIES right of the bar, past the target arrows, not under the name")
+    equal(dies.points[1][3], "RIGHT")
+    equal(dies.points[1][4], 22)
+    equal(dies.points[1][5], 0, "vertically centered")
+    equal(dies.strata, "LOW", "above Platynator's BACKGROUND display")
+    state.clear()
+    state.slash("debug_predict")
+    contains(state.messages[2], "nameplate3=Platynator")
+    -- Uninstalled (SetUnit(nil), Hide), then another style's display for the
+    -- unit: found at the next draw, with no rescan wait.
+    display.unit = nil
+    display:Hide()
+    state.emit("UNIT_HEALTH", "nameplate3")
+    equal(shownDamage(overlayOf(state, bar)), nil, "uninstalled: its block hides")
+    equal(shownDamage(blizzardPlateOverlay(state, "nameplate3")), 90, "Blizzard's bar meanwhile")
+    local _, newer = platynatorDisplay(state, plate, "nameplate3")
+    state.emit("UNIT_HEALTH", "nameplate3")
+    equal(shownDamage(overlayOf(state, newer)), 90, "the new display at once")
+    local _, elsewhere = platynatorDisplay(state, state.env.UIParent, "nameplate3")
+    equal(overlayOf(state, elsewhere), nil, "only the plate's own children")
+    local broken = state.env.CreateFrame("Frame", nil, plate)
+    broken.widgets, broken.Install, broken.SetUnit = {"x", {details = "y"}}, function() end, function() end
+    broken.unit = "nameplate4"
+    apply(state, 6222, "Corruption", WOLF, "Wolf")
+    equal(shownDamage(blizzardPlateOverlay(state, "nameplate4")), 90, "broken widgets: Blizzard's, no error")
+end)
+
+test("DIES on a tracker row takes the health number's place and keeps the percent", function()
+    local state = trackerPredictFixture({db = {tracker = {health = true, healthText = "both"}}})
+    state.units.target.health, state.units.target.maxHealth = 137, 356
+    apply(state, 6222, "Corruption")
+    local row = pinnedRow(state, "target")
+    equal(row.healthPercent.text, "38% |", "no DIES: the percent and its separator")
+    equal(row.healthNumber.text ~= "", true, "and the number")
+    state.now = state.now + 3
+    tick(state, 6222, "Corruption", 40)
+    local dies = rowOverlay(state, row).dies
+    equal(dies.shown, true, "160 to come, 137 left")
+    equal(row.healthPercent.text, "38%", "the percent stays, without its separator")
+    equal(row.healthNumber.text, "", "the number gives its place")
+    local point = dies.points[#dies.points]
+    equal(point[1], "LEFT")
+    equal(point[2], row.healthNumber, "where the number was")
+    state.settings.WTF_PREDICT_DIES:SetValue(false)
+    equal(row.healthPercent.text, "38% |", "DIES off: the numbers come back")
+    equal(row.healthNumber.text ~= "", true)
+    local percentOnly = trackerPredictFixture({db = {tracker = {health = true, healthText = "percent"}}})
+    percentOnly.units.target.health = 50
+    apply(percentOnly, 6222, "Corruption")
+    local onlyRow = pinnedRow(percentOnly, "target")
+    local onlyDies = rowOverlay(percentOnly, onlyRow).dies
+    equal(onlyDies.shown, true)
+    equal(onlyRow.healthPercent.text, "5%", "the percent stays")
+    local onlyPoint = onlyDies.points[#onlyDies.points]
+    equal(onlyPoint[1], "RIGHT", "just left of the percent")
+    equal(onlyPoint[2], onlyRow.healthPercent)
+end)
+
+test("DIES: the same size on a scaled-down plate, and nothing on target-of-target", function()
+    local state = predictFixture()
+    for _, unit in ipairs({"nameplate3", "target"}) do state.units[unit].health = 50 end
+    state.units.targettarget = {name = "Boar", guid = BOAR, health = 50}
+    state.env.Platynator = {}
+    local plate = plateOf(state, "nameplate3")
+    local display, bar = platynatorDisplay(state, plate, "nameplate3")
+    display:SetScale(0.5)
+    bar:SetScale(0.8)
+    apply(state, 6222, "Corruption")
+    local dies = overlayOf(state, bar).dies
+    equal(dies.shown, true)
+    equal(math.floor(dies:GetEffectiveScale() * 1000 + 0.5), 1000, "the badge at UI scale, not the plate's 0.4")
+    equal(math.floor(targetOverlay(state).dies:GetEffectiveScale() * 1000 + 0.5), 1000, "the target frame's too")
+    state.emit("UNIT_HEALTH", "targettarget")
+    for _, frame in ipairs(state.frames) do
+        equal(frame.unit == "targettarget" and frame.kind == "StatusBar", false, "no target-of-target bar")
+    end
+end)
+
+test("adapters: broken or partial AddOn tables give Blizzard's bars and no error", function()
+    local state = predictFixture()
+    local plate = plateOf(state, "nameplate3")
+    plate.TPFrame = {Active = true, visual = "broken"}
+    plate.unitFrame = {healthBar = {}}
+    state.env.Plater = {}
+    state.env.EllesmereNameplates_NS = 5
+    state.env.ShadowUF = {Units = "broken"}
+    state.env.EllesmereUIUnitFrames_Target = {Health = "broken"}
+    apply(state, 6222, "Corruption")
+    equal(shownDamage(blizzardPlateOverlay(state, "nameplate3")), 90)
+    equal(shownDamage(targetOverlay(state)), 90)
+end)
+
+local STRIPES = "Interface\\AddOns\\WarlockToolsForever\\Textures\\Stripes"
+
+local function near(actual, expected, context)
+    if math.abs(actual - expected) > 0.001 then
+        error((context or "value") .. ": expected " .. expected .. ", got " .. tostring(actual), 2)
+    end
+end
+
+local function shownEdges(overlay)
+    local count = 0
+    for _, edge in ipairs(overlay.edges) do
+        if edge.shown then count = count + 1 end
+    end
+    return count
+end
+
+test("block style: stripes, purple at 70%, and a thin outline by default, the same on every bar", function()
+    local state = trackerPredictFixture()
+    local plate = plateOf(state, "nameplate3")
+    local tpBar = newBar(state, plate)
+    plate.TPFrame = {Active = true, visual = {Healthbar = tpBar}}
+    apply(state, 6222, "Corruption")
+    for _, case in ipairs({{targetOverlay(state), "the target frame"}, {overlayOf(state, tpBar), "Threat Plates"},
+        {rowOverlay(state, pinnedRow(state, "target")), "the tracker row"}}) do
+        local overlay, label = case[1], case[2]
+        local block = overlay.block
+        equal(block.texture, STRIPES, label .. ": WTF's stripes")
+        equal(block.wrap, "REPEAT", label .. ": tiled")
+        equal(block.horizTile, true, label)
+        equal(block.vertTile, true, label)
+        near(block.vertex[1], 0.64, label .. ": purple")
+        near(block.vertex[4], 0.7, label .. ": 70%")
+        equal(shownEdges(overlay), 4, label .. ": the outline")
+        equal(overlay.edges[1].height, 1, label .. ": 1 px")
+        equal(overlay.barColor[4], 0, label .. ": the measuring fill is clear")
+        equal(block.points[1][2], overlay:GetStatusBarTexture(), label .. ": the block covers the span")
+    end
+end)
+
+test("block style: solid, the bar's own texture or atlas, colors, opacity, and no outline", function()
+    local state = predictFixture()
+    apply(state, 6222, "Corruption")
+    local overlay = targetOverlay(state)
+    state.settings.WTF_PREDICT_FILL:SetValue("solid")
+    equal(overlay.block.texture, "Interface\\Buttons\\WHITE8X8", "solid")
+    equal(overlay.block.horizTile, false, "not tiled")
+    state.env.TargetFrameHealthBar:GetStatusBarTexture():SetTexture("Interface\\TargetingFrame\\UI-StatusBar")
+    state.settings.WTF_PREDICT_FILL:SetValue("bar")
+    equal(overlay.block.texture, "Interface\\TargetingFrame\\UI-StatusBar", "the target bar's own texture")
+    local plateFill = plateOf(state, "nameplate3").UnitFrame.HealthBarsContainer.healthBar:GetStatusBarTexture()
+    plateFill:SetAtlas("UI-HUD-CoolDownManager-Bar")
+    state.emit("UNIT_HEALTH", "nameplate3")
+    equal(blizzardPlateOverlay(state, "nameplate3").block.atlas, "UI-HUD-CoolDownManager-Bar", "Era's plate atlas")
+    state.settings.WTF_PREDICT_COLOR:SetValue("green")
+    near(overlay.block.vertex[2], 0.9, "green")
+    state.settings.WTF_PREDICT_OPACITY:SetValue(40)
+    near(overlay.block.vertex[4], 0.4, "40%")
+    state.settings.WTF_PREDICT_OUTLINE:SetValue("none")
+    equal(shownEdges(overlay), 0, "no outline")
+    state.settings.WTF_PREDICT_OUTLINE:SetValue("solid")
+    equal(shownEdges(overlay), 4)
+    near(overlay.edges[1].color[4], 0.7, "the outline a little more solid than the block")
+end)
+
+test("block style: on a bar of the same color the block is lighter; other colors keep it", function()
+    local state = predictFixture()
+    local plate = plateOf(state, "nameplate3")
+    local bar = newBar(state, plate)
+    bar:SetStatusBarColor(0.64, 0.21, 0.93, 0.8)
+    plate.TPFrame = {Active = true, visual = {Healthbar = bar}}
+    apply(state, 6222, "Corruption")
+    local overlay = overlayOf(state, bar)
+    near(overlay.block.vertex[1], 0.82, "lighter purple on a purple bar")
+    near(overlay.block.vertex[2], 0.605)
+    bar:SetStatusBarColor(0.2, 0.8, 0.2, 1)
+    state.emit("UNIT_HEALTH", "nameplate3")
+    near(overlay.block.vertex[1], 0.64, "the bar turned green: the preset again")
+end)
+
+test("block style: settings are repaired and greyed on Forever", function()
+    local state = predictFixture({db = {predict = {fill = "glitter", color = "blue", opacity = 5, outline = 1}}})
+    local predict = state.wtf.db.predict
+    equal(predict.fill, "stripes")
+    equal(predict.color, "purple")
+    equal(predict.opacity, 20, "below the range: its lowest")
+    equal(predict.outline, "solid")
+    local kept = predictFixture({db = {predict = {fill = "bar", color = "white", opacity = 35, outline = "none"}}})
+    equal(kept.wtf.db.predict.fill, "bar")
+    equal(kept.wtf.db.predict.opacity, 35)
+    local forever = predictFixture({combatLogRestricted = true, restrictCombatLog = true})
+    for _, object in ipairs(forever.categories["DoT Tracker"].initializers) do
+        local variable = object.setting.variable
+        if variable:match("^WTF_PREDICT_") then
+            equal(object.modifyPredicates[1](), false, variable .. " greyed")
+        end
+    end
+    equal(forever.settings.WTF_PREDICT_OPACITY.default, 70)
+end)
+
+test("debug_predict lists each mob's DoTs, ticks, and damage to come", function()
+    local state = predictFixture()
+    apply(state, 6222, "Corruption")
+    state.now = state.now + 3
+    tick(state, 6222, "Corruption", 18)
+    state.clear()
+    state.slash("debug_predict")
+    contains(state.messages[1], "enabled=true plates=true dies=true")
+    contains(state.messages[2], "Frames: target=Blizzard, focus=none, nameplate3=Blizzard")
+    contains(state.messages[3], "Boar: 72 to come")
+    contains(state.messages[4], "corruption (spell 6222): tick 1 of 5, learned 18.0, 72 to come")
 end)
 
 local failed = 0

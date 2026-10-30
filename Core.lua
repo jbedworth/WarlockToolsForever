@@ -239,6 +239,8 @@ local REQUIRED_NAMESPACE = {
     "CheckTrackerCapabilities", "InitializeTracker", "ResetTrackerPosition", "RefreshTracker",
     "ReportTrackerDebug", "TrackerCandidateFilters", "TrackerKnowsSlot", "SetTrackerTheme",
     "InitializePlateDots", "RefreshPlateDots", "HasTrackableDots", "ApplyTrackerColors", "ApplyDotColors",
+    "InitializePredict", "RefreshPredict", "PredictAvailable", "ReportPredictDebug", "DrawRowPrediction",
+    "RefreshTrackerPrediction",
     "ReportRestrictions", "ResetFocusWorks", "InitializeProbe", "InitializeOptions", "OpenSettings",
 }
 
@@ -495,6 +497,32 @@ WTF.TRACKER_NAME_POSITIONS = {
     bars = {{key = "above", label = "Above"}, {key = "below", label = "Below"}},
 }
 
+-- The DoT prediction block's look (John, 1.4.0), the same on every bar:
+-- the fill, a color preset, its opacity, and a thin outline.
+WTF.PREDICT_FILLS = {{key = "stripes", label = "Stripes"}, {key = "solid", label = "Solid"},
+    {key = "bar", label = "Bar texture"}}
+WTF.PREDICT_COLORS = {
+    {key = "purple", label = "Purple", color = {0.64, 0.21, 0.93}},
+    {key = "red", label = "Red", color = {1, 0.15, 0.15}},
+    {key = "orange", label = "Orange", color = {1, 0.55, 0.1}},
+    {key = "white", label = "White", color = {1, 1, 1}},
+    {key = "green", label = "Green", color = {0.25, 0.9, 0.3}},
+}
+WTF.PREDICT_OUTLINES = {{key = "none", label = "None"}, {key = "solid", label = "Solid"}}
+WTF.PREDICT_OPACITY_MIN = 20
+WTF.PREDICT_OPACITY_MAX = 100
+WTF.DEFAULT_PREDICT_OPACITY = 70
+
+-- A saved key that is one of the choices, else the first or the default.
+function WTF.SanitizeChoice(value, choices, default)
+    for _, choice in ipairs(choices) do
+        if value == choice.key then
+            return value
+        end
+    end
+    return default or choices[1].key
+end
+
 -- The tracker's health text choices; None by default.
 WTF.TRACKER_HEALTH_TEXTS = {{key = "none", label = "None"}, {key = "number", label = "Number"},
     {key = "percent", label = "Percent"}, {key = "both", label = "Number and Percent"}}
@@ -611,6 +639,19 @@ function WTF.SanitizeDB(db)
             db.tracker.onPlates[slot.key] = true
         end
     end
+    -- DoT damage prediction (John, 1.4.0): on by default, where the client
+    -- has the combat log. A test build's "tracker" switch is dropped.
+    local predict = type(db.predict) == "table" and db.predict or {}
+    db.predict = {
+        enabled = predict.enabled ~= false,
+        plates = predict.plates ~= false,
+        dies = predict.dies ~= false,
+        fill = WTF.SanitizeChoice(predict.fill, WTF.PREDICT_FILLS),
+        color = WTF.SanitizeChoice(predict.color, WTF.PREDICT_COLORS),
+        opacity = WTF.SanitizeWhole(predict.opacity, WTF.PREDICT_OPACITY_MIN, WTF.PREDICT_OPACITY_MAX,
+            WTF.DEFAULT_PREDICT_OPACITY),
+        outline = WTF.SanitizeChoice(predict.outline, WTF.PREDICT_OUTLINES, "solid"),
+    }
     local announce = type(db.announce) == "table" and db.announce or {}
     local cleanAnnounce = {
         enabled = announce.enabled ~= false,
@@ -874,15 +915,31 @@ SLASH_WARLOCKTOOLSFOREVER1 = PRIMARY_SLASH
 SLASH_WARLOCKTOOLSFOREVER2 = BACKUP_SLASH
 SlashCmdList[SLASH_KEY] = WTF.HandleCommand
 
--- Account-wide settings, one set per client install (shared with MTF): only
+-- Account-wide settings, one set per client install (shared with MTF):
 -- focusWorks, which only true survives. A 1.3.3 test build kept it per
 -- character in db.control; a true one is carried over once, and SanitizeControl
 -- drops the old key.
+-- ticks: DoT prediction's learned ticks, {[rank spell ID] = {tick = average,
+-- power = spell power it was learned at}}; damaged entries are dropped.
+local function LoadTicks(saved)
+    local ticks = {}
+    if type(saved) ~= "table" then
+        return ticks
+    end
+    for id, entry in pairs(saved) do
+        if type(id) == "number" and type(entry) == "table" and type(entry.tick) == "number" and entry.tick > 0
+                and type(entry.power) == "number" and entry.power >= 0 then
+            ticks[id] = {tick = entry.tick, power = entry.power}
+        end
+    end
+    return ticks
+end
+
 local function LoadAccountDB(saved, character)
     saved = type(saved) == "table" and saved or {}
     local old = type(character) == "table" and type(character.control) == "table"
         and character.control.focusWorks == true
-    return {focusWorks = (saved.focusWorks == true or old) or nil}
+    return {focusWorks = (saved.focusWorks == true or old) or nil, ticks = LoadTicks(saved.ticks)}
 end
 
 local function LoadDB()
@@ -936,6 +993,7 @@ events:SetScript("OnEvent", function(self, event, loadedName)
     WTF.InitializeTracker()
     WTF.InitializeControl()
     WTF.InitializePlateDots()
+    WTF.InitializePredict()
     WTF.InitializeProbe()
     WTF.InitializeOptions()
     JoinToolkit()
