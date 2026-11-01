@@ -57,63 +57,6 @@ local DEATHS = {UNIT_DIED = true, UNIT_DESTROYED = true, PARTY_KILL = true}
 -- A timer per DoT drops it just after its last tick, should the end event
 -- be out of combat log range.
 local EXPIRY_GRACE = 0.5
--- The block's look (Core's PREDICT_FILLS, PREDICT_COLORS, and so on): WTF's
--- own stripes (Textures\\Stripes.tga, white, tinted by the color), a plain
--- fill, or the bar's own texture. The overlay's own fill only measures the
--- span; a texture over that span is the block, with a 1 px outline.
-local STRIPES = "Interface\\AddOns\\WarlockToolsForever\\Textures\\Stripes"
-local WHITE = "Interface\\Buttons\\WHITE8X8"
-local OUTLINE = 1
--- A bar whose own fill is within this much of the block's color (red + green
--- + blue apart; a DoT tracker row in the panel's purple) gets a lighter block.
-local SAME_COLOR = 0.15
-local LIGHTEN = 0.5
-local OUTLINE_LIGHTEN = 0.4
-local OUTLINE_ALPHA = 0.3
--- DIES (John, 1.4.0, after his Era test: hard to read under a row's texts,
--- over a nameplate's name, and small on the target frame): a badge with a
--- red skull and "DIES" in red with a thick black outline, above every text of
--- the bar's frame. The skull is the game's level skull
--- (UI-TargetingFrame-Skull) tinted red, not the raid marker's: a mob marked
--- with the skull by /tm shows that marker on the same frames (WTF never calls
--- SetRaidTarget), and the two must not look alike. The badge is the same size
--- on every frame: its scale undoes the bar's own (found in client: Platynator
--- scales its display down, and the badge was a few pixels tall). Its place per kind of bar, for every frame AddOn's bar of
--- that kind, unless the adapter gives its own:
---   target  unit frames: just left of the bar, vertically centered. Found in
---           client: centered, it ran into SUF's name ("Great Gore[skull]DIES").
---           SUF puts the name on the bar's left and the health on its right;
---           Blizzard's frame (and BetterBlizzFrames, which restyles it) puts
---           the name above the bar and the health text in its middle; the
---           mana bar is below. Left of the bar is the one side none of them
---           writes on (Blizzard's frame has only border art there; SUF's a
---           left portrait, if set, which the badge then covers);
---   plate   nameplates: just right of the bar, clear of the name above it and
---           of Plater's raid marker on the left. Platynator: further right,
---           past its target arrows beside the bar (found in client: above
---           the bar, it ran under its centered name), in a strata above its
---           display's, which is BACKGROUND;
---   row     DoT tracker rows: in place of the health number (Tracker.lua's
---           RowDiesPlace; found in client: at the bar's right end it covered
---           "| 137" and left a stray digit), else at the bar's right end.
-local DIES_TEXT = "DIES"
-local DIES_COLOR = {1, 0.1, 0.1}
-local DIES_FONT = "Fonts\\FRIZQT__.TTF"
-local DIES_SKULL = "Interface\\TargetingFrame\\UI-TargetingFrame-Skull"
-local DIES_SIZE = {target = 14, plate = 11, row = 10}
-local DIES_GAP = 2
-local DIES_PLACE = {
-    target = {"RIGHT", "LEFT", -3, 0},
-    plate = {"LEFT", "RIGHT", 3, 0},
-    row = {"RIGHT", "RIGHT", -2, 0},
-}
--- Above the bar's own texts: a tracker row's layer (+1) and slots (+2, their
--- buttons +10), and the target frame's text frame.
-local DIES_LEVEL = 12
--- Frame levels above the bar: a tracker row's name and texts are on a layer
--- one above its health bar, so the block stays at the bar's own level there.
-local OVERLAY_LEVEL = {target = 1, plate = 1, row = 0}
-
 local predict = {available = false, mobs = {}, byName = {}, lastCast = {}, overlays = {}, plates = {}, units = {}}
 
 -- The combat log's reader, else nil (CombatLogGetCurrentEventInfo is only a
@@ -231,352 +174,64 @@ function WTF.PredictedDamage(guid)
     return math.floor(total + 0.5)
 end
 
--- Frame adapters -----------------------------------------------------------------
-
--- One entry per frame AddOn (John, 1.4.0: ThreatPlates, Plater, then
--- EllesmereUI; Shadowed Unit Frames next; then Platynator): the StatusBar that shows a
--- nameplate's or the target or focus frame's health, else nil. The first
--- match wins; Blizzard's bar is the fallback. Every field is checked, so an
--- AddOn that is not loaded, or that changed its frames, gives nil and no
--- error. Paths are from each AddOn's own source (cited per entry); WTF never
--- changes their frames, it only puts its own block on their bars.
-local function StatusBar(value)
-    if type(value) == "table" and type(value.GetStatusBarTexture) == "function"
-            and not (type(value.IsForbidden) == "function" and value:IsForbidden()) then
-        return value
-    end
-end
-
--- value[key1][key2]..., or nil at the first step that is not a table.
-local function Field(value, ...)
-    for index = 1, select("#", ...) do
-        if type(value) ~= "table" then
-            return nil
-        end
-        value = value[select(index, ...)]
-    end
-    return value
-end
-
--- Platynator 527 (John, 1.4.0: the first nameplate AddOn of the Forever
--- beta; read in its source on Era). Its manager (Display/Initialize.lua)
--- keeps one display frame per Blizzard plate and style, installs it on the
--- plate in its own NAME_PLATE_UNIT_ADDED handler (SetParent(nameplate), then
--- SetUnit(unit), which sets .unit; Display/Nameplate.lua) and uninstalls it
--- on removal (SetUnit(nil), Hide). The display's .widgets holds the health
--- widget (details.kind "health") with its StatusBar at .statusBar
--- (Display/Widgets.lua). The manager and its callbacks are private (no
--- global or event to hook), so the display is found among the plate's own
--- children at each draw: a handful of frames, on events only.
--- Room for its target arrows ("wide/arrows" and others, Design.lua), which
--- sit just outside the bar's ends; its crowd-control icons start further out.
-local PLATYNATOR_ARROW_ROOM = 22
-
-local function IsPlatynatorDisplay(frame)
-    return type(frame) == "table" and type(Field(frame, "widgets")) == "table"
-        and type(Field(frame, "Install")) == "function" and type(Field(frame, "SetUnit")) == "function"
-end
-
-local function PlatynatorBar(plate, unit)
-    if type(plate.GetChildren) ~= "function" then
-        return nil
-    end
-    for _, display in ipairs({plate:GetChildren()}) do
-        if IsPlatynatorDisplay(display) and Field(display, "unit") == unit and display:IsShown() then
-            for _, widget in ipairs(display.widgets) do
-                if Field(widget, "details", "kind") == "health" then
-                    local bar = StatusBar(Field(widget, "statusBar"))
-                    if bar then
-                        return bar
-                    end
-                end
-            end
-        end
-    end
-end
-
-local PLATE_ADAPTERS = {
-    -- Threat Plates 13.3.3: its own frame plate.TPFrame (Nameplate.lua
-    -- HandlePlateCreated), drawing this unit while .Active is true
-    -- (ShowBlizzardNameplate), with the bar at .visual.Healthbar
-    -- (Elements/Healthbar.lua; .healthbar is its older name).
-    {name = "Threat Plates", bar = function(plate)
-        local frame = Field(plate, "TPFrame")
-        if Field(frame, "Active") == true then
-            return StatusBar(Field(frame, "visual", "Healthbar")) or StatusBar(Field(frame, "visual", "healthbar"))
-        end
-    end},
-    -- Plater: plate.unitFrame (lowercase; Blizzard's is .UnitFrame), also
-    -- with its "use UIParent" option, whose DetailsFramework health bar is
-    -- .healthBar (Plater.lua; libs/DF/unitframe.lua CreateHealthBar).
-    {name = "Plater", bar = function(plate)
-        if type(rawget(_G, "Plater")) == "table" then
-            return StatusBar(Field(plate, "unitFrame", "healthBar"))
-        end
-    end},
-    -- EllesmereUI: its pooled plate for the unit, while that is on this
-    -- Blizzard plate, with the bar at .health. Not installed here: from Does
-    -- It Die's adapter only, not checked against EllesmereUI's source.
-    {name = "EllesmereUI", bar = function(plate, unit)
-        local own = Field(rawget(_G, "EllesmereNameplates_NS"), "plates", unit)
-        if own ~= nil and Field(own, "nameplate") == plate then
-            return StatusBar(Field(own, "health"))
-        end
-    end},
-    {name = "Platynator", dies = {"LEFT", "RIGHT", PLATYNATOR_ARROW_ROOM, 0}, diesStrata = "LOW",
-        bar = function(plate, unit)
-        if type(rawget(_G, "Platynator")) == "table" then
-            return PlatynatorBar(plate, unit)
-        end
-    end},
-    -- Blizzard: Era's UnitFrame.HealthBarsContainer.healthBar
-    -- (Blizzard_NamePlates.xml), else UnitFrame.healthBar.
-    {name = "Blizzard", bar = function(plate)
-        return StatusBar(Field(plate, "UnitFrame", "HealthBarsContainer", "healthBar"))
-            or StatusBar(Field(plate, "UnitFrame", "healthBar"))
-    end},
-}
-
-local UNIT_ADAPTERS = {
-    -- Shadowed Unit Frames v4.3.9: ShadowUF.Units.unitFrames[unit], set while
-    -- its frame for the unit is enabled (modules/units.lua), with the bar at
-    -- .healthBar (modules/health.lua).
-    {name = "Shadowed Unit Frames", bar = function(unit)
-        return StatusBar(Field(rawget(_G, "ShadowUF"), "Units", "unitFrames", unit, "healthBar"))
-    end},
-    -- BetterBlizzFrames v2.1.8 restyles Blizzard's own frames: it moves,
-    -- resizes, and re-textures TargetFrameHealthBar but keeps it (Blizzard's
-    -- entry covers that). Its "smooth bars" option (shared/smoothBars.lua)
-    -- hides that bar's fill and shows an eased StatusBar child of it,
-    -- .bbfSmoothOverlay, which mirrors its values, color, and texture: the
-    -- block goes on that one, so it follows the fill you see.
-    {name = "BetterBlizzFrames", bar = function(unit)
-        local name = unit == "target" and "TargetFrame" or "FocusFrame"
-        local stock = StatusBar(Field(rawget(_G, name), "healthbar")) or StatusBar(rawget(_G, name .. "HealthBar"))
-        return StatusBar(Field(stock, "bbfSmoothOverlay"))
-    end},
-    -- EllesmereUI's unit frames: from Does It Die's adapter only, as above.
-    {name = "EllesmereUI", bar = function(unit)
-        local frame = rawget(_G, unit == "target" and "EllesmereUIUnitFrames_Target" or "EllesmereUIUnitFrames_Focus")
-        return StatusBar(Field(frame, "Health"))
-    end},
-    -- Blizzard: TargetFrame.healthbar on Era (TargetFrame.lua), FocusFrame's
-    -- on clients with a focus.
-    {name = "Blizzard", bar = function(unit)
-        local name = unit == "target" and "TargetFrame" or "FocusFrame"
-        local frame = rawget(_G, name)
-        return StatusBar(Field(frame, "healthbar")) or StatusBar(Field(frame, "HealthBar"))
-            or StatusBar(rawget(_G, name .. "HealthBar"))
-    end},
-}
-
-local function Resolve(adapters, ...)
-    for _, adapter in ipairs(adapters) do
-        local bar = adapter.bar(...)
-        if bar then
-            return bar, adapter.name, adapter.dies, adapter.diesStrata
-        end
-    end
-end
-
 -- The health bars --------------------------------------------------------------
 
--- A block from the bar's left edge to its fill's right edge, filled from the
--- right with the damage to come out of the health left: it ends where the
--- health ends and grows left, and the bar's own size and fill place it. A
--- reverse-filled bar (Shadowed Unit Frames can) gets the mirror image. Each
--- draw checks the fill texture and frame level, as frame AddOns change both.
-local function Anchor(overlay, bar, kind)
-    local fill = bar:GetStatusBarTexture()
-    local reverse = type(bar.GetReverseFill) == "function" and bar:GetReverseFill() == true
-    if overlay.anchoredFill ~= fill or overlay.reverse ~= reverse then
-        overlay.anchoredFill, overlay.reverse = fill, reverse
-        overlay:ClearAllPoints()
-        if reverse then
-            overlay:SetPoint("TOPLEFT", fill, "TOPLEFT")
-            overlay:SetPoint("BOTTOMRIGHT", bar, "BOTTOMRIGHT")
-        else
-            overlay:SetPoint("TOPLEFT", bar, "TOPLEFT")
-            overlay:SetPoint("BOTTOMRIGHT", fill, "BOTTOMRIGHT")
-        end
-        overlay:SetReverseFill(not reverse)
-    end
-    overlay:SetFrameLevel(bar:GetFrameLevel() + OVERLAY_LEVEL[kind])
-    overlay.dies:SetFrameLevel(bar:GetFrameLevel() + DIES_LEVEL)
-    -- The badge's size in UI units, whatever the bar's own scale.
-    local own, ui = overlay:GetEffectiveScale(), UIParent:GetEffectiveScale()
-    if type(own) == "number" and type(ui) == "number" and own > 0 and ui > 0 then
-        overlay.dies:SetScale(ui / own)
-    end
-end
-
--- A vertical bar (an option in some unit frame AddOns) gets no block.
-local function Vertical(bar)
-    return type(bar.GetOrientation) == "function" and bar:GetOrientation() == "VERTICAL"
-end
-
-local function Lighter(r, g, b, share)
-    return r + (1 - r) * share, g + (1 - g) * share, b + (1 - b) * share
-end
-
-local function PresetColor(key)
-    for _, preset in ipairs(WTF.PREDICT_COLORS) do
-        if preset.key == key then
-            return preset.color[1], preset.color[2], preset.color[3]
-        end
-    end
-end
-
--- The block's color, lighter on a bar whose own fill has the same color.
-local function BlockColor(bar)
-    local r, g, b = PresetColor(WTF.db.predict.color)
-    local br, bg, bb = bar:GetStatusBarColor()
-    if type(br) == "number" and type(bg) == "number" and type(bb) == "number" and not WTF.IsSecret(br)
-            and not WTF.IsSecret(bg) and not WTF.IsSecret(bb)
-            and math.abs(br - r) + math.abs(bg - g) + math.abs(bb - b) < SAME_COLOR then
-        return Lighter(r, g, b, LIGHTEN)
-    end
-    return r, g, b
-end
-
--- The bar's own fill art: an atlas (Era's nameplates) or a texture file.
-local function BarArt(bar)
-    local fill = bar:GetStatusBarTexture()
-    local atlas = type(fill.GetAtlas) == "function" and fill:GetAtlas() or nil
-    if type(atlas) == "string" and atlas ~= "" then
-        return "atlas", atlas
-    end
-    local texture = type(fill.GetTexture) == "function" and fill:GetTexture() or nil
-    if texture ~= nil then
-        return "file", texture
-    end
-end
-
--- One look for every block, on every frame AddOn's bar and the tracker rows;
--- set again only when a setting or the bar's own color or art changed.
-local function Style(overlay, bar)
-    local settings = WTF.db.predict
-    local r, g, b = BlockColor(bar)
-    local alpha = settings.opacity / 100
-    local art, source = nil, nil
-    if settings.fill == "bar" then
-        art, source = BarArt(bar)
-    end
-    local key = table.concat({settings.fill, settings.outline, alpha, r, g, b, tostring(art), tostring(source)}, ":")
-    if overlay.style == key then
-        return
-    end
-    overlay.style = key
-    local block = overlay.block
-    block:SetHorizTile(false)
-    block:SetVertTile(false)
-    if settings.fill == "stripes" then
-        block:SetTexture(STRIPES, "REPEAT", "REPEAT")
-        block:SetHorizTile(true)
-        block:SetVertTile(true)
-    elseif art == "atlas" then
-        block:SetAtlas(source)
-    else
-        block:SetTexture(art == "file" and source or WHITE)
-    end
-    block:SetVertexColor(r, g, b, alpha)
-    local er, eg, eb = Lighter(r, g, b, OUTLINE_LIGHTEN)
-    for _, edge in ipairs(overlay.edges) do
-        edge:SetColorTexture(er, eg, eb, math.min(1, alpha + OUTLINE_ALPHA))
-        edge:SetShown(settings.outline == "solid")
-    end
-end
-
--- The 1 px outline around the span: top, bottom, left, right.
-local function Edges(overlay, span)
-    local edges = {}
-    for _, side in ipairs({{"TOPLEFT", "TOPRIGHT", true}, {"BOTTOMLEFT", "BOTTOMRIGHT", true},
-        {"TOPLEFT", "BOTTOMLEFT", false}, {"TOPRIGHT", "BOTTOMRIGHT", false}}) do
-        local edge = overlay:CreateTexture(nil, "OVERLAY")
-        edge:SetPoint(side[1], span, side[1])
-        edge:SetPoint(side[2], span, side[2])
-        if side[3] then
-            edge:SetHeight(OUTLINE)
-        else
-            edge:SetWidth(OUTLINE)
-        end
-        edges[#edges + 1] = edge
-    end
-    return edges
-end
-
-local function Overlay(bar, kind, place, strata)
-    local overlay = predict.overlays[bar]
-    if overlay then
-        return overlay
-    end
-    overlay = CreateFrame("StatusBar", nil, bar)
-    overlay:SetStatusBarTexture(WHITE)
-    overlay:SetStatusBarColor(0, 0, 0, 0)
-    overlay:EnableMouse(false)
-    local span = overlay:GetStatusBarTexture()
-    local block = overlay:CreateTexture(nil, "ARTWORK")
-    block:SetPoint("TOPLEFT", span, "TOPLEFT")
-    block:SetPoint("BOTTOMRIGHT", span, "BOTTOMRIGHT")
-    overlay.block = block
-    overlay.edges = Edges(overlay, span)
-    local size = DIES_SIZE[kind]
-    place = place or DIES_PLACE[kind]
-    local dies = CreateFrame("Frame", nil, overlay)
-    dies:EnableMouse(false)
-    dies:SetPoint(place[1], bar, place[2], place[3], place[4])
-    if strata then
-        dies:SetFrameStrata(strata)
-    end
-    local skull = dies:CreateTexture(nil, "OVERLAY")
-    skull:SetTexture(DIES_SKULL)
-    skull:SetVertexColor(DIES_COLOR[1], DIES_COLOR[2], DIES_COLOR[3])
-    skull:SetSize(size, size)
-    skull:SetPoint("LEFT", dies, "LEFT")
-    local label = dies:CreateFontString(nil, "OVERLAY")
-    label:SetFont(DIES_FONT, size, "THICKOUTLINE")
-    label:SetTextColor(DIES_COLOR[1], DIES_COLOR[2], DIES_COLOR[3])
-    label:SetShadowColor(0, 0, 0, 1)
-    label:SetShadowOffset(1, -1)
-    label:SetPoint("LEFT", skull, "RIGHT", DIES_GAP, 0)
-    label:SetText(DIES_TEXT)
-    dies:SetSize(size + DIES_GAP + label:GetStringWidth(), size)
-    dies.skull, dies.label = skull, label
-    overlay.dies = dies
-    overlay:Hide()
-    predict.overlays[bar] = overlay
-    return overlay
-end
+-- Since 1.4.1 the frame adapters (Threat Plates, Plater, EllesmereUI,
+-- Platynator, Shadowed Unit Frames, BetterBlizzFrames, Blizzard), the block,
+-- and the DIES badge are Dyre's Toolkit's (HealthBars.lua, 2.4.0, moved from
+-- here with the same numbers; it also keeps DIES clear of Threat Plates'
+-- target-of-target text, Plater's cast target and raid marker). WTF keeps
+-- the combat log model, the ticks, the settings, and when to draw.
 
 local function Readable(value)
     return not WTF.IsSecret(value) and type(value) == "number"
 end
 
+-- The block's look from the settings (Core's PREDICT_* choices).
+local function Look()
+    local settings = WTF.db.predict
+    local color
+    for _, preset in ipairs(WTF.PREDICT_COLORS) do
+        if preset.key == settings.color then
+            color = preset.color
+        end
+    end
+    return {fill = settings.fill, color = color, opacity = settings.opacity, outline = settings.outline,
+        dies = settings.dies}
+end
+
 local function HideOverlay(bar)
-    local overlay = bar and predict.overlays[bar]
-    if overlay then
-        overlay:Hide()
+    if bar then
+        WTF.shared.HidePrediction(bar)
     end
 end
 
--- Returns whether DIES shows.
-local function DrawAmount(bar, kind, damage, health, place, strata)
-    if damage <= 0 or not Readable(health) or health <= 0 or Vertical(bar) then
-        HideOverlay(bar)
-        return false
-    end
-    local overlay = Overlay(bar, kind, place, strata)
-    Anchor(overlay, bar, kind)
-    Style(overlay, bar)
-    overlay:SetMinMaxValues(0, health)
-    overlay:SetValue(math.min(damage, health))
-    local dies = WTF.db.predict.dies and damage >= health
-    overlay.dies:SetShown(dies)
-    overlay:Show()
-    return dies
+-- Dyre's Toolkit's damage sources (HealthBars, 2.4.0; John, 2026-10-31):
+-- each Dyre's AddOn that predicts damage registers, and only the highest
+-- priority draws on the health bars (Dyre's Debuff Tracker, 20, above WTF),
+-- so a mob is never drawn twice. predict.sources is DyresToolkit.HealthBars
+-- once WTF is registered; without it (an older Toolkit) WTF draws as before.
+local SOURCE = "WarlockToolsForever"
+local SOURCE_PRIORITY = 10
+local SOURCE_FUNCTIONS = {"RegisterSource", "SetSourceEnabled", "IsActiveSource", "NotifyChanged",
+    "GetPredictedDamage"}
+
+-- Whether WTF draws on the target frame and the nameplates.
+local function Mine()
+    local api = predict.sources
+    return not api or api.IsActiveSource(SOURCE) == true
 end
 
-local function Draw(unit, bar, kind, place, strata)
+-- A tracker row is WTF's own bar, so it always draws: WTF's damage, or the
+-- active source's while another one is (the number its nameplate shows).
+local function RowDamage(guid)
+    if Mine() then
+        return WTF.PredictedDamage(guid)
+    end
+    return predict.sources.GetPredictedDamage(guid) or 0
+end
+
+local function Draw(unit, bar, kind, info)
     if not bar then
         return
     end
@@ -588,66 +243,47 @@ local function Draw(unit, bar, kind, place, strata)
         HideOverlay(bar)
         return
     end
-    DrawAmount(bar, kind, WTF.PredictedDamage(guid), UnitHealth(unit), place, strata)
+    WTF.shared.DrawPrediction(bar, kind, WTF.PredictedDamage(guid), UnitHealth(unit), Look(), info)
 end
 
 -- A DoT tracker row's health bar (Tracker.lua's UpdateHealth): the row's mob
 -- and the health the bar shows, which a row with no unit keeps from when it
 -- had one. Rows have a health bar only with "Show mob health" on, so the
 -- block shows there when both it and "Show Predictive DoT Damage" are on
--- (John, 1.4.0: no switch of its own).
--- place: where the row wants DIES, {point, region, relativePoint, x}, else
--- the bar's right end. Returns whether DIES shows, so the row can make room.
+-- (John, 1.4.0: no switch of its own). place: where the row wants DIES,
+-- {point, region, relativePoint, x}, else the bar's right end. Returns
+-- whether DIES shows, so the row can make room.
 function WTF.DrawRowPrediction(bar, guid, health, place)
     if not predict.available or not bar then
         return false
     end
-    local settings = WTF.db.predict
-    if not settings.enabled or type(guid) ~= "string" then
+    if not WTF.db.predict.enabled or type(guid) ~= "string" then
         HideOverlay(bar)
         return false
     end
-    local dies = DrawAmount(bar, "row", WTF.PredictedDamage(guid), health)
-    local overlay = predict.overlays[bar]
-    if overlay then
-        overlay.dies:ClearAllPoints()
-        if place then
-            overlay.dies:SetPoint(place[1], place[2], place[3], place[4], 0)
-        else
-            local default = DIES_PLACE.row
-            overlay.dies:SetPoint(default[1], bar, default[2], default[3], default[4])
-        end
-    end
-    return dies
-end
-
--- Remembers which bar shows a unit (the frame AddOn can change: Threat Plates
--- turns itself off for some mobs, a plate is recycled), hiding the block on
--- the bar it leaves.
-local function UseBar(shown, unit, bar, name)
-    local old = shown[unit]
-    if old and old.bar ~= bar then
-        HideOverlay(old.bar)
-    end
-    shown[unit] = bar and {bar = bar, name = name} or nil
+    local dies = WTF.shared.DrawPrediction(bar, "row", RowDamage(guid), health, Look())
+    WTF.shared.MoveDies(bar, place)
+    return dies == true
 end
 
 -- The target or focus frame.
 local function DrawUnitFrame(unit)
-    local bar, name, place = Resolve(UNIT_ADAPTERS, unit)
-    UseBar(predict.units, unit, bar, name)
-    Draw(unit, bar, "target", place)
+    if not Mine() then
+        return
+    end
+    local bar, info = WTF.shared.FindUnitBar(unit)
+    WTF.shared.UseBar(predict.units, unit, bar, info)
+    Draw(unit, bar, "target", info)
 end
 
 local function DrawPlate(unit)
-    local plate = C_NamePlate.GetNamePlateForUnit(unit)
-    local bar, name, place, strata
-    if plate and not plate:IsForbidden() then
-        bar, name, place, strata = Resolve(PLATE_ADAPTERS, plate, unit)
+    if not Mine() then
+        return
     end
-    UseBar(predict.plates, unit, bar, name)
+    local bar, info = WTF.shared.FindPlateBar(unit)
+    WTF.shared.UseBar(predict.plates, unit, bar, info)
     if WTF.db.predict.plates then
-        Draw(unit, bar, "plate", place, strata)
+        Draw(unit, bar, "plate", info)
     else
         HideOverlay(bar)
     end
@@ -670,6 +306,9 @@ local function DrawGUID(guid)
         end
     end
     WTF.RefreshTrackerPrediction(guid)
+    if predict.sources then
+        predict.sources.NotifyChanged(SOURCE, nil, guid)
+    end
 end
 
 local function DrawAll()
@@ -684,10 +323,23 @@ local function DrawAll()
     WTF.RefreshTrackerPrediction()
 end
 
--- Settings changed.
+-- Settings changed. "Show Predictive DoT Damage" off steps WTF aside as a
+-- source, after it hides its own blocks, so the next source draws.
 function WTF.RefreshPredict()
-    if predict.available then
-        DrawAll()
+    if not predict.available then
+        return
+    end
+    local api = predict.sources
+    local on = WTF.db.predict.enabled
+    if api and on then
+        api.SetSourceEnabled(SOURCE, true)
+    end
+    DrawAll()
+    if api and not on then
+        api.SetSourceEnabled(SOURCE, false)
+        if type(api.Refresh) == "function" then
+            api.Refresh(nil)
+        end
     end
 end
 
@@ -839,7 +491,7 @@ local function OnEvent(_, event, unit, _, spellID)
         end
     elseif event == "NAME_PLATE_UNIT_REMOVED" then
         if not WTF.IsSecret(unit) then
-            UseBar(predict.plates, unit, nil)
+            WTF.shared.UseBar(predict.plates, unit, nil)
         end
     elseif not WTF.IsSecret(unit) and IsShownUnit(unit) then
         if unit == "target" or unit == "focus" then
@@ -848,6 +500,81 @@ local function OnEvent(_, event, unit, _, spellID)
             DrawPlate(unit)
         end
     end
+end
+
+-- The damage to come for a unit token or GUID, or nil for a mob WTF has no
+-- DoT on.
+local function SourceDamage(unitOrGUID)
+    if WTF.IsSecret(unitOrGUID) or type(unitOrGUID) ~= "string" then
+        return nil
+    end
+    local guid = unitOrGUID
+    if not guid:find("-", 1, true) then
+        guid = WTF.shared.ReadGUID(unitOrGUID)
+    end
+    if not guid or not predict.mobs[guid] then
+        return nil
+    end
+    return WTF.PredictedDamage(guid)
+end
+
+-- The Toolkit asks WTF to draw again: one unit's frames and rows, or all.
+local function SourceRefresh(unit)
+    if unit == nil then
+        DrawAll()
+        return
+    end
+    if WTF.IsSecret(unit) or not IsShownUnit(unit) then
+        return
+    end
+    if unit == "target" or unit == "focus" then
+        DrawUnitFrame(unit)
+    elseif UnitExists(unit) then
+        DrawPlate(unit)
+    end
+    local guid = WTF.shared.ReadGUID(unit)
+    if guid then
+        WTF.RefreshTrackerPrediction(guid)
+    end
+end
+
+-- Another source's change, for the tracker rows only (WTF's own changes
+-- redraw them in DrawGUID).
+local function OnPredictionChanged(_, unit, guid)
+    if Mine() then
+        return
+    end
+    if WTF.IsSecret(guid) or type(guid) ~= "string" then
+        guid = nil
+        if not WTF.IsSecret(unit) and type(unit) == "string" then
+            guid = WTF.shared.ReadGUID(unit)
+        end
+        if unit ~= nil and not guid then
+            return
+        end
+    end
+    WTF.RefreshTrackerPrediction(guid)
+end
+
+local function RegisterSource()
+    local api = WTF.shared.HealthBars
+    if type(api) ~= "table" then
+        return
+    end
+    for _, name in ipairs(SOURCE_FUNCTIONS) do
+        if type(api[name]) ~= "function" then
+            return
+        end
+    end
+    if not api.RegisterSource({addon = SOURCE, priority = SOURCE_PRIORITY, damage = SourceDamage,
+            refresh = SourceRefresh}) then
+        return
+    end
+    api.SetSourceEnabled(SOURCE, WTF.db.predict.enabled)
+    if type(api.RegisterCallback) == "function" then
+        api.RegisterCallback("PREDICTION_CHANGED", OnPredictionChanged)
+    end
+    predict.sources = api
 end
 
 function WTF.InitializePredict()
@@ -879,10 +606,11 @@ function WTF.InitializePredict()
         events:RegisterEvent(event)
     end
     events:RegisterUnitEvent("UNIT_SPELLCAST_SUCCEEDED", "player")
+    RegisterSource()
     -- The target frame's block is made at login, out of combat.
-    local bar = Resolve(UNIT_ADAPTERS, "target")
+    local bar = WTF.shared.FindUnitBar("target")
     if bar then
-        Overlay(bar, "target")
+        WTF.shared.PrepareBar(bar, "target")
     end
     DrawAll()
 end
@@ -900,8 +628,8 @@ function WTF.ReportPredictDebug()
     -- Which AddOn's bar each unit is drawn on.
     local frames = {}
     for _, unit in ipairs({"target", "focus"}) do
-        local _, name = Resolve(UNIT_ADAPTERS, unit)
-        frames[#frames + 1] = unit .. "=" .. tostring(name or "none")
+        local _, info = WTF.shared.FindUnitBar(unit)
+        frames[#frames + 1] = unit .. "=" .. tostring(info and info.name or "none")
     end
     for index = 1, MAX_NAMEPLATE_UNITS do
         local shown = predict.plates["nameplate" .. index]

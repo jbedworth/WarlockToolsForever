@@ -4,6 +4,16 @@ Player-facing changes for each Warlock Tools Forever release, newest first. The
 release builder copies the section for the TOC version into the GitHub release
 notes and the CurseForge changelog, and fails if that section is missing.
 
+## 1.4.1
+
+### Fixes
+- DoT damage prediction: the DIES badge no longer collides with Threat Plates' target-of-target label beside the nameplate (and, with Plater, its cast target name and raid marker); it moves to the other side of the bar.
+
+### Other changes
+- WTF now uses Dyre's Toolkit 2.4's shared parts for the DoT tracker, the nameplate DoT dots, the Control bar, and the DoT damage prediction: the aura timers, finding which mob a nameplate shows, focus detection, and the health bar drawing. They look and work as before. Update Dyre's Toolkit to 2.4 or later: with an older version those four stay off, and WTF says so once in chat.
+- Focus detection is now one check for all of Dyre's AddOns, carried over once from WTF's own. `/wtf reset_focus` makes every Dyre's AddOn check again.
+- DoT damage prediction is now shared through Dyre's Toolkit, so a mob's damage to come is drawn once: when another Dyre's AddOn that predicts damage (such as the coming Dyre's Debuff Tracker) is on, it draws on the target frame and nameplates, and the DoT tracker rows show its number. Turning Show Predictive DoT Damage off lets the other AddOn draw.
+
 ## 1.4.0
 
 ### Features

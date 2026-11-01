@@ -102,7 +102,7 @@ local tracker = {rows = {}, pinned = {}, casts = {}, spellSlots = {}, known = {}
     dead = {}, available = false}
 
 function WTF.CheckTrackerCapabilities()
-    -- Forever's engine aura slots, else AuraEngine.lua's plain-Lua ones.
+    -- Forever's engine aura slots, else the Toolkit's plain-Lua ones (Auras.lua).
     if not WTF.AuraEngineKind() then
         return false, WTF.AURA_ENGINE_MISSING
     end
@@ -478,12 +478,10 @@ local function PercentText(unit, both)
     return string.format(both and "%d%% |" or "%d%%", percent)
 end
 
+-- The unit helpers are Dyre's Toolkit's (Units.lua, 2.4.0), which the
+-- tracker needs (Core's UseShared).
 local function ReadGUID(unit)
-    local guid = UnitGUID(unit)
-    if WTF.IsSecret(guid) or type(guid) ~= "string" then
-        return nil
-    end
-    return guid
+    return WTF.shared.ReadGUID(unit)
 end
 
 -- The health a row's bar last showed, when readable (Classic Era): a list row
@@ -885,23 +883,11 @@ end
 -- Binding list rows -------------------------------------------------------------
 
 -- The unit token showing this mob now: its nameplate (by GUID, else Core's
--- plate memory), else target or focus.
+-- plate memory, the Toolkit's), else target or focus.
+local FIND_ORDER = {"plates", "memory", "target", "focus"}
+
 local function FindUnit(guid)
-    for index = 1, MAX_NAMEPLATE_UNITS do
-        local unit = "nameplate" .. index
-        if UnitExists(unit) and ReadGUID(unit) == guid then
-            return unit
-        end
-    end
-    local known = WTF.KnownPlate(guid)
-    if known then
-        return known
-    end
-    for _, unit in ipairs({"target", "focus"}) do
-        if ReadGUID(unit) == guid then
-            return unit
-        end
-    end
+    return WTF.shared.FindUnit(guid, FIND_ORDER)
 end
 
 local function Bind(row, unit)
@@ -921,9 +907,9 @@ local function Bind(row, unit)
     UpdateHealth(row)
 end
 
+-- A secret "dead" counts as alive.
 local function IsDead(unit)
-    local dead = UnitIsDead(unit)
-    return not WTF.IsSecret(dead) and dead == true
+    return WTF.shared.IsDead(unit)
 end
 
 local Layout
@@ -1076,21 +1062,10 @@ end
 
 -- Casts --------------------------------------------------------------------------
 
-local function FindCastUnit(targetName)
-    for _, unit in ipairs({"target", "focus", "mouseover"}) do
-        local name = UnitName(unit)
-        if UnitExists(unit) and not WTF.IsSecret(name) and name == targetName then
-            return unit
-        end
-    end
-    for index = 1, MAX_NAMEPLATE_UNITS do
-        local unit = "nameplate" .. index
-        local name = UnitName(unit)
-        if UnitExists(unit) and not WTF.IsSecret(name) and name == targetName then
-            return unit
-        end
-    end
-end
+-- The first unit named as the cast's target (target, focus, mouseover, then
+-- the nameplates; a secret name never matches) gives the mob, if its GUID is
+-- readable and it is hostile (a secret answer: not), alive or dead.
+local CAST_LOOK = {units = {"target", "focus", "mouseover", "plates"}, stopAtName = true, allowDead = true}
 
 local function Track(guid, mobName)
     if tracker.dead[guid] then
@@ -1159,11 +1134,8 @@ local function OnCastSent(target, castGUID, spellID)
     if tracker.spellSlots[spellID] then
         -- The mob now, while the cast starts: target first, as a cast at a name
         -- usually goes to your target.
-        local unit = FindCastUnit(target)
-        local guid = unit and ReadGUID(unit)
-        local hostile = unit and UnitCanAttack("player", unit)
-        tracker.casts[castGUID] = {target = target, spellID = spellID,
-            guid = guid and not WTF.IsSecret(hostile) and hostile == true and guid or nil}
+        local guid = WTF.shared.LockCast(target, CAST_LOOK)
+        tracker.casts[castGUID] = {target = target, spellID = spellID, guid = guid}
     end
 end
 
@@ -1600,7 +1572,7 @@ function WTF.ReportTrackerDebug()
         if UnitExists(unit) then
             shown = shown + 1
             readable = readable + (ReadGUID(unit) and 1 or 0)
-            known = known + (WTF.plates[unit] and 1 or 0)
+            known = known + (WTF.PlateGUID(unit) and 1 or 0)
             local same = UnitIsUnit(unit, "target")
             if not WTF.IsSecret(same) and same == true then
                 targetPlate = unit

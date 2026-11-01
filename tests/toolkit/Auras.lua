@@ -1,15 +1,22 @@
-local _, WTF = ...
+local _, ns = ...
+local DyresToolkit = ns.toolkit
 
--- Aura slots for the DoT tracker, the nameplate dots, and the Control bar.
+-- Moved from Warlock Tools Forever's AuraEngine.lua (1.4.0, sha256
+-- 49853236f2ff...) for every Dyre's AddOn (Toolkit 2.4.0; Dyre's Debuff
+-- Tracker phase 1, coordinator-approved 2026-10-30). Only its namespace and
+-- these lines changed. MTF, DSU, and DBR still carry their own copies until
+-- each switches over.
+--
+-- Aura slots for Dyre's AddOns (trackers, nameplate dots, timer bars).
 -- On Forever they are Blizzard's engine AuraContainers
 -- (CustomAuraContainerTemplate from Blizzard_AuraContainer): AddOn code cannot
 -- read auras in combat there, so the engine reads them and draws into regions
--- WTF made. Classic Era and Anniversary have no such engine, but AddOn code may
--- read auras in combat and nothing is secret (John, 1.3.2: "how can we get
+-- the AddOn made. Classic Era and Anniversary have no such engine, but AddOn code may
+-- read auras in combat and nothing is secret (John, WTF 1.3.2: "how can we get
 -- those up and working on pre-forever?"). There this file gives the same
 -- container in plain Lua: AddAuraSlot, SetUnit, UpdateAllAuras, and
 -- SetAuraSlotCandidateFilters, each slot one hidden button whose initializer
--- WTF runs once, then shown with the first of your auras on the unit that
+-- the AddOn runs once, then shown with the first of your auras on the unit that
 -- its candidate filters match, with the icon, cooldown sweep, draining bar,
 -- spell name, and time left that the engine would draw. Forever keeps the
 -- engine: this is used only when the template is missing.
@@ -34,7 +41,7 @@ local function EngineAvailable()
 end
 
 -- "engine" (Forever), "lua" (Classic: plain aura reads), or nil (neither).
-function WTF.AuraEngineKind()
+function DyresToolkit.AuraEngineKind()
     if engineKind == nil then
         if EngineAvailable() then
             engineKind = "engine"
@@ -48,7 +55,7 @@ function WTF.AuraEngineKind()
 end
 
 -- What a client without either lacks, for the "stays off" lines.
-WTF.AURA_ENGINE_MISSING = TEMPLATE .. " and C_UnitAuras.GetAuraDataByIndex"
+DyresToolkit.AURA_ENGINE_MISSING = TEMPLATE .. " and C_UnitAuras.GetAuraDataByIndex"
 
 local containers = {}
 local ticking = {}
@@ -259,8 +266,8 @@ local function NewLuaContainer(parent)
 end
 
 -- An aura container on the parent: the engine's on Forever, else the plain-Lua one.
-function WTF.CreateAuraContainer(parent)
-    if WTF.AuraEngineKind() == "engine" then
+function DyresToolkit.CreateAuraContainer(parent)
+    if DyresToolkit.AuraEngineKind() == "engine" then
         return CreateFrame("AuraContainer", nil, parent, TEMPLATE)
     end
     return NewLuaContainer(parent)

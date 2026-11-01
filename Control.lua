@@ -41,11 +41,12 @@ local _, WTF = ...
 -- Clients without a focus target (rule shared with MTF; John, 1.3.3: "@focus
 -- and /focus do not work in era"; in client on Era, /focus leaves
 -- UnitExists("focus") false and [@focus,exists] false, with no error, and the
--- UI source has every focus function, so no API tells): the account-wide
--- WarlockToolsForeverAccountDB.focusWorks (one per client install, as MTF's)
--- starts nil and becomes true the first time PLAYER_FOCUS_CHANGED comes with a
+-- UI source has every focus function, so no API tells): since 1.4.1 Dyre's
+-- Toolkit's one flag for every Dyre's AddOn (Units.lua, DyresToolkitDB;
+-- WTF's own WarlockToolsForeverAccountDB.focusWorks is carried there once),
+-- nil at first and true the first time PLAYER_FOCUS_CHANGED comes with a
 -- readable, not secret UnitExists("focus") true. It never goes back to false
--- on its own; /wtf reset_focus clears it. Until it is true, the macros try
+-- on its own; /wtf reset_focus clears it, for every Dyre's AddOn. Until it is true, the macros try
 -- your focus, then the mob under the mouse, then your target; Banish rows
 -- start from the cast as Fear rows do; rows take no clicks; and the Focus box
 -- is hidden. Once it is true, out of combat, the Forever forms come back.
@@ -150,33 +151,32 @@ function WTF.SanitizeControl(saved, sanitizePosition)
     return clean
 end
 
+-- The unit helpers are Dyre's Toolkit's (Units.lua, 2.4.0), which the
+-- Control bar needs (Core's UseShared).
 local function ReadGUID(unit)
-    local guid = UnitGUID(unit)
-    if WTF.IsSecret(guid) or type(guid) ~= "string" then
-        return nil
-    end
-    return guid
+    return WTF.shared.ReadGUID(unit)
 end
 
 local function ReadName(unit)
-    local name = UnitName(unit)
-    if WTF.IsSecret(name) or type(name) ~= "string" then
-        return nil
-    end
-    return name
+    return WTF.shared.ReadName(unit)
 end
 
+-- A secret "dead" counts as alive.
 local function IsDead(unit)
-    local dead = UnitIsDead(unit)
-    return not WTF.IsSecret(dead) and dead == true
+    return WTF.shared.IsDead(unit)
 end
 
--- Whether this client has a focus target, as learned (see the file's head).
+-- Whether this client has a focus target, as learned (see the file's head):
+-- since 1.4.1 the Toolkit's one flag for every Dyre's AddOn, else (an older
+-- Toolkit, when the Control bar is off) WTF's own.
 function WTF.FocusWorks()
+    if WTF.shared then
+        return WTF.shared.FocusWorks()
+    end
     return WTF.accountDB.focusWorks == true
 end
 
--- Forever's engine aura slots, else AuraEngine.lua's plain-Lua ones.
+-- Forever's engine aura slots, else the Toolkit's plain-Lua ones (Auras.lua).
 local function HasAuraContainer()
     return WTF.AuraEngineKind() ~= nil
 end
@@ -228,47 +228,21 @@ local function KnowsAny()
 end
 
 -- The unit showing this mob now: your focus or target, else its nameplate
--- (by GUID, else Core's plate memory, for plates whose GUID is secret). Not
+-- (by GUID, else the Toolkit's plate memory, for plates whose GUID is secret). Not
 -- mouseover: it changes with the pointer and has no event WTF rebinds on.
+-- Focus first: it stays on the mob when its nameplate drops (the Toolkit's
+-- default order: focus, target, plates, memory).
 local function FindUnit(guid)
     if not guid then
         return nil
     end
-    -- Focus first: it stays on the mob when its nameplate drops.
-    for _, unit in ipairs({"focus", "target"}) do
-        if ReadGUID(unit) == guid then
-            return unit
-        end
-    end
-    for index = 1, MAX_NAMEPLATE_UNITS do
-        local unit = "nameplate" .. index
-        if UnitExists(unit) and ReadGUID(unit) == guid then
-            return unit
-        end
-    end
-    return WTF.KnownPlate(guid)
-end
-
--- A live mob you can attack. An answer the client keeps secret counts as yes
--- (player report: in client a Fear could get no bar; a secret "can attack"
--- must not drop the cast), and a secret "dead" as alive.
-local function IsLiveHostile(unit)
-    local canAttack = UnitCanAttack("player", unit)
-    return (WTF.IsSecret(canAttack) or canAttack == true) and not IsDead(unit)
-end
-
--- For /wtf debug_control: a value as text, never a secret's contents.
-local function Said(value)
-    return WTF.Describe(value)
+    return WTF.shared.FindUnit(guid)
 end
 
 -- A Banish locks your focus as it starts, when the cast's name is your
 -- focus's, its GUID is readable, and it is a live hostile mob; else nothing.
 local function LockFocusGUID(targetName)
-    local guid = ReadGUID("focus")
-    if guid and ReadName("focus") == targetName and IsLiveHostile("focus") then
-        return guid
-    end
+    return (WTF.shared.LockCast(targetName, {units = {"focus"}, secretHostile = true}))
 end
 
 -- The mob a cast sent at targetName goes to, as the cast starts (player
@@ -280,32 +254,14 @@ end
 -- Known limit: a plain spell-button cast at your target, while your focus
 -- or the mob under the mouse has the same name, counts on that one.
 -- A unit whose GUID is secret is skipped, unless it is a nameplate whose mob
--- Core's plate memory knows. Returns the GUID and the unit, and notes each
+-- the Toolkit's plate memory knows. Returns the GUID and the unit, and notes each
 -- unit it looked at for /wtf debug_control.
-local CAST_UNITS = {"focus", "mouseover", "target"}
-for index = 1, MAX_NAMEPLATE_UNITS do
-    CAST_UNITS[#CAST_UNITS + 1] = "nameplate" .. index
-end
+local CAST_LOOK = {units = {"focus", "mouseover", "target", "plates"}, memory = true, secretHostile = true}
 
 local function FindCastGUID(targetName)
-    local seen = {}
-    control.lastLook = seen
-    for _, unit in ipairs(CAST_UNITS) do
-        if UnitExists(unit) then
-            local name = ReadName(unit)
-            if name == targetName then
-                local guid = ReadGUID(unit) or (unit:match("^nameplate") and WTF.plates[unit])
-                local canAttack, dead = UnitCanAttack("player", unit), UnitIsDead(unit)
-                seen[#seen + 1] = string.format("%s(attack=%s dead=%s guid=%s)", unit, Said(canAttack),
-                    Said(dead), tostring(guid ~= nil))
-                if guid and IsLiveHostile(unit) then
-                    return guid, unit
-                end
-            elseif #seen < 6 and not unit:match("^nameplate") then
-                seen[#seen + 1] = unit .. "(other name)"
-            end
-        end
-    end
+    local guid, unit, look = WTF.shared.LockCast(targetName, CAST_LOOK)
+    control.lastLook = look
+    return guid, unit
 end
 
 -- A control spell by ID, else by name (a rank the spell sets do not list yet).
@@ -1131,13 +1087,11 @@ events:SetScript("OnEvent", function(_, event, unit, first, second, third)
         end
         ApplyClicks()
     else
-        if event == "PLAYER_FOCUS_CHANGED" and not WTF.FocusWorks() then
-            local exists = UnitExists("focus")
-            if not WTF.IsSecret(exists) and exists == true then
-                WTF.accountDB.focusWorks = true
-                WTF.ApplyControlMacros()
-                ApplyClicks()
-            end
+        -- The Toolkit learns the flag in its own handler; asked here too, so
+        -- the macros and clicks change before this rebind, whatever the
+        -- handler order (its OnFocusWorks listener does the change once).
+        if event == "PLAYER_FOCUS_CHANGED" then
+            WTF.shared.LearnFocusWorks()
         end
         -- Your target or focus changed: learn its plate before rebinding.
         WTF.LearnPlates()
@@ -1200,18 +1154,29 @@ function WTF.InitializeControl()
     ApplyClicks()
     RefreshPlateTimers()
     WTF.ApplyControlMacros()
+    -- Learned or reset (by any Dyre's AddOn): the macros, the Focus box, and
+    -- the row clicks follow, out of combat (each waits for it itself).
+    WTF.shared.OnFocusWorks(function()
+        WTF.ApplyControlMacros()
+        ApplyClicks()
+    end)
 end
 
 -- /wtf reset_focus: forget that this client's focus works, so the macros fall
--- back again until a focus is seen (out of combat; in combat, after it).
+-- back again until a focus is seen (out of combat; in combat, after it). The
+-- Toolkit's flag is one for every Dyre's AddOn, so this resets them all.
+local RESET_FALLBACK = "WTF's macros try your focus, then the mob under the mouse, then your target, "
+    .. "until a focus is seen to work."
+
 function WTF.ResetFocusWorks()
-    WTF.accountDB.focusWorks = nil
-    WTF.Report("Focus check reset: the macros try your focus, then the mob under the mouse, then your target, "
-        .. "until a focus is seen to work.")
-    if control.available then
-        WTF.ApplyControlMacros()
-        ApplyClicks()
+    if not WTF.shared then
+        WTF.accountDB.focusWorks = nil
+        WTF.Report("Focus check reset. " .. RESET_FALLBACK)
+        return
     end
+    WTF.shared.ResetFocusWorks()
+    WTF.Report(WTF.shared.FOCUS_RESET_TEXT or "Focus check reset for every Dyre's AddOn.")
+    WTF.Report(RESET_FALLBACK)
 end
 
 -- /wtf debug_control: the IDs, each row's mob and click, and the last mark.

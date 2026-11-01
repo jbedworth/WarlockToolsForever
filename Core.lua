@@ -29,62 +29,6 @@ function WTF.IsSecret(value)
     return type(issecretvalue) == "function" and issecretvalue(value) == true
 end
 
--- Which mob each nameplate token shows, shared by the DoT tracker and the
--- Control bar, for plates whose GUID cannot be read (secret, as the client
--- may give in combat; player report: a dotted target you tabbed away from
--- stayed unbound beside its own plate). Learned from the plate's GUID when
--- readable, else from UnitIsUnit with your target or focus, whose GUIDs are
--- readable; a token shows one mob until its plate goes. Each module calls
--- these from its own event handlers, so handler order never matters.
-local MAX_NAMEPLATE_UNITS = 40
-WTF.plates = {}
-
-local function ReadableGUID(unit)
-    local guid = UnitGUID(unit)
-    if WTF.IsSecret(guid) or type(guid) ~= "string" then
-        return nil
-    end
-    return guid
-end
-
-function WTF.LearnPlate(unit)
-    if not UnitExists(unit) then
-        return
-    end
-    local guid = ReadableGUID(unit)
-    if guid then
-        WTF.plates[unit] = guid
-        return
-    end
-    for _, known in ipairs({"target", "focus"}) do
-        local same = UnitIsUnit(unit, known)
-        if not WTF.IsSecret(same) and same == true then
-            WTF.plates[unit] = ReadableGUID(known) or WTF.plates[unit]
-            return
-        end
-    end
-end
-
-function WTF.LearnPlates()
-    for index = 1, MAX_NAMEPLATE_UNITS do
-        WTF.LearnPlate("nameplate" .. index)
-    end
-end
-
--- A plate came or went: its token may show another mob now.
-function WTF.ForgetPlate(unit)
-    WTF.plates[unit] = nil
-end
-
--- The plate token known to show this mob, else nil.
-function WTF.KnownPlate(guid)
-    for unit, known in pairs(WTF.plates) do
-        if known == guid and UnitExists(unit) then
-            return unit
-        end
-    end
-end
-
 -- Text for diagnostics that never touches a secret value's contents.
 function WTF.Describe(value)
     if WTF.IsSecret(value) then
@@ -235,7 +179,6 @@ local REQUIRED_NAMESPACE = {
     "DeleteCharacterMacro", "ApplyControlMacros",
     "InitializeControl", "RefreshControl", "ResetControlPosition", "ReportControlDebug", "SanitizeControl", "InitializeAnnounce", "FormatAnnouncement", "ReportAnnounceDebug", "DebugEmote", "FriendlyTargetNames",
     "WhisperHealthstoneGift",
-    "AuraEngineKind", "CreateAuraContainer",
     "CheckTrackerCapabilities", "InitializeTracker", "ResetTrackerPosition", "RefreshTracker",
     "ReportTrackerDebug", "TrackerCandidateFilters", "TrackerKnowsSlot", "SetTrackerTheme",
     "InitializePlateDots", "RefreshPlateDots", "HasTrackableDots", "ApplyTrackerColors", "ApplyDotColors",
@@ -876,6 +819,63 @@ end
 -- Before any module registers a frame: with Dyre's Toolkit, its layout moves
 -- WTF's frames (they snap to other Dyre's AddOns' frames and to its grid),
 -- and WTF's lock follows the toolkit's (locked at login). Else Layout.lua's.
+-- Dyre's Toolkit 2.4.0's shared files (WTF 1.4.1, John: "Just have WTF use
+-- the shared Toolkit files and fix the overlap"): the aura slots (Auras.lua,
+-- once WTF's AuraEngine.lua), the plate memory and unit helpers (Units.lua,
+-- once Core's), and the DoT prediction's frame adapters and drawing
+-- (HealthBars.lua, once Predict.lua's). The TOC keeps the Toolkit optional
+-- (family rule; CurseForge requires it): without these, the DoT tracker,
+-- the nameplate dots, the Control bar, and the prediction stay off, with
+-- one line at login. Only true function fields count, as the Toolkit keeps
+-- contract 2 and has no version string.
+local SHARED_FUNCTIONS = {
+    "AuraEngineKind", "CreateAuraContainer",
+    "ReadGUID", "ReadName", "IsDead", "LearnPlate", "LearnPlates", "ForgetPlate", "KnownPlate", "PlateGUID",
+    "FindUnit", "LockCast", "FocusWorks", "OnFocusWorks", "LearnFocusWorks", "NoteFocusWorks", "ResetFocusWorks",
+    "FindPlateBar", "FindUnitBar", "UseBar", "PrepareBar", "DrawPrediction", "HidePrediction", "MoveDies",
+}
+local SHARED_MISSING = "Install or update Dyre's Toolkit (2.4 or later) from CurseForge for the DoT tracker, "
+    .. "the nameplate DoT dots, the Control bar, and DoT damage prediction: they stay off without it."
+
+function WTF.SharedToolkit()
+    local toolkit = rawget(_G, "DyresToolkit")
+    if type(toolkit) == "table" and type(toolkit.RequireContract) == "function" then
+        toolkit = toolkit.RequireContract(TOOLKIT_CONTRACT)
+    end
+    if type(toolkit) ~= "table" then
+        return nil
+    end
+    for _, name in ipairs(SHARED_FUNCTIONS) do
+        if type(toolkit[name]) ~= "function" then
+            return nil
+        end
+    end
+    return toolkit
+end
+
+-- The shared files stand in for WTF's own copies, under the same names the
+-- modules call. focusWorks moves to the Toolkit's one flag for every Dyre's
+-- AddOn, once: a true WTF flag (which already holds a 1.3.3 test build's
+-- per-character one) is noted there, then dropped. Without the Toolkit WTF's
+-- own flag stays for a later login.
+local function UseShared()
+    local shared = WTF.SharedToolkit()
+    WTF.shared = shared
+    if not shared then
+        WTF.Report(SHARED_MISSING)
+        return
+    end
+    for _, name in ipairs({"AuraEngineKind", "CreateAuraContainer", "LearnPlate", "LearnPlates", "ForgetPlate",
+        "KnownPlate", "PlateGUID"}) do
+        WTF[name] = shared[name]
+    end
+    WTF.AURA_ENGINE_MISSING = shared.AURA_ENGINE_MISSING
+    if WTF.accountDB.focusWorks == true then
+        shared.NoteFocusWorks()
+    end
+    WTF.accountDB.focusWorks = nil
+end
+
 local function UseToolkit()
     local toolkit, state = WTF.Toolkit()
     WTF.toolkit = toolkit
@@ -986,14 +986,17 @@ events:SetScript("OnEvent", function(self, event, loadedName)
     -- Called directly rather than from each file's own PLAYER_LOGIN handler,
     -- so startup never depends on event handler order.
     UseToolkit()
+    UseShared()
     InstallInputHooks()
     WTF.InitializeShards()
     WTF.InitializeStones()
     WTF.InitializeAnnounce()
-    WTF.InitializeTracker()
-    WTF.InitializeControl()
-    WTF.InitializePlateDots()
-    WTF.InitializePredict()
+    if WTF.shared then
+        WTF.InitializeTracker()
+        WTF.InitializeControl()
+        WTF.InitializePlateDots()
+        WTF.InitializePredict()
+    end
     WTF.InitializeProbe()
     WTF.InitializeOptions()
     JoinToolkit()

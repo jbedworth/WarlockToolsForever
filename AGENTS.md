@@ -9,9 +9,28 @@ module only after the author agrees its behavior.
 
 ### Aura slots on Forever and Classic (built 1.3.2; John: "how can we get those up and working on pre-forever?")
 
+- Since 1.4.1 (John: "Just have WTF use the shared Toolkit files and fix the
+  overlap") the aura slots, the plate memory and unit lookups, focusWorks,
+  and the DoT prediction's frame adapters and drawing are Dyre's Toolkit
+  2.4.0's (Auras.lua, Units.lua, HealthBars.lua), moved from WTF unchanged;
+  this file's rules for them are their spec, kept in the Toolkit's tests.
+  Core's `UseShared` checks each function it needs (`SHARED_FUNCTIONS`) on
+  `RequireContract(1)`'s table and puts them under WTF's old names
+  (`WTF.CreateAuraContainer`, `WTF.LearnPlate`, ...). The TOC keeps the
+  Toolkit optional (family rule; CurseForge requires it): without those
+  functions the DoT tracker, the nameplate dots, the Control bar, and the
+  prediction stay off, with one line at login; Shards, Stones, and Announce
+  work. Tracker and Control call `FindUnit` and `LockCast` with their own
+  orders (Tracker: plates, memory, target, focus, and target, focus,
+  mouseover, plates with `stopAtName` and `allowDead`; Control: the default,
+  and focus, mouseover, target, plates with `memory` and `secretHostile`);
+  Control's `control.lastLook` is LockCast's `look`. Tracker keeps its own
+  ReadName (a secret or missing name is ""). Every fixture loads the three
+  files: from ../DyresToolkit when it is there, else from tests/toolkit (see
+  Project structure).
 - The DoT tracker, the nameplate dots, the Control bar, the Focus box, and
   the Fear plate timers get their aura slots from `WTF.CreateAuraContainer`
-  (AuraEngine.lua). On Forever it is Blizzard's engine
+  (the Toolkit's Auras.lua, once WTF's AuraEngine.lua). On Forever it is Blizzard's engine
   (`CustomAuraContainerTemplate`, Blizzard_AuraContainer), unchanged. Where
   the template is missing (Classic Era, Anniversary), it is a plain-Lua
   container with the same methods (`AddAuraSlot` with `candidateFilters` and
@@ -583,7 +602,7 @@ your casts and `UNIT_COMBAT`, no DIES) is not built; it waits for John.
   every overlay (every adapter and the tracker rows). The overlay's own
   StatusBar fill is clear and only measures the span; a texture over it is
   the block, and four 1 px textures its outline. `fill`: Stripes (default;
-  Textures\Stripes, white stripes at full alpha over 40% gaps, tiled with
+  the Toolkit's Textures\Stripes, white stripes at full alpha over 40% gaps, tiled with
   REPEAT, tinted by the color, no animation), Solid (WHITE8X8), or Bar
   texture (the bar's own fill: its atlas, else its file). `color`: Purple
   (default), Red, Orange, White, Green (Core's PREDICT_COLORS). `opacity`
@@ -591,8 +610,29 @@ your casts and `UNIT_COMBAT`, no DIES) is not built; it waits for John.
   lighter, 30% more solid. On a bar whose own fill color is within 0.15
   (sum of red, green, blue) of the block's, the block is 50% lighter.
   Restyled only when a setting or the bar's color or art changes.
+- Damage source (John, 2026-10-31; Toolkit 2.4.0's public HealthBars API,
+  ../DyresToolkit/docs/HEALTHBARS_API.md): Predict.lua registers WTF with
+  `HealthBars.RegisterSource` at priority 10 (Dyre's Debuff Tracker will be
+  20 and win) when `DyresToolkit.HealthBars` and each function it calls
+  exist; else (an older Toolkit) WTF draws as in 1.4.0. `damage` answers a
+  unit token or GUID (nil for a mob with no DoT of WTF's); `refresh` redraws
+  that unit's target frame, plate, and rows, or all for nil; no `willDie`
+  (the Toolkit compares with readable health). The target frame and plates
+  draw only while `IsActiveSource` is true, and WTF then leaves those bars
+  alone (not even a hide: the block is one per bar). Tracker rows are WTF's
+  own bars and always draw: the active source's `GetPredictedDamage` while
+  another source is active, redrawn on its `PREDICTION_CHANGED`. WTF calls
+  `NotifyChanged(addon, nil, guid)` in DrawGUID, on its combat log events
+  and DoT expiry only. "Show Predictive DoT Damage" follows with
+  `SetSourceEnabled` (at login too); turned off, WTF hides its blocks first,
+  then steps aside and asks `Refresh(nil)` so the next source draws.
+  Registered only where the prediction runs (the combat log; Era).
 - Frame adapters (John, 1.4.0: ThreatPlates, Plater, then EllesmereUI; SUF
-  next): `PLATE_ADAPTERS` and `UNIT_ADAPTERS` in Predict.lua, one entry per
+  next; since 1.4.1 the Toolkit's `FindPlateBar`/`FindUnitBar`, `UseBar`,
+  `PrepareBar`, `DrawPrediction`, `HidePrediction`, and `MoveDies`; WTF
+  passes the look from `db.predict` and decides when to draw; the Toolkit
+  also keeps DIES clear of Threat Plates' target-of-target text and Plater's
+  cast target and raid marker): once `PLATE_ADAPTERS` and `UNIT_ADAPTERS`, one entry per
   AddOn, each returning the StatusBar for a plate or for "target"/"focus",
   else nil; the first match wins, Blizzard's bar last. Each path is read
   field by field (`Field`, `StatusBar`), so a missing or changed AddOn gives
@@ -641,6 +681,15 @@ after `/focus` on a hostile target, `UnitExists("focus")` is false and
 Both Classic clones ship every focus function, event, and frame, so no API
 tells; the rule learns it, identically in MTF (keep the two the same):
 
+- Since 1.4.1, Dyre's Toolkit's `DyresToolkitDB.focusWorks`, one flag for
+  every Dyre's AddOn (`FocusWorks`, `LearnFocusWorks`, `OnFocusWorks`,
+  `ResetFocusWorks`). At login a true WTF flag is noted there once
+  (`NoteFocusWorks`) and WTF's key goes; without the Toolkit WTF's own flag
+  stays for a later login. Control's PLAYER_FOCUS_CHANGED asks
+  `LearnFocusWorks` before it rebinds (whatever the handler order), and its
+  `OnFocusWorks` listener rebuilds the macros and clicks on every learn and
+  reset (each waits for combat to end). `/wtf reset_focus` resets it for
+  every Dyre's AddOn and says so (`FOCUS_RESET_TEXT`). Before 1.4.1:
 - `WarlockToolsForeverAccountDB.focusWorks`, account-wide (TOC
   `## SavedVariables`, beside the per-character `WarlockToolsForeverDB`), so
   one value per client install, shared by every character, as MTF's
@@ -918,7 +967,7 @@ general frameworks, or speculative modules without agreement.
 
 ## Project structure
 
-- Runtime files: WarlockToolsForever.toc, Commands.lua, Core.lua, Layout.lua, AuraEngine.lua, Shards.lua, Stones.lua, Announce.lua, Tracker.lua, Dots.lua, Predict.lua, Control.lua, Probe.lua, Options.lua, loaded in
+- Runtime files: WarlockToolsForever.toc, Commands.lua, Core.lua, Layout.lua, Shards.lua, Stones.lua, Announce.lua, Tracker.lua, Dots.lua, Predict.lua, Control.lua, Probe.lua, Options.lua, loaded in
   that order. Core also owns the hardware-input hooks
   (every key press and world click) that item deletion and trade placement
   wait for.
@@ -927,6 +976,12 @@ general frameworks, or speculative modules without agreement.
   startup, and the moved-feature lines; Layout owns snapping; Shards, Stones,
   Announce, Tracker, Dots, Predict, and Control own their modules; Probe owns
   `/wtf debug_restrictions`; Options owns the settings pages.
+- tests/run.lua loads Dyre's Toolkit 2.4.0's Auras.lua, Units.lua, and
+  HealthBars.lua from ../DyresToolkit when that folder exists, else (as in
+  CI, or with `WTF_TOOLKIT_COPY=1`) from the copy in tests/toolkit, and
+  prints which. No test requires the copy to match the Toolkit (John: a
+  byte-identical test is the wrong test for a shared resource); refresh the
+  copy when the Toolkit's interface changes.
 - tests/run.lua holds the Lua 5.1 mock suite. tests/test_*.py cover the release
   helpers in scripts/. .github/workflows/ holds CI, opt-in publishing, and the
   approval gate check.
@@ -946,10 +1001,10 @@ general frameworks, or speculative modules without agreement.
   `## Category: Warlock`, which groups WTF only when the toolkit is missing;
   keep it identical to the CurseForge main category, since the list groups by
   exact text.
-- WTF ships one runtime asset, Textures/Stripes.tga (John, 1.4.0: the DoT
-  prediction block's stripes; made by scripts/make_stripes.py, 32 x 32
-  uncompressed 32-bit), and no sound files (the shield textures went to
-  Dyre's Shields Up in 1.3.0); add no more without agreement.
+- WTF ships no runtime assets and no sound files since 1.4.1 (the DoT
+  prediction block's stripes went to Dyre's Toolkit 2.4.0 with its drawing;
+  the shield textures to Dyre's Shields Up in 1.3.0); add none without
+  agreement.
 - Git origin: git@github.com:jbedworth/WarlockToolsForever.git. Inspect Git
   state before acting and preserve user work. Text is LF under .gitattributes.
 
@@ -1031,8 +1086,8 @@ general frameworks, or speculative modules without agreement.
   bullets under `### Features`, `### Fixes`, and `### Other changes`, in that
   order, leaving out an empty one. The builder's section ends only at the
   next `## `, so the `###` headings stay in the release notes.
-- Package only WarlockToolsForever.toc, Commands.lua, Core.lua, Layout.lua, AuraEngine.lua, Shards.lua, Stones.lua, Announce.lua, Tracker.lua, Dots.lua, Predict.lua, Control.lua, Probe.lua, Options.lua, LICENSE, and
-  Textures/Stripes.tga (no sound files) under the top-level
+- Package only WarlockToolsForever.toc, Commands.lua, Core.lua, Layout.lua, Shards.lua, Stones.lua, Announce.lua, Tracker.lua, Dots.lua, Predict.lua, Control.lua, Probe.lua, Options.lua, and LICENSE
+  (no textures, no sound files) under the top-level
   `WarlockToolsForever/` folder, named
   `WarlockToolsForever-<version>-forever.zip`, with the builder's
   BigWigs-format `release.json` (flavor `forever`) attached for WowUp.

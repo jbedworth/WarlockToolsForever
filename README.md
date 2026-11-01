@@ -52,8 +52,14 @@ settings home. The CurseForge app installs it with WTF. With it:
   grid** on its settings page).
 - In the game's AddOn list, WTF is in the Dyre's AddOns group.
 
-Without it, WTF works as before, with its own top-level settings page, its
-own unlock, and its own grid, and says once in chat to install it.
+Since WTF 1.4.1 the DoT tracker, the nameplate DoT dots, the Control bar,
+and the DoT damage prediction use shared parts of **Dyre's Toolkit 2.4** (the
+aura timers, finding which mob a nameplate shows, focus detection, and the
+health bar drawing). Without it (or with an older version), those four stay
+off and WTF says so once in chat; Soul Shards, Stones, and announcements
+still work. Without the toolkit, WTF otherwise works as before, with its own
+top-level settings page, its own unlock, and its own grid, and says once in
+chat to install it.
 
 WTF works well with **Weapon Skills Forever**, another of Dyre's AddOns. It
 is optional: WTF does not need it.
@@ -315,7 +321,9 @@ on, also when you tab or move the mouse before it lands.
   rows take no clicks and there is no Focus box. WTF learns that your focus
   works the first time you set one (once per game client, for all your
   characters), and then switches to the focus macros and
-  clicks above (out of combat). `/wtf reset_focus` makes it check again.
+  clicks above (out of combat). The check is one for every Dyre's AddOn
+  (from Dyre's Toolkit), so `/wtf reset_focus` makes all of them check
+  again.
 
 - **Raid marker:** the "! Banish" macro puts the moon on your focus, in and
   out of combat, so your group knows it is out of the fight (change the

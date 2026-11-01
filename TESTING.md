@@ -203,6 +203,16 @@ the automated test method, and the in-client checklist.
 
 ### Open client questions
 
+- Launch check for WTF 1.4.1 on Forever (the switch to Dyre's Toolkit
+  2.4.0's shared Auras, Units, and HealthBars files): with the Toolkit's
+  code creating the engine AuraContainers, check in client on Forever that
+  the DoT tracker, the nameplate dots, the Control bar, and the Focus box
+  raise no "forbidden object ... tainted by an AddOn" error and blame no
+  AddOn in BugSack. Era is checked first; Forever at its Nov 4 launch.
+  John shipped 1.4.1 for both clients on 2026-11-01, since nobody can play
+  Forever before launch: check this first thing at launch, and hotfix if it
+  fails.
+
 - DoT prediction with Plater's "use UIParent" option, and with
   BetterBlizzFrames' smooth bars: not named in John's tests.
 - EllesmereUI is Forever and Retail only, and John uses it on Forever: its
@@ -237,7 +247,7 @@ From the Git Bash repository root:
 
 ```sh
 .tools/luarocks-3.13.0-win32/win32/lua5.1/bin/lua5.1.exe tests/run.lua
-.tools/luarocks-3.13.0-win32/win32/lua5.1/bin/luac5.1.exe -p Commands.lua Core.lua Layout.lua AuraEngine.lua Shards.lua Stones.lua Announce.lua Tracker.lua Dots.lua Predict.lua Control.lua Probe.lua Options.lua tests/run.lua
+.tools/luarocks-3.13.0-win32/win32/lua5.1/bin/luac5.1.exe -p Commands.lua Core.lua Layout.lua Shards.lua Stones.lua Announce.lua Tracker.lua Dots.lua Predict.lua Control.lua Probe.lua Options.lua tests/run.lua
 .tools/python-3.13.7/python.exe -m unittest discover -s tests -p 'test_*.py'
 ```
 
@@ -526,6 +536,18 @@ and printing.
       nameplates (each frame AddOn), and DoT tracker rows, where it stands
       out from the row's own purple health. Each Block fill, color, opacity,
       and outline choice changes every block at once, also in combat.
+- [ ] WTF 1.4.1 with Dyre's Toolkit 2.4.0, Classic Era first (then Forever,
+      the launch check above): everything as in 1.4.0. The DoT tracker
+      rows bind and time their DoTs (also a mob DoTed by mouseover once
+      targeted); the nameplate dots; the Control bar's Fear and Banish rows
+      and their marker; `/wtf debug_control` and `/wtf debug_tracker` as
+      before. The prediction block and DIES on Blizzard, SUF,
+      BetterBlizzFrames, Threat Plates, Plater, and Platynator; with Threat
+      Plates' target-of-target text showing ("[ name ]" right of the bar),
+      DIES moves to the other side. `/wtf reset_focus` says it resets every
+      Dyre's AddOn. With Dyre's Toolkit 2.3 (or the 2.4 files removed), one
+      chat line says the four features need 2.4, and Soul Shards, Stones,
+      and announcements still work.
 - [ ] Classic Era, Platynator: the block and the DIES badge (right of the
       bar) on Platynator's health bars; `/wtf debug_predict` says
       `nameplateN=Platynator`. Plates that come and go, and a style change

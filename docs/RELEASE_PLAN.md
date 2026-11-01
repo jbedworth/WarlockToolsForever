@@ -38,7 +38,6 @@ WarlockToolsForever/
     Commands.lua
     Core.lua
     Layout.lua
-    AuraEngine.lua
     Shards.lua
     Stones.lua
     Announce.lua
@@ -49,8 +48,6 @@ WarlockToolsForever/
     Probe.lua
     Options.lua
     LICENSE
-    Textures/
-        Stripes.tga
 ```
 
 No textures and no sound files: since 1.3.0 the shield display is Dyre's
