@@ -9,6 +9,32 @@ module only after the author agrees its behavior.
 
 ### Aura slots on Forever and Classic (built 1.3.2; John: "how can we get those up and working on pre-forever?")
 
+- Since 1.5.0 (lead-approved engine move, 2026-11-01; plan in
+  DyresDebuffTracker/docs/ENGINE_SPLIT.md, stage D) the DoT tracker, the
+  nameplate dots, the prediction, and the Control bar with its macros, Fear
+  plate timers, Focus box, and cast announcements are Dyre's Toolkit 2.5.0's
+  engines (DotTracker.lua, PlateDots.lua, DotPredict.lua, Control.lua, on
+  Spells, Macros, Announce, ClassData, and Owners). Tracker.lua, Dots.lua,
+  Predict.lua, and Control.lua are thin glue under the same `WTF.*` names:
+  they pass `class = "WARLOCK"` (ClassData), WTF's saved tables (db.tracker,
+  db.predict, db.control; the engines never own saved variables), the frame
+  names (WarlockToolsForeverTracker, ...TrackerFocus, ...TrackerList,
+  ...Control (WTF's own anchor and mover), ...ControlRow<n>,
+  ...ControlClick<n>, ...ControlFocus), the default places, WTF's colors,
+  lock, movers, tooltips, and announce texts (`%T`, `%M`, `%Z`; the engine
+  passes `Z = GetZoneText()`, and Announce.lua's summon texts use the
+  Toolkit's FormatAnnouncement with T and Z). The engines' defaults are
+  WTF's unit orders. Each claims its kind (`control:`, `macros:`,
+  `announce:`, `dots:WARLOCK`) and the HealthBars source at priority 10;
+  Dyre's Debuff Tracker claims at 5 and steps aside. Core makes the
+  predictor first (the tracker's rows draw it); `legacyTicks` hands
+  `WarlockToolsForeverAccountDB.ticks` to the Toolkit's one store
+  (DyresToolkitDB.ticks) once. `SHARED_FUNCTIONS` lists every engine
+  function; without them (Toolkit before 2.5) the four stay off with "needs
+  Dyre's Toolkit 2.5 or later". The module sections below are now the
+  engines' spec: a change to that behavior goes to the Toolkit's owner, not
+  here. Shards, Stones, and the summon, soulstone, healthstone, and emote
+  announcements stay WTF's.
 - Since 1.4.1 (John: "Just have WTF use the shared Toolkit files and fix the
   overlap") the aura slots, the plate memory and unit lookups, focusWorks,
   and the DoT prediction's frame adapters and drawing are Dyre's Toolkit
@@ -976,8 +1002,9 @@ general frameworks, or speculative modules without agreement.
   startup, and the moved-feature lines; Layout owns snapping; Shards, Stones,
   Announce, Tracker, Dots, Predict, and Control own their modules; Probe owns
   `/wtf debug_restrictions`; Options owns the settings pages.
-- tests/run.lua loads Dyre's Toolkit 2.4.0's Auras.lua, Units.lua, and
-  HealthBars.lua from ../DyresToolkit when that folder exists, else (as in
+- tests/run.lua loads Dyre's Toolkit's shared files and engines (TOOLKIT_FILES,
+  in its TOC order, sharing one namespace) from ../DyresToolkit when that
+  folder exists, else (as in
   CI, or with `WTF_TOOLKIT_COPY=1`) from the copy in tests/toolkit, and
   prints which. No test requires the copy to match the Toolkit (John: a
   byte-identical test is the wrong test for a shared resource); refresh the

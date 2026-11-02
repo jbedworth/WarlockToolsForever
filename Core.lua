@@ -175,14 +175,14 @@ local REQUIRED_NAMESPACE = {
     "CheckStoneCapabilities", "InitializeStones", "ResetStonesPosition", "ReportStoneDebug", "RefreshStonesMover",
     "ReportStoneStatus", "RemindStones", "ApplyStoneMacros", "AddInputHandler", "RunOnNextInput", "ReportClickDebug",
     "Warn", "RegisterMovable", "BeginDrag", "EndDrag", "ScaleKeepingCenter",
-    "SendGroupAnnouncement", "CharacterMacrosAvailable", "WriteCharacterMacro",
+    "CharacterMacrosAvailable", "WriteCharacterMacro",
     "DeleteCharacterMacro", "ApplyControlMacros",
     "InitializeControl", "RefreshControl", "ResetControlPosition", "ReportControlDebug", "SanitizeControl", "InitializeAnnounce", "FormatAnnouncement", "ReportAnnounceDebug", "DebugEmote", "FriendlyTargetNames",
     "WhisperHealthstoneGift",
     "CheckTrackerCapabilities", "InitializeTracker", "ResetTrackerPosition", "RefreshTracker",
     "ReportTrackerDebug", "TrackerCandidateFilters", "TrackerKnowsSlot", "SetTrackerTheme",
     "InitializePlateDots", "RefreshPlateDots", "HasTrackableDots", "ApplyTrackerColors", "ApplyDotColors",
-    "InitializePredict", "RefreshPredict", "PredictAvailable", "ReportPredictDebug", "DrawRowPrediction",
+    "InitializePredict", "RefreshPredict", "PredictAvailable", "ReportPredictDebug", "DotTracker",
     "RefreshTrackerPrediction",
     "ReportRestrictions", "ResetFocusWorks", "InitializeProbe", "InitializeOptions", "OpenSettings",
 }
@@ -828,13 +828,20 @@ end
 -- the nameplate dots, the Control bar, and the prediction stay off, with
 -- one line at login. Only true function fields count, as the Toolkit keeps
 -- contract 2 and has no version string.
+-- Since WTF 1.5.0 (Toolkit 2.5.0, the engine move) the DoT tracker, the
+-- nameplate dots, the prediction, and the Control bar with its macros and
+-- announcements are the Toolkit's engines; WTF passes its settings, frame
+-- names, and hooks (Tracker, Dots, Predict, Control).
 local SHARED_FUNCTIONS = {
     "AuraEngineKind", "CreateAuraContainer",
     "ReadGUID", "ReadName", "IsDead", "LearnPlate", "LearnPlates", "ForgetPlate", "KnownPlate", "PlateGUID",
     "FindUnit", "LockCast", "FocusWorks", "OnFocusWorks", "LearnFocusWorks", "NoteFocusWorks", "ResetFocusWorks",
     "FindPlateBar", "FindUnitBar", "UseBar", "PrepareBar", "DrawPrediction", "HidePrediction", "MoveDies",
+    "SpellName", "IndexSpells", "KnowsAny", "PetKnows", "OutOfCombat", "CreateMacroKeeper", "FocusCastMacro",
+    "MarkerCode", "FormatAnnouncement", "CreateAnnouncer", "ClaimOwner", "SetOwnerEnabled", "IsOwner",
+    "CreateControlTracker", "CreateDotTracker", "CreatePlateDots", "CreateDotPredictor",
 }
-local SHARED_MISSING = "Install or update Dyre's Toolkit (2.4 or later) from CurseForge for the DoT tracker, "
+local SHARED_MISSING = "Install or update Dyre's Toolkit (2.5 or later) from CurseForge for the DoT tracker, "
     .. "the nameplate DoT dots, the Control bar, and DoT damage prediction: they stay off without it."
 
 function WTF.SharedToolkit()
@@ -865,10 +872,7 @@ local function UseShared()
         WTF.Report(SHARED_MISSING)
         return
     end
-    for _, name in ipairs({"AuraEngineKind", "CreateAuraContainer", "LearnPlate", "LearnPlates", "ForgetPlate",
-        "KnownPlate", "PlateGUID"}) do
-        WTF[name] = shared[name]
-    end
+    WTF.AuraEngineKind = shared.AuraEngineKind
     WTF.AURA_ENGINE_MISSING = shared.AURA_ENGINE_MISSING
     if WTF.accountDB.focusWorks == true then
         shared.NoteFocusWorks()
@@ -992,10 +996,11 @@ events:SetScript("OnEvent", function(self, event, loadedName)
     WTF.InitializeStones()
     WTF.InitializeAnnounce()
     if WTF.shared then
+        -- The predictor first: the DoT tracker's rows draw its damage.
+        WTF.InitializePredict()
         WTF.InitializeTracker()
         WTF.InitializeControl()
         WTF.InitializePlateDots()
-        WTF.InitializePredict()
     end
     WTF.InitializeProbe()
     WTF.InitializeOptions()

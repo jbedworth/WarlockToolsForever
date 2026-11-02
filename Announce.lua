@@ -50,22 +50,14 @@ local function GroupChannel()
     end
 end
 
--- A group message as the other announcements send it: raid or party (or Say
--- when chosen), nothing when alone, and only while Announce is on. Returns
--- whether it was sent.
-function WTF.SendGroupAnnouncement(message)
-    if not WTF.db.announce.enabled then
-        return false
-    end
-    local channel = GroupChannel()
-    if not channel then
-        return false
-    end
-    SendChat(message, channel)
-    return true
-end
-
+-- %T the name, %Z your zone. Since 1.5.0 Dyre's Toolkit's (Announce.lua,
+-- 2.5.0), which also drops an empty %T with the space before it; the
+-- crowd-control announcements are its control engine's (Control.lua). Without
+-- the Toolkit, WTF's own fill.
 function WTF.FormatAnnouncement(text, target)
+    if WTF.shared then
+        return WTF.shared.FormatAnnouncement(text, {T = target, Z = GetZoneText() or ""})
+    end
     local zone = GetZoneText() or ""
     -- gsub replacement strings treat % specially, so escape names first.
     local safeTarget = target:gsub("%%", "%%%%")

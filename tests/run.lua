@@ -24,12 +24,13 @@ local function contains(actual, fragment, context)
     end
 end
 
--- Dyre's Toolkit 2.4.0's shared files: every fixture loads them onto its
+-- Dyre's Toolkit's shared files and engines (2.5.0): every fixture loads them onto its
 -- DyresToolkit table, as the client loads the Toolkit before WTF. From the
 -- real Dyre's Toolkit beside this repository when it is there; else (as in
 -- CI, which has only this repository, or with WTF_TOOLKIT_COPY=1) from the
 -- copy in tests/toolkit.
-local TOOLKIT_FILES = {"Auras.lua", "Units.lua", "HealthBars.lua"}
+local TOOLKIT_FILES = {"Auras.lua", "Units.lua", "HealthBars.lua", "Spells.lua", "Macros.lua", "Announce.lua",
+    "ClassData.lua", "Owners.lua", "Control.lua", "DotTracker.lua", "PlateDots.lua", "DotPredict.lua"}
 local TOOLKIT_DIR = "tests/toolkit/"
 if os.getenv("WTF_TOOLKIT_COPY") ~= "1" then
     local probe = io.open("../DyresToolkit/Units.lua", "rb")
@@ -1153,7 +1154,7 @@ local function fixture(options)
             return state.known[id] == true
         end
     end
-    -- The Toolkit's shared files (2.4.0) on env.DyresToolkit: the fake toolkit
+    -- The Toolkit's shared files and engines (2.5.0) on env.DyresToolkit: the fake toolkit
     -- (options.toolkit), else a table with only them (no RequireContract, so
     -- WTF's layout still finds no toolkit). options.noSharedToolkit: an
     -- older Toolkit, without them. options.toolkitDB: DyresToolkitDB.
@@ -1166,16 +1167,18 @@ local function fixture(options)
         local shared = env.DyresToolkit or {}
         env.DyresToolkit = shared
         state.shared = shared
+        -- One namespace for every file, as the client gives an AddOn's files.
+        local toolkitNS = {toolkit = shared, db = state.toolkitDB, Report = function(message)
+            state.messages[#state.messages + 1] = "Dyre: " .. tostring(message)
+        end}
         for _, name in ipairs(TOOLKIT_FILES) do
             local chunk, message = loadfile(TOOLKIT_DIR .. name)
             if not chunk then error(message) end
             setfenv(chunk, env)
-            chunk("DyresToolkit", {toolkit = shared, db = state.toolkitDB})
+            chunk("DyresToolkit", toolkitNS)
         end
-        -- options.sharedMissing: a function an older 2.4 test build lacks.
+        -- options.sharedMissing: a function an older Toolkit lacks.
         if options.sharedMissing then shared[options.sharedMissing] = nil end
-        -- options.noHealthBars: a Toolkit without the public HealthBars API.
-        if options.noHealthBars then shared.HealthBars = nil end
     end
     for index = before + 1, #state.frames do
         state.sharedFrames[state.frames[index]] = true
@@ -2945,7 +2948,7 @@ test("with secret plate GUIDs, a feared mob that is no longer your target binds 
 end)
 test('"! Banish" marks and casts on the same unit, your focus', function()
     local state = controlFixture()
-    local body = state.wtf.ControlMacroBody({name = "! Banish", spell = 710, known = {710}, marker = "banish"})
+    local body = state.wtf.ControlMacroBody({name = "! Banish", spell = 710, known = "banish", marker = "banish"})
     local lines = {}
     for line in body:gmatch("[^\n]+") do lines[#lines + 1] = line end
     equal(lines[2], "/focus [@mouseover,harm,nodead][nocombat,harm,nodead]")
@@ -3185,7 +3188,7 @@ test("a feared mob's nameplate shows a Fear countdown, also after its plate come
     equal(timer.points[1][2], plate)
     equal(timer.container.unit, "nameplate3")
     local slot = timer.container.slots[1]
-    equal(slot.key, "fear")
+    equal(slot.key, "plate", "the Toolkit's plate timer slot")
     equal(slot.filter, "HARMFUL|PLAYER", "only your Fear")
     equal(slot.ids[FEAR], true)
     equal(slot.ids[BANISH], nil, "Fear only")
@@ -3288,7 +3291,8 @@ test("unlocked, the control bar shows samples to drag; debug_control reports the
     equal(controlRow(state, 1).shown, false, "its switch")
     state.clear()
     state.slash("debug_control")
-    contains(state.messages[1], "debug_control available=true known=true")
+    contains(state.messages[1], "debug_control available=true")
+    contains(state.messages[2], "debug_control known=true")
 end)
 
 -- Dyre's Toolkit ----------------------------------------------------------------------
@@ -6361,7 +6365,7 @@ test("prediction: a resisted or absorbed tick counts as a tick and teaches nothi
     state.now = state.now + 2.6
     state.log("SPELL_PERIODIC_MISSED", ME, BOAR, "Boar", 6222, "Corruption", "RESIST")
     equal(shownDamage(targetOverlay(state)), 90, "3 ticks of 30 left, not 4")
-    equal(state.env.WarlockToolsForeverAccountDB.ticks[6222].tick, 30, "the learned tick stays")
+    equal(state.toolkitDB.ticks[6222].tick, 30, "the learned tick stays")
 end)
 
 test("prediction: only debuffs count, also when an aura ends", function()
@@ -6380,7 +6384,8 @@ test("prediction: a learned tick is saved for the rank, for every character, and
     tick(state, 6222, "Corruption", 31)
     state.now = state.now + 3
     tick(state, 6222, "Corruption", 30)
-    local saved = state.env.WarlockToolsForeverAccountDB.ticks[6222]
+    -- Since 1.5.0 in the Toolkit's one store for every Dyre's AddOn.
+    local saved = state.toolkitDB.ticks[6222]
     equal(saved.tick, 30.5, "the average of this cast's ticks, one decimal")
     equal(saved.power, 0, "with the spell power it was cast at")
     apply(state, 6222, "Corruption", WOLF, "Wolf")
@@ -6389,7 +6394,7 @@ test("prediction: a learned tick is saved for the rank, for every character, and
     state.slash("debug_predict")
     local text = table.concat(state.messages, "\n")
     contains(text, "tick 0 of 5, saved 30.5")
-    local other = predictFixture({accountDB = state.env.WarlockToolsForeverAccountDB})
+    local other = predictFixture({toolkitDB = state.toolkitDB})
     apply(other, 6222, "Corruption")
     equal(shownDamage(targetOverlay(other)), 153, "another character on this client")
     apply(other, 172, "Corruption", WOLF, "Wolf")
@@ -6402,7 +6407,7 @@ test("prediction: a saved tick is rescaled to your spell power now, its base par
     apply(state, 6222, "Corruption")
     state.now = state.now + 3
     tick(state, 6222, "Corruption", 40)
-    equal(state.env.WarlockToolsForeverAccountDB.ticks[6222].power, 100)
+    equal(state.toolkitDB.ticks[6222].power, 100)
     state.spellPower[6] = 200
     apply(state, 6222, "Corruption", WOLF, "Wolf")
     -- Rank 2's base is 18 a tick; the other 22 came from 100 spell power, so 44 from 200.
@@ -6413,17 +6418,22 @@ test("prediction: a saved tick is rescaled to your spell power now, its base par
     equal(shownDamage(targetOverlay(noPower)), 125, "learned with no spell power: not rescaled")
 end)
 
-test("prediction: saved ticks are repaired, and ranks WTF does not know are dropped", function()
+test("prediction: WTF's saved ticks go to the Toolkit once, repaired, and unknown ranks are dropped", function()
     local state = predictFixture({accountDB = {ticks = {[6222] = {tick = "x", power = 0}, [172] = {tick = 9, power = 0},
         [99999] = {tick = 5, power = 1}, [980] = {tick = 7, power = -1}, broken = {tick = 1, power = 0}}}})
-    local ticks = state.env.WarlockToolsForeverAccountDB.ticks
+    local ticks = state.toolkitDB.ticks
     equal(ticks[172].tick, 9, "a good entry stays")
     equal(ticks[6222], nil, "not a number")
     equal(ticks[980], nil, "a negative spell power")
     equal(ticks[99999], nil, "not a rank WTF knows")
     equal(ticks.broken, nil, "not a spell ID")
+    equal(state.toolkitDB.ticksImported.WarlockToolsForever, true, "copied once")
     local fresh = predictFixture({accountDB = "broken"})
     equal(type(fresh.env.WarlockToolsForeverAccountDB.ticks), "table")
+    -- A newer learned tick in the Toolkit is never overwritten by WTF's older one.
+    local newer = predictFixture({toolkitDB = {ticks = {[172] = {tick = 12, power = 0}}},
+        accountDB = {ticks = {[172] = {tick = 9, power = 0}}}})
+    equal(newer.toolkitDB.ticks[172].tick, 12)
 end)
 
 -- The DoT tracker with mob health, on Classic Era: the player's GUID is needed
@@ -6590,15 +6600,6 @@ end)
 test("health bar source: off at login registers WTF stepped aside", function()
     local state = predictFixture({db = {predict = {enabled = false}}})
     equal(state.env.DyresToolkit.HealthBars.IsActiveSource("WarlockToolsForever"), false)
-end)
-
-test("health bar source: without the HealthBars API (an older Toolkit) WTF draws as before", function()
-    local state = predictFixture({noHealthBars = true})
-    apply(state, 6222, "Corruption")
-    local damage = state.wtf.PredictedDamage(BOAR)
-    equal(damage > 0, true)
-    equal(shownDamage(targetOverlay(state)), damage, "the block, as in 1.4.0")
-    equal(shownDamage(plateOverlay(state, "nameplate3")), damage)
 end)
 
 test("prediction: tracker rows need both Show mob health and Show Predictive DoT Damage", function()
@@ -7036,15 +7037,15 @@ test("debug_predict lists each mob's DoTs, ticks, and damage to come", function(
     contains(state.messages[4], "corruption (spell 6222): tick 1 of 5, learned 18.0, 72 to come")
 end)
 
--- Dyre's Toolkit 2.4.0's shared files (WTF 1.4.1) -------------------------------
+-- Dyre's Toolkit's shared files and engines (WTF 1.4.1, 1.5.0) -------------------
 
-test("without Dyre's Toolkit 2.4 the tracker, dots, Control bar, and prediction stay off, with one line", function()
+test("without Dyre's Toolkit 2.5 the tracker, dots, Control bar, and prediction stay off, with one line", function()
     local state = fixture({noSharedToolkit = true, era = true})
     equal(state.wtf.available, true, "the rest of WTF works")
     equal(state.wtf.shared, nil)
     local lines = 0
     for _, message in ipairs(state.messages) do
-        if message:find("Dyre's Toolkit (2.4 or later)", 1, true) then lines = lines + 1 end
+        if message:find("Dyre's Toolkit (2.5 or later)", 1, true) then lines = lines + 1 end
     end
     equal(lines, 1, "one line at login")
     equal(state.env.WarlockToolsForeverTracker, nil, "no DoT tracker")
@@ -7052,6 +7053,56 @@ test("without Dyre's Toolkit 2.4 the tracker, dots, Control bar, and prediction 
     equal(state.wtf.PredictAvailable(), false, "no prediction")
     equal(state.wtf.accountDB.focusWorks, true, "WTF's own focus flag waits for a later login")
     equal(state.wtf.FocusWorks(), true)
+end)
+
+test("engines: WTF owns the Warlock's control bar, macros, announcements, and DoTs at 10", function()
+    local state = controlFixture({familyAddOns = {DyresDebuffTracker = true}})
+    local shared = state.env.DyresToolkit
+    for _, kind in ipairs({"control:WARLOCK", "macros:WARLOCK", "announce:WARLOCK", "dots:WARLOCK"}) do
+        equal(shared.KindOwner(kind), "WarlockToolsForever", kind)
+        equal(shared.ClaimOwner(kind, "DyresDebuffTracker", 5), false, "Dyre's Debuff Tracker at 5: " .. kind)
+        equal(shared.KindOwner(kind), "WarlockToolsForever", kind .. " stays WTF's")
+    end
+    state.settings.WTF_CONTROL_ENABLED:SetValue(false)
+    equal(shared.KindOwner("control:WARLOCK"), "DyresDebuffTracker", "the bar off steps aside")
+end)
+
+test("engines: the Focus box takes the bar's size once", function()
+    local state = controlFixture()
+    state.settings.WTF_CONTROL_SCALE:SetValue(80)
+    local box = state.env.WarlockToolsForeverControlFocus
+    equal(box.parent, state.env.WarlockToolsForeverControl, "inside the bar")
+    equal(box:GetEffectiveScale(), 0.8, "the bar's 80%, not 64%")
+    equal(controlRow(state, 1):GetEffectiveScale(), 0.8, "as the rows")
+end)
+
+test("engines: a row click needs a focus seen to work", function()
+    local state = controlFixture({focusWorks = false})
+    castAt(state, BANISH, "nameplate4")
+    equal(controlRow(state, 1).name.text, "Imp", "the row shows")
+    equal(state.env.WarlockToolsForeverControlClick1.attributes.macrotext1, nil, "but takes no click")
+end)
+
+test("engines: a control macro counts as known through any rank of its spell", function()
+    local state = controlFixture({known = {[990005] = true}, spellbook = {{spellID = 990005, name = "Fear"}}})
+    state.env.C_Spell.GetSpellName = function(id)
+        if id == 990005 or id == FEAR then return "Fear" end
+    end
+    state.emit("SPELLS_CHANGED")
+    state.wtf.ApplyControlMacros()
+    local names = {}
+    for _, macro in ipairs(state.macros) do names[macro.name] = true end
+    equal(names["! Fear"], true, "a Forever rank of Fear, by its name")
+    equal(names["! Banish"], nil, "no Banish known")
+end)
+
+test("engines: announcements fill %Z with your zone and drop an empty %T with its space", function()
+    local state = controlFixture({group = "party"})
+    state.wtf.db.announce.banishGroupText = "Banishing %T in %Z"
+    castAt(state, BANISH, "nameplate4")
+    equal(state.sent[1].message, "Banishing Imp in Redridge Mountains")
+    equal(state.wtf.FormatAnnouncement("Summoning %T now", ""), "Summoning now", "an empty %T")
+    equal(state.wtf.FormatAnnouncement("Summoning %T to %Z", "Dyre"), "Summoning Dyre to Redridge Mountains")
 end)
 
 test("an older Toolkit that lacks one shared function counts as none", function()

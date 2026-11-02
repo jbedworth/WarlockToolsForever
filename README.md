@@ -52,10 +52,10 @@ settings home. The CurseForge app installs it with WTF. With it:
   grid** on its settings page).
 - In the game's AddOn list, WTF is in the Dyre's AddOns group.
 
-Since WTF 1.4.1 the DoT tracker, the nameplate DoT dots, the Control bar,
-and the DoT damage prediction use shared parts of **Dyre's Toolkit 2.4** (the
-aura timers, finding which mob a nameplate shows, focus detection, and the
-health bar drawing). Without it (or with an older version), those four stay
+Since WTF 1.5.0 the DoT tracker, the nameplate DoT dots, the Control bar
+(with its macros and announcements), and the DoT damage prediction run on
+**Dyre's Toolkit 2.5**'s shared engines; WTF keeps their settings and pages.
+Without it (or with an older version), those four stay
 off and WTF says so once in chat; Soul Shards, Stones, and announcements
 still work. Without the toolkit, WTF otherwise works as before, with its own
 top-level settings page, its own unlock, and its own grid, and says once in

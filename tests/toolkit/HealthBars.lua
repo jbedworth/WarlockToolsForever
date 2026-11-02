@@ -824,14 +824,20 @@ function Suppressed(bar, info)
 end
 
 -- Damage sources: Dyre's AddOns only (a TOC with `## Group: DyresToolkit`).
--- The highest priority wins (Dyre's Debuff Tracker above Warlock Tools
--- Forever), so a mob's damage to come is drawn and reported once.
+-- The highest priority wins, so a mob's damage to come is drawn and reported
+-- once: a class Tools AddOn (Warlock Tools Forever, 10) wins over Dyre's
+-- Debuff Tracker (5) for its own class (lead decision 7a, 2026-11-01).
 -- source = {addon, priority, damage = function(unitOrGUID) -> number or
 -- nil; optional willDie = function(unitOrGUID) -> true, false, or nil, and
 -- refresh = function(unit or nil): draw again}.
 local sources = {}
 
+-- Whether an AddOn is a Dyre's AddOn: its TOC has `## Group: DyresToolkit`.
+-- Shared with Owners.lua.
 local function InFamily(addon)
+    if type(addon) ~= "string" then
+        return false
+    end
     local read = type(C_AddOns) == "table" and C_AddOns.GetAddOnMetadata or rawget(_G, "GetAddOnMetadata")
     if type(read) ~= "function" then
         return false
@@ -839,6 +845,8 @@ local function InFamily(addon)
     local ok, group = pcall(read, addon, "Group")
     return ok and group == "DyresToolkit"
 end
+
+ns.InFamily = InFamily
 
 function HealthBars.RegisterSource(source)
     if type(source) ~= "table" or type(source.addon) ~= "string" or type(source.priority) ~= "number"

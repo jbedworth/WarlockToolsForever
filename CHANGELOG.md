@@ -4,6 +4,18 @@ Player-facing changes for each Warlock Tools Forever release, newest first. The
 release builder copies the section for the TOC version into the GitHub release
 notes and the CurseForge changelog, and fails if that section is missing.
 
+## 1.5.0
+
+### Fixes
+- The Focus box above the Control bar now takes the Bar size setting once; before, it was scaled twice (at 80% it showed at 64%).
+
+### Other changes
+- The DoT tracker, the nameplate DoT dots, the DoT damage prediction, and the Control bar with its macros and Fear, Banish, Enslave Demon, and Howl of Terror announcements now run on Dyre's Toolkit 2.5's shared engines. Your settings, frame places, and macros stay. Update Dyre's Toolkit to 2.5 or later: with an older version those features stay off, and WTF says so once in chat.
+- Clicking a Control bar row to cast its spell on your focus again now needs a focus seen to work, as the Focus box already did.
+- "! Fear", "! Banish", and "! Seduction" now count as known through any rank of their spell, also a client's own ranks matched by name.
+- Announcements: an empty %T now drops the space before it.
+- Learned DoT ticks for the prediction move to Dyre's Toolkit, one store for every Dyre's AddOn; WTF's are copied there once.
+
 ## 1.4.1
 
 ### Fixes

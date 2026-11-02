@@ -536,6 +536,16 @@ and printing.
       nameplates (each frame AddOn), and DoT tracker rows, where it stands
       out from the row's own purple health. Each Block fill, color, opacity,
       and outline choice changes every block at once, also in combat.
+- [ ] WTF 1.5.0 with Dyre's Toolkit 2.5.0 (the engines), Classic Era first,
+      then Forever (the launch taint check above, now for the Toolkit's
+      engine frames): everything as in 1.4.1. Frames stay where they were;
+      the DoT tracker, the nameplate dots, the prediction with
+      `/wtf debug_predict` showing saved ticks after a reload (copied from
+      WTF once), the Control bar's rows, Focus box (its size now matches the
+      bar's), row clicks (only with a working focus), Fear plate timers, the
+      three macros, and the cast announcements with %M and %Z. With Dyre's
+      Debuff Tracker also on, WTF's bar, macros, announcements, and DoTs win.
+      With Dyre's Toolkit 2.4, one chat line says the four features need 2.5.
 - [ ] WTF 1.4.1 with Dyre's Toolkit 2.4.0, Classic Era first (then Forever,
       the launch check above): everything as in 1.4.0. The DoT tracker
       rows bind and time their DoTs (also a mob DoTed by mouseover once
