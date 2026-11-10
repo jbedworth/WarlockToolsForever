@@ -13,8 +13,31 @@ local DyresToolkit = ns.toolkit
 -- talents, spell power, and resists included) and saved per rank, account
 -- wide, with the spell power it was learned at; the next cast of that rank
 -- starts from it, rescaled to your spell power then. With nothing saved, the
--- rank's base damage plus spell power. Where the combat log is restricted
--- (Forever), a predictor is not made at all and registers nothing.
+-- rank's base damage plus spell power.
+--
+-- Where the combat log is restricted (WoW: Forever), the hidden-ticks path
+-- (2.6.0; John, 2026-11-08: "Design it", "Yes, build it"; design in
+-- docs/FOREVER_PREDICT.md). The method is Does It Die's (Joe Greive, v0.9.x,
+-- which John checked in client on Forever); the code is our own:
+--   - Your cast: UNIT_SPELLCAST_SENT names the mob (by name, at the target,
+--     focus, soft enemy, or mouseover), SUCCEEDED starts the DoT. Its base
+--     damage and duration come from its tooltip (C_Spell.GetSpellDescription,
+--     without spell power), else ClassData's rank.
+--   - A mob is its GUID, else the plate memory's, else "plate:nameplateN"
+--     (GUIDs are secret in instances), else "target".
+--   - UNIT_COMBAT: the first outcome on the mob within OUTCOME_WINDOW after
+--     the cast says whether it landed (a spell avoid in its school drops it).
+--     A WOUND or ABSORB in the DoT's school, within TICK_WINDOW of an open
+--     tick slot (TICK_WINDOW_ANCHORED once its first tick is seen), is a
+--     tick; its amount is secret in combat, so it counts without a size.
+--   - One timer per DoT, at each tick slot's end: a missed tick while a unit
+--     shows the mob counts (MISSES_TO_DROP drop it: resisted, removed, or the
+--     mob died); a slot no unit shows marks it unseen. No OnUpdate.
+--   - After combat, the damage meter (C_DamageMeter, readable a few seconds
+--     later) gives each spell's total; with every DoT of one rank seen,
+--     total over the ticks seen is the tick, saved as on Era. Not for a
+--     family with a direct hit (Immolate).
+--   - Health is secret: HealthBars draws with it (its DIES gate).
 --
 -- The learned ticks are the one store an engine keeps (lead decision 1):
 -- DyresToolkitDB.ticks[rank spell ID] = {tick, power}, shared by every
@@ -30,6 +53,17 @@ local DEBUFF = "DEBUFF"
 local APPLIED = {SPELL_AURA_APPLIED = true, SPELL_AURA_REFRESH = true}
 local DEATHS = {UNIT_DIED = true, UNIT_DESTROYED = true, PARTY_KILL = true}
 local EXPIRY_GRACE = 0.5
+-- The hidden-ticks path (Forever). Timing from Does It Die's in-client
+-- findings: a first tick lands within about 0.1 s of one interval after the
+-- cast, later ones within about 0.1 s of the first tick's rhythm.
+local TICK_WINDOW = 0.45
+local TICK_WINDOW_ANCHORED = 0.25
+local MISSES_TO_DROP = 2
+local OUTCOME_WINDOW = 0.4
+local SENT_EXPIRY = 10
+local MIN_METER_TICKS = 2
+local METER_SHARE_MIN, METER_SHARE_MAX = 0.5, 2.5
+local METER_RETRY, METER_TRIES = 0.5, 20
 
 -- The combat log's reader, else nil (CombatLogGetCurrentEventInfo is only a
 -- deprecation fallback on Era); the same gate as Dyre's Crit Mayhem.
@@ -52,16 +86,30 @@ function DyresToolkit.CombatLogUsable()
     return EventInfoReader() ~= nil
 end
 
+-- Without the combat log: what UNIT_COMBAT and the damage meter need.
+function DyresToolkit.HiddenTicksUsable()
+    return type(C_Timer) == "table" and type(C_Timer.After) == "function" and type(GetTime) == "function"
+end
+
 -- Every rank any class table knows, so a saved tick of a rank no table
--- lists any more is dropped.
+-- lists any more is dropped; and every family, for a client's own spell ID
+-- learned on Forever (saved with its family).
 local function AllRanks()
-    local all = {}
+    local all, families = {}, {}
     for _, data in pairs(DyresToolkit.ClassData) do
         for id in pairs(data.ranks or {}) do
             all[id] = true
         end
+        for name in pairs(data.families or {}) do
+            families[name] = true
+        end
     end
-    return all
+    return all, families
+end
+
+local function KnownTick(id, entry, ranks, families)
+    return type(id) == "number" and type(entry) == "table" and (ranks[id] or families[entry.family] == true)
+        and type(entry.tick) == "number" and entry.tick > 0 and type(entry.power) == "number" and entry.power >= 0
 end
 
 -- The table repaired this session (SavedVariables replace ns.db at load).
@@ -77,10 +125,9 @@ function DyresToolkit.LearnedTicks()
     end
     if repaired ~= saved then
         repaired = saved
-        local ranks = AllRanks()
+        local ranks, families = AllRanks()
         for id, entry in pairs(saved) do
-            if type(id) ~= "number" or not ranks[id] or type(entry) ~= "table" or type(entry.tick) ~= "number"
-                    or entry.tick <= 0 or type(entry.power) ~= "number" or entry.power < 0 then
+            if not KnownTick(id, entry, ranks, families) then
                 saved[id] = nil
             end
         end
@@ -104,8 +151,7 @@ local function ImportTicks(addon, legacy)
     local ticks = DyresToolkit.LearnedTicks()
     local ranks = AllRanks()
     for id, entry in pairs(legacy) do
-        if ticks[id] == nil and ranks[id] and type(entry) == "table" and type(entry.tick) == "number"
-                and entry.tick > 0 and type(entry.power) == "number" and entry.power >= 0 then
+        if ticks[id] == nil and ranks[id] and KnownTick(id, entry, ranks, {}) then
             ticks[id] = {tick = entry.tick, power = entry.power}
         end
     end
@@ -119,7 +165,9 @@ end
 --               fill, opacity, outline
 --   color       function() -> {r, g, b}: the block's color
 --   legacyTicks the owner's older saved ticks, copied once
--- Returns the predictor, else nil and why (no combat log, as on Forever).
+-- Returns the predictor, else nil and why. Without the combat log (Forever)
+-- it reads hidden ticks (predictor.hidden is true); with neither, nil and
+-- "the combat log".
 function DyresToolkit.CreateDotPredictor(spec)
     if type(spec) ~= "table" or type(spec.addon) ~= "string" or type(spec.store) ~= "table" then
         return nil, "spec"
@@ -131,7 +179,8 @@ function DyresToolkit.CreateDotPredictor(spec)
     if type(RANKS) ~= "table" or next(RANKS) == nil or type(FAMILIES) ~= "table" then
         return nil, "ranks"
     end
-    if not DyresToolkit.CombatLogUsable() then
+    local hidden = not DyresToolkit.CombatLogUsable()
+    if hidden and not DyresToolkit.HiddenTicksUsable() then
         return nil, "the combat log"
     end
     if type(C_NamePlate) ~= "table" or type(C_NamePlate.GetNamePlateForUnit) ~= "function" then
@@ -140,7 +189,7 @@ function DyresToolkit.CreateDotPredictor(spec)
     local store = spec.store
     local api = DyresToolkit.HealthBars
     local predict = {mobs = {}, byName = {}, lastCast = {}, plates = {}, units = {}, read = EventInfoReader(),
-        player = UnitGUID("player")}
+        player = UnitGUID("player"), hidden = hidden, sent = {}, power = {}, spells = {}, tally = {}}
     local events = CreateFrame("Frame")
     ImportTicks(spec.addon, spec.legacyTicks)
 
@@ -148,19 +197,29 @@ function DyresToolkit.CreateDotPredictor(spec)
         return DyresToolkit.TickWeight(FAMILIES[family], tick)
     end
 
+    -- Spell power can be secret in combat (Forever): the last readable value
+    -- of that school counts then.
     local function SpellPower(family)
-        local power = type(GetSpellBonusDamage) == "function" and GetSpellBonusDamage(FAMILIES[family].school) or 0
+        local school = FAMILIES[family].school
+        local power = type(GetSpellBonusDamage) == "function" and GetSpellBonusDamage(school) or 0
         if DyresToolkit.IsSecret(power) or type(power) ~= "number" or power < 0 then
-            return 0
+            return predict.power[school] or 0
         end
+        predict.power[school] = power
         return power
     end
 
     -- The first guess for the whole DoT: base damage plus spell power, a
     -- share of it by duration / 15 (at most 1) or the family's coefficient,
     -- less 3.75% per level for ranks learned below 20.
+    -- A rank: {family, damage over time, duration, level}; on the hidden path
+    -- from the cast's own tooltip when it reads (predict.spells).
+    local function RankOf(rankID)
+        return predict.spells[rankID] or RANKS[rankID]
+    end
+
     local function GuessTotal(rankID, power)
-        local rank = RANKS[rankID]
+        local rank = RankOf(rankID)
         local share = FAMILIES[rank[1]].coefficient or math.min(1, rank[3] / 15)
         if rank[4] < LOW_LEVEL then
             share = share * (1 - (LOW_LEVEL - rank[4]) * LOW_LEVEL_PENALTY)
@@ -217,16 +276,33 @@ function DyresToolkit.CreateDotPredictor(spec)
         end
         local now, total = GetTime(), 0
         for _, dot in pairs(mob.dots) do
-            total = total + DotRemaining(dot, now)
+            -- A doubtful DoT (an avoid it may not own) counts from its first tick.
+            if not dot.doubtful then
+                total = total + DotRemaining(dot, now)
+            end
         end
         return math.floor(total + 0.5)
     end
 
     -- Drawing ------------------------------------------------------------------
 
-    local function Look()
+    -- The owner's DIES place and offsets per kind (John, 2026-11-09): store
+    -- diesPlace, diesX, diesY for the target and focus frames, and
+    -- plateDiesPlace, plateDiesX, plateDiesY for nameplates. "auto" or nil is
+    -- the toolkit's own choice. Rows keep theirs.
+    local DIES_KEYS = {target = {"diesPlace", "diesX", "diesY"}, plate = {"plateDiesPlace", "plateDiesX", "plateDiesY"}}
+
+    local function Look(kind)
         local color = spec.color and spec.color() or {0.6, 0.2, 0.9}
-        return {fill = store.fill, color = color, opacity = store.opacity, outline = store.outline, dies = store.dies}
+        local look = {fill = store.fill, color = color, opacity = store.opacity, outline = store.outline,
+            dies = store.dies}
+        local keys = DIES_KEYS[kind]
+        if keys then
+            local place = store[keys[1]]
+            look.side = place ~= "auto" and place or nil
+            look.x, look.y = store[keys[2]], store[keys[3]]
+        end
+        return look
     end
 
     local function HideOverlay(bar)
@@ -249,23 +325,59 @@ function DyresToolkit.CreateDotPredictor(spec)
         return api.GetPredictedDamage(guid) or 0
     end
 
+    local function Same(a, b)
+        local same = UnitIsUnit(a, b)
+        return not DyresToolkit.IsSecret(same) and same == true
+    end
+
+    -- The mob a unit shows: its GUID; on the hidden path, where GUIDs are
+    -- secret (instances), the plate memory's, else its nameplate's token
+    -- key, else "target". Nil when unknown.
+    local function Key(unit)
+        if DyresToolkit.IsSecret(unit) or type(unit) ~= "string" then
+            return nil
+        end
+        local guid = DyresToolkit.ReadGUID(unit)
+        if guid or not hidden then
+            return guid
+        end
+        local token = DyresToolkit.PlateToken(unit)
+        if token then
+            return DyresToolkit.PlateKey(token)
+        end
+        if unit == "target" or Same(unit, "target") then
+            return "target"
+        end
+    end
+    predict.Key = Key
+
     local function Draw(unit, bar, kind, info)
         if not bar then
             return
         end
-        local guid = UnitGUID(unit)
+        local key = Key(unit)
         local canAttack = UnitCanAttack("player", unit)
-        if not store.enabled or DyresToolkit.IsSecret(guid) or type(guid) ~= "string"
-                or DyresToolkit.IsSecret(canAttack) or canAttack ~= true then
+        -- A secret "can attack" (Forever) counts for a mob we track.
+        local hostile
+        if DyresToolkit.IsSecret(canAttack) then
+            hostile = hidden
+        else
+            hostile = canAttack == true
+        end
+        if not store.enabled or not key or not hostile or DyresToolkit.IsDead(unit) then
             HideOverlay(bar)
             return
         end
-        DyresToolkit.DrawPrediction(bar, kind, predict:PredictedDamage(guid), UnitHealth(unit), Look(), info)
+        DyresToolkit.DrawPrediction(bar, kind, predict:PredictedDamage(key), UnitHealth(unit), Look(kind), info)
     end
 
     -- A DoT tracker row's health bar: the row's mob and the health the bar
     -- shows. Returns whether DIES shows, so the row can make room.
-    function predict:DrawRow(bar, guid, health, place)
+    -- place: where DIES goes while the health reads (in place of the number);
+    -- secretPlace: where it goes while the health is secret, when the row
+    -- keeps its numbers (John's screenshot, 2026-11-09: "43% |4DIES", DIES at
+    -- the bar's end on top of the number); nil is the bar's right end.
+    function predict:DrawRow(bar, guid, health, place, secretPlace)
         if not bar then
             return false
         end
@@ -274,7 +386,13 @@ function DyresToolkit.CreateDotPredictor(spec)
             return false
         end
         local dies = DyresToolkit.DrawPrediction(bar, "row", RowDamage(guid), health, Look())
-        DyresToolkit.MoveDies(bar, place)
+        -- With a secret health no one knows whether DIES shows, so the row
+        -- keeps its numbers and DIES goes beside them, not on them.
+        if DyresToolkit.IsSecret(health) then
+            DyresToolkit.MoveDies(bar, secretPlace)
+        else
+            DyresToolkit.MoveDies(bar, place)
+        end
         return dies == true
     end
 
@@ -307,8 +425,7 @@ function DyresToolkit.CreateDotPredictor(spec)
     end
 
     local function IsGUID(unit, guid)
-        local shown = UnitGUID(unit)
-        return not DyresToolkit.IsSecret(shown) and shown == guid
+        return Key(unit) == guid
     end
 
     local function DrawGUID(guid)
@@ -322,8 +439,10 @@ function DyresToolkit.CreateDotPredictor(spec)
                 DrawPlate(unit)
             end
         end
-        RefreshRows(guid)
-        api.NotifyChanged(spec.addon, nil, guid)
+        -- A token key ("plate:nameplate3", "target") is not a GUID for others.
+        local real = guid:find("-", 1, true) and guid or nil
+        RefreshRows(real)
+        api.NotifyChanged(spec.addon, nil, real)
     end
 
     local function DrawAll()
@@ -384,8 +503,26 @@ function DyresToolkit.CreateDotPredictor(spec)
         predict.mobs[guid] = nil
     end
 
+    -- The DoT ends at its duration from `applied` (which the hidden path moves
+    -- to its first tick), else it is checked again then.
+    local function Expire(guid, family, dot)
+        local wait = dot.applied + dot.duration + EXPIRY_GRACE - GetTime()
+        C_Timer.After(math.max(0, wait), function()
+            local current = predict.mobs[guid]
+            if not current or current.dots[family] ~= dot then
+                return
+            end
+            if GetTime() < dot.applied + dot.duration + EXPIRY_GRACE - 0.01 then
+                Expire(guid, family, dot)
+                return
+            end
+            Forget(guid, family)
+            DrawGUID(guid)
+        end)
+    end
+
     local function Apply(guid, name, family, rankID)
-        local rank = rankID and RANKS[rankID]
+        local rank = rankID and RankOf(rankID)
         if not rank then
             return
         end
@@ -408,13 +545,8 @@ function DyresToolkit.CreateDotPredictor(spec)
             dot.average, dot.source = GuessTotal(rankID, power) / ticks, "guessed"
         end
         mob.dots[family] = dot
-        C_Timer.After(dot.duration + EXPIRY_GRACE, function()
-            local current = predict.mobs[guid]
-            if current and current.dots[family] == dot then
-                Forget(guid, family)
-                DrawGUID(guid)
-            end
-        end)
+        Expire(guid, family, dot)
+        return dot, old
     end
 
     -- A tick seen, and with an amount, learned: the average of this cast's
@@ -474,20 +606,451 @@ function DyresToolkit.CreateDotPredictor(spec)
         DrawGUID(destGUID)
     end
 
+    -- Hidden ticks (Forever) ------------------------------------------------------
+
+    -- The school as UNIT_COMBAT gives it: a mask, 2 ^ (school - 1).
+    local function Mask(family)
+        return 2 ^ (FAMILIES[family].school - 1)
+    end
+
+    -- "... 10 Shadow damage over 15 sec." (the last such clause: Immolate's
+    -- periodic part), or Siphon Life's "... 15 health ... every 3 sec. Lasts
+    -- 30 sec.": the base damage and duration, without spell power. English
+    -- tooltips only; else nil (ClassData's rank then).
+    local function ReadTooltip(spellID, family)
+        local read = type(C_Spell) == "table" and C_Spell.GetSpellDescription or rawget(_G, "GetSpellDescription")
+        if type(read) ~= "function" then
+            return nil
+        end
+        local text = read(spellID)
+        if DyresToolkit.IsSecret(text) or type(text) ~= "string" or text == "" then
+            return nil
+        end
+        text = text:gsub("(%d),(%d)", "%1%2")
+        local total, duration
+        for amount, seconds in text:gmatch("(%d+) %a+ damage over (%d+) sec") do
+            total, duration = tonumber(amount), tonumber(seconds)
+        end
+        if not total then
+            local each, every = text:match("(%d+) health.- every (%d+) sec")
+            local lasts = text:match("[Ll]asts (%d+) sec")
+            each, every, lasts = tonumber(each), tonumber(every), tonumber(lasts)
+            if each and every and lasts and every > 0 then
+                total, duration = each * math.floor(lasts / every + 0.5), lasts
+            end
+        end
+        if total and duration and total > 0 and duration > 0 then
+            return {family, total, duration, LOW_LEVEL}
+        end
+    end
+
+    -- A cast's family and rank key: a ClassData rank, else a spell of a
+    -- family's name (the client's own ID). Its tooltip, when it reads, gives
+    -- the rank's numbers.
+    local function Resolve(spellID)
+        if DyresToolkit.IsSecret(spellID) or type(spellID) ~= "number" then
+            return nil
+        end
+        local rank = RANKS[spellID]
+        local family = rank and rank[1] or predict.byName[DyresToolkit.SpellName(spellID) or ""]
+        if not family then
+            return nil
+        end
+        local read = ReadTooltip(spellID, family)
+        if read then
+            -- A ClassData rank keeps its level (the low-level penalty).
+            read[4] = rank and rank[4] or read[4]
+            predict.spells[spellID] = read
+        elseif not rank then
+            -- No tooltip and no ClassData rank: the family's highest rank
+            -- for your level.
+            local level, best = UnitLevel("player"), nil
+            for id, entry in pairs(RANKS) do
+                if entry[1] == family and (DyresToolkit.IsSecret(level) or entry[4] <= level)
+                        and (not best or entry[4] > RANKS[best][4]) then
+                    best = id
+                end
+            end
+            if not best then
+                return nil
+            end
+            predict.spells[spellID] = RANKS[best]
+        end
+        return family, spellID
+    end
+
+    -- Whether a unit shows the mob now (UNIT_COMBAT reports only units).
+    local function Observable(key)
+        for _, unit in ipairs({"target", "focus"}) do
+            if UnitExists(unit) and Key(unit) == key then
+                return true
+            end
+        end
+        for index = 1, MAX_NAMEPLATE_UNITS do
+            local unit = "nameplate" .. index
+            if UnitExists(unit) and Key(unit) == key then
+                return true
+            end
+        end
+        return false
+    end
+
+    -- The fight's tally for the damage meter: per rank, the ticks seen and
+    -- their weights; clean while every DoT of it was seen whole.
+    local function Tally(dot)
+        local entry = predict.tally[dot.rank]
+        if not entry then
+            entry = {family = dot.family, count = 0, weights = 0, base = dot.base, power = dot.power, clean = true,
+                guess = dot.average}
+            predict.tally[dot.rank] = entry
+        end
+        return entry
+    end
+
+    local function Unclean(dot)
+        if InCombatLockdown() then
+            Tally(dot).clean = false
+        end
+    end
+
+    -- When tick slot n is due: the first from the cast, later ones from the
+    -- first tick seen.
+    local function SlotTime(dot, n)
+        return dot.applied + n * dot.interval
+    end
+
+    -- The slot timer: at the end of the next open slot's window, a missed
+    -- tick counts (a unit shows the mob) or the DoT is marked unseen.
+    local function WatchSlot(key, dot)
+        local slot = dot.seen + 1
+        if slot > dot.ticks then
+            return
+        end
+        local window = dot.anchored and TICK_WINDOW_ANCHORED or TICK_WINDOW
+        local wait = SlotTime(dot, slot) + window - GetTime()
+        C_Timer.After(math.max(0, wait), function()
+            local mob = predict.mobs[key]
+            if not mob or mob.dots[dot.family] ~= dot or dot.seen >= slot then
+                return
+            end
+            if Observable(key) then
+                dot.missed = dot.missed + 1
+                if dot.missed >= MISSES_TO_DROP then
+                    Unclean(dot)
+                    Forget(key, dot.family)
+                    DrawGUID(key)
+                    return
+                end
+            else
+                dot.unseen = true
+                Unclean(dot)
+            end
+            -- The slot is gone either way: its tick happened or not.
+            dot.seen = slot
+            WatchSlot(key, dot)
+        end)
+    end
+
+    local function Started(key, name, family, rankID)
+        local dot, old = Apply(key, name, family, rankID)
+        if not dot then
+            return
+        end
+        dot.missed, dot.ticked = 0, 0
+        dot.previous = old
+        if InCombatLockdown() then
+            local entry = Tally(dot)
+            if key:find("-", 1, true) == nil then
+                entry.clean = false
+            end
+        end
+        predict.cast = {key = key, dot = dot, at = GetTime()}
+        WatchSlot(key, dot)
+        DrawGUID(key)
+    end
+
+    -- The mob a cast at targetName goes to, read as it starts (Does It Die
+    -- v0.9.3's sentTargetKey, the method only). A cast with no mob of that
+    -- name goes to the default: your target, else the soft enemy when the
+    -- target is friendly or a corpse (action targeting: a corpse cannot be
+    -- cast at). A named mob that has no key (a secret GUID and no plate) gives
+    -- false: the cast is skipped, never put on your target.
+    local SENT_UNITS = {"target", "focus", "softenemy", "mouseover"}
+
+    local function DefaultKey()
+        local canAttack = UnitCanAttack("player", "target")
+        -- No target counts as "cannot attack", as in Does It Die.
+        local cannot = not DyresToolkit.IsSecret(canAttack) and canAttack == false
+        if cannot or DyresToolkit.IsDead("target") then
+            return Key("softenemy")
+        end
+        return Key("target")
+    end
+
+    local function SentKey(targetName)
+        if DyresToolkit.IsSecret(targetName) or type(targetName) ~= "string" or targetName == "" then
+            return DefaultKey()
+        end
+        for _, unit in ipairs(SENT_UNITS) do
+            if UnitExists(unit) and DyresToolkit.ReadName(unit) == targetName and not DyresToolkit.IsDead(unit) then
+                local canAttack = UnitCanAttack("player", unit)
+                if DyresToolkit.IsSecret(canAttack) or canAttack == true then
+                    return Key(unit) or false
+                end
+            end
+        end
+        return DefaultKey()
+    end
+
+    local function OnSent(targetName, castGUID, spellID)
+        if not Resolve(spellID) or DyresToolkit.IsSecret(castGUID) or type(castGUID) ~= "string" then
+            return
+        end
+        local now = GetTime()
+        for guid, entry in pairs(predict.sent) do
+            if now - entry.at > SENT_EXPIRY then
+                predict.sent[guid] = nil
+            end
+        end
+        predict.sent[castGUID] = {key = SentKey(targetName), at = now}
+    end
+
+    local function OnSucceeded(castGUID, spellID)
+        local family, rankID = Resolve(spellID)
+        if not family then
+            return
+        end
+        local sent = not DyresToolkit.IsSecret(castGUID) and predict.sent[castGUID]
+        local key
+        if sent then
+            -- false: the cast went to a mob we cannot key; nil: no mob at all.
+            key = sent.key
+            predict.sent[castGUID] = nil
+        else
+            key = Key("target")
+        end
+        if key then
+            Started(key, nil, family, rankID)
+        end
+    end
+
+    -- An avoid right after your cast, in its school: it did not land.
+    local SPELL_AVOIDS = {MISS = true, RESIST = true, IMMUNE = true, EVADE = true, REFLECT = true}
+    local MELEE_AVOIDS = {DODGE = true, PARRY = true, BLOCK = true, DEFLECT = true}
+
+    local function OnAvoid(key, school, now)
+        local cast = predict.cast
+        if not cast or cast.key ~= key or cast.landed or now - cast.at > OUTCOME_WINDOW then
+            return
+        end
+        local dot = cast.dot
+        local mob = predict.mobs[key]
+        if not mob or mob.dots[dot.family] ~= dot then
+            return
+        end
+        if DyresToolkit.IsSecret(school) or type(school) ~= "number" then
+            -- Maybe someone else's: show it once it ticks.
+            dot.doubtful = true
+        elseif school == Mask(dot.family) then
+            predict.cast = nil
+            mob.dots[dot.family] = dot.previous
+            if not dot.previous then
+                Forget(key, dot.family)
+            end
+            DrawGUID(key)
+            return
+        end
+        -- Another school: not ours.
+    end
+
+    -- A hit in a DoT's school, at an open tick slot: a tick.
+    local function OnHit(key, school, amount, now)
+        local cast = predict.cast
+        if cast and cast.key == key and now - cast.at <= OUTCOME_WINDOW and school == Mask(cast.dot.family) then
+            cast.landed = true
+        end
+        local mob = predict.mobs[key]
+        if not mob then
+            return
+        end
+        if predict.frameAt ~= now then
+            predict.frameAt, predict.fed = now, {}
+        end
+        local best, bestSlot, bestDistance
+        for family, dot in pairs(mob.dots) do
+            if Mask(family) == school and not predict.fed[dot] then
+                local window = dot.anchored and TICK_WINDOW_ANCHORED or TICK_WINDOW
+                for slot = dot.seen + 1, math.min(dot.ticks, dot.seen + 2) do
+                    local distance = math.abs(now - SlotTime(dot, slot))
+                    if distance <= window and (not bestDistance or distance < bestDistance) then
+                        best, bestSlot, bestDistance = dot, slot, distance
+                    end
+                end
+            end
+        end
+        if not best then
+            return
+        end
+        predict.fed[best] = true
+        if not best.anchored then
+            -- The rhythm from the first tick seen (a slot's real time).
+            best.applied = now - bestSlot * best.interval
+            best.anchored = true
+        end
+        best.seen, best.missed, best.doubtful = bestSlot, 0, nil
+        best.ticked = best.ticked + 1
+        if InCombatLockdown() then
+            local entry = Tally(best)
+            entry.count = entry.count + 1
+            entry.weights = entry.weights + Weight(best.family, bestSlot)
+        end
+        if not DyresToolkit.IsSecret(amount) and type(amount) == "number" and amount > 0 then
+            best.sum, best.count = best.sum + AverageFrom(best, bestSlot, amount), best.count + 1
+            best.average, best.source = best.sum / best.count, "learned"
+            DyresToolkit.LearnedTicks()[best.rank] = {tick = math.floor(best.average * 10 + 0.5) / 10,
+                power = best.power, family = best.family}
+        end
+        WatchSlot(key, best)
+        DrawGUID(key)
+    end
+
+    local function OnUnitCombat(unit, action, amount, school)
+        if DyresToolkit.IsSecret(action) or type(action) ~= "string" then
+            return
+        end
+        local avoid = SPELL_AVOIDS[action]
+        if not avoid and action ~= "WOUND" and action ~= "ABSORB" then
+            return
+        end
+        if MELEE_AVOIDS[action] then
+            return
+        end
+        local key = Key(unit)
+        if not key then
+            return
+        end
+        local now = GetTime()
+        if avoid then
+            OnAvoid(key, school, now)
+            return
+        end
+        if DyresToolkit.IsSecret(school) or type(school) ~= "number" then
+            return
+        end
+        OnHit(key, school, amount, now)
+    end
+
+    -- The damage meter, after combat: each clean rank's tick from its
+    -- spell's total. Every table is checked; the totals turn readable a few
+    -- seconds after combat, so it waits for them.
+    local function Readable(value)
+        if DyresToolkit.IsSecret(value) or type(value) ~= "table" then
+            return false
+        end
+        local check = rawget(_G, "canaccesstable")
+        return type(check) ~= "function" or check(value) == true
+    end
+
+    local function MeterTotals()
+        local meter = rawget(_G, "C_DamageMeter")
+        if type(meter) ~= "table" or type(meter.GetCombatSessionSourceFromType) ~= "function" then
+            return nil, "none"
+        end
+        if type(meter.IsDamageMeterAvailable) == "function" and meter.IsDamageMeterAvailable() == false then
+            return nil, "none"
+        end
+        local kind = Enum and Enum.DamageMeterType and Enum.DamageMeterType.DamageDone or 0
+        local session = Enum and Enum.DamageMeterSessionType and Enum.DamageMeterSessionType.Current or 1
+        local source = meter.GetCombatSessionSourceFromType(session, kind, predict.player)
+        if not Readable(source) or not Readable(source.combatSpells) then
+            return nil, "wait"
+        end
+        local totals = {}
+        for _, spell in ipairs(source.combatSpells) do
+            if Readable(spell) then
+                if DyresToolkit.IsSecret(spell.spellID) or DyresToolkit.IsSecret(spell.totalAmount) then
+                    return nil, "wait"
+                end
+                if type(spell.spellID) == "number" and type(spell.totalAmount) == "number" then
+                    totals[spell.spellID] = (totals[spell.spellID] or 0) + spell.totalAmount
+                end
+            end
+        end
+        return totals
+    end
+
+    local function Learn(tally, totals)
+        local ranksOf = {}
+        for rankID, entry in pairs(tally) do
+            ranksOf[entry.family] = (ranksOf[entry.family] or 0) + 1
+        end
+        for rankID, entry in pairs(tally) do
+            local total = totals[rankID]
+            -- One rank of the family this fight, every DoT seen whole, 2 ticks
+            -- or more, and no direct hit in the total.
+            if total and entry.clean and ranksOf[entry.family] == 1 and entry.count >= MIN_METER_TICKS
+                    and not FAMILIES[entry.family].direct then
+                -- sum of ticks = base * sum of weights + count * (average - base)
+                local average = (total - entry.base * entry.weights) / entry.count + entry.base
+                local share = entry.guess > 0 and average / entry.guess or 0
+                if share >= METER_SHARE_MIN and share <= METER_SHARE_MAX then
+                    DyresToolkit.LearnedTicks()[rankID] = {tick = math.floor(average * 10 + 0.5) / 10,
+                        power = entry.power, family = entry.family}
+                end
+            end
+        end
+    end
+
+    local function ReadMeter(tally, tries)
+        if InCombatLockdown() then
+            return
+        end
+        local totals, why = MeterTotals()
+        if not totals then
+            if why == "wait" and tries > 0 then
+                C_Timer.After(METER_RETRY, function() ReadMeter(tally, tries - 1) end)
+            end
+            return
+        end
+        Learn(tally, totals)
+    end
+
+    local function CombatEnded()
+        for family in pairs(FAMILIES) do
+            SpellPower(family)
+        end
+        local tally = predict.tally
+        predict.tally = {}
+        if next(tally) then
+            C_Timer.After(METER_RETRY, function() ReadMeter(tally, METER_TRIES) end)
+        end
+    end
+
     local function IsShownUnit(unit)
         return unit == "target" or unit == "focus" or (type(unit) == "string" and unit:match("^nameplate%d+$") ~= nil)
     end
 
-    events:SetScript("OnEvent", function(_, event, unit, _, spellID)
+    events:SetScript("OnEvent", function(_, event, unit, second, third, fourth, fifth)
         if event == "COMBAT_LOG_EVENT_UNFILTERED" then
             OnCombatLog()
+        elseif event == "UNIT_COMBAT" then
+            OnUnitCombat(unit, second, fourth, fifth)
+        elseif event == "UNIT_SPELLCAST_SENT" then
+            OnSent(second, third, fourth)
+        elseif event == "UNIT_SPELLCAST_SUCCEEDED" and hidden then
+            OnSucceeded(second, third)
         elseif event == "UNIT_SPELLCAST_SUCCEEDED" then
             -- Which rank you cast, for a combat log that names the spell only.
+            local spellID = third
             local rank = not DyresToolkit.IsSecret(spellID) and RANKS[spellID]
             if rank then
                 predict.lastCast[rank[1]] = spellID
             end
+        elseif event == "PLAYER_REGEN_ENABLED" then
+            CombatEnded()
         elseif event == "PLAYER_TARGET_CHANGED" then
+            -- "target" as a key is the mob the target showed until now.
+            predict.mobs.target = nil
             DrawUnitFrame("target")
         elseif event == "PLAYER_FOCUS_CHANGED" then
             DrawUnitFrame("focus")
@@ -505,6 +1068,10 @@ function DyresToolkit.CreateDotPredictor(spec)
         elseif event == "NAME_PLATE_UNIT_REMOVED" then
             if not DyresToolkit.IsSecret(unit) then
                 DyresToolkit.UseBar(predict.plates, unit, nil)
+                -- A token key belongs to that plate only.
+                if hidden and type(unit) == "string" then
+                    predict.mobs["plate:" .. unit] = nil
+                end
             end
         elseif not DyresToolkit.IsSecret(unit) and IsShownUnit(unit) then
             if unit == "target" or unit == "focus" then
@@ -523,7 +1090,7 @@ function DyresToolkit.CreateDotPredictor(spec)
         end
         local guid = unitOrGUID
         if not guid:find("-", 1, true) then
-            guid = DyresToolkit.ReadGUID(unitOrGUID)
+            guid = Key(unitOrGUID)
         end
         if not guid or not predict.mobs[guid] then
             return nil
@@ -570,8 +1137,9 @@ function DyresToolkit.CreateDotPredictor(spec)
     -- /debug lines: each mob's DoTs, the tick, where the average came from,
     -- and the damage to come (the owner adds its prefix).
     function predict:DebugLines()
-        local lines = {string.format("enabled=%s plates=%s dies=%s active=%s", tostring(store.enabled),
-            tostring(store.plates), tostring(store.dies), tostring(Mine()))}
+        local lines = {string.format("enabled=%s plates=%s dies=%s active=%s input=%s", tostring(store.enabled),
+            tostring(store.plates), tostring(store.dies), tostring(Mine()),
+            hidden and "hidden ticks (no combat log)" or "combat log")}
         local frames = {}
         for _, unit in ipairs({"target", "focus"}) do
             local _, info = DyresToolkit.FindUnitBar(unit)
@@ -611,11 +1179,26 @@ function DyresToolkit.CreateDotPredictor(spec)
             predict.byName[name] = rank[1]
         end
     end
-    for _, event in ipairs({"COMBAT_LOG_EVENT_UNFILTERED", "PLAYER_TARGET_CHANGED", "PLAYER_FOCUS_CHANGED",
-        "NAME_PLATE_UNIT_ADDED", "NAME_PLATE_UNIT_REMOVED", "UNIT_HEALTH", "UNIT_MAXHEALTH"}) do
+    -- Never the combat log where it is restricted: registering it there
+    -- shows the client's "blocked" popup.
+    local list = {"PLAYER_TARGET_CHANGED", "PLAYER_FOCUS_CHANGED", "NAME_PLATE_UNIT_ADDED", "NAME_PLATE_UNIT_REMOVED",
+        "UNIT_HEALTH", "UNIT_MAXHEALTH"}
+    if hidden then
+        list[#list + 1] = "UNIT_COMBAT"
+        list[#list + 1] = "PLAYER_REGEN_ENABLED"
+    else
+        list[#list + 1] = "COMBAT_LOG_EVENT_UNFILTERED"
+    end
+    for _, event in ipairs(list) do
         events:RegisterEvent(event)
     end
     events:RegisterUnitEvent("UNIT_SPELLCAST_SUCCEEDED", "player")
+    if hidden then
+        events:RegisterUnitEvent("UNIT_SPELLCAST_SENT", "player")
+        for family in pairs(FAMILIES) do
+            SpellPower(family)
+        end
+    end
     local registered, why = api.RegisterSource({addon = spec.addon, priority = spec.priority or 0,
         damage = SourceDamage, refresh = SourceRefresh})
     if not registered then

@@ -455,6 +455,16 @@ WTF.PREDICT_OUTLINES = {{key = "none", label = "None"}, {key = "solid", label = 
 WTF.PREDICT_OPACITY_MIN = 20
 WTF.PREDICT_OPACITY_MAX = 100
 WTF.DEFAULT_PREDICT_OPACITY = 70
+-- Where DIES goes (John, 2026-11-09), apart for the target and focus frames
+-- and for nameplates: Auto is the Toolkit's choice (left of a unit frame's
+-- bar, right of a nameplate's, the other side when that one is taken); X and
+-- Y move it from there, in pixels, right and up positive.
+WTF.DIES_PLACES = {{key = "auto", label = "Auto"}, {key = "left", label = "Left of the bar"},
+    {key = "right", label = "Right of the bar"}, {key = "center", label = "Center of the bar"},
+    {key = "above", label = "Above the bar"}, {key = "below", label = "Below the bar"},
+    {key = "inside", label = "Inside the bar's right end"}}
+WTF.DIES_OFFSET_MIN = -100
+WTF.DIES_OFFSET_MAX = 100
 
 -- A saved key that is one of the choices, else the first or the default.
 function WTF.SanitizeChoice(value, choices, default)
@@ -582,8 +592,8 @@ function WTF.SanitizeDB(db)
             db.tracker.onPlates[slot.key] = true
         end
     end
-    -- DoT damage prediction (John, 1.4.0): on by default, where the client
-    -- has the combat log. A test build's "tracker" switch is dropped.
+    -- DoT damage prediction (John, 1.4.0): on by default, where the Toolkit
+    -- makes a predictor. A test build's "tracker" switch is dropped.
     local predict = type(db.predict) == "table" and db.predict or {}
     db.predict = {
         enabled = predict.enabled ~= false,
@@ -594,6 +604,12 @@ function WTF.SanitizeDB(db)
         opacity = WTF.SanitizeWhole(predict.opacity, WTF.PREDICT_OPACITY_MIN, WTF.PREDICT_OPACITY_MAX,
             WTF.DEFAULT_PREDICT_OPACITY),
         outline = WTF.SanitizeChoice(predict.outline, WTF.PREDICT_OUTLINES, "solid"),
+        diesPlace = WTF.SanitizeChoice(predict.diesPlace, WTF.DIES_PLACES, "auto"),
+        diesX = WTF.SanitizeWhole(predict.diesX, WTF.DIES_OFFSET_MIN, WTF.DIES_OFFSET_MAX, 0),
+        diesY = WTF.SanitizeWhole(predict.diesY, WTF.DIES_OFFSET_MIN, WTF.DIES_OFFSET_MAX, 0),
+        plateDiesPlace = WTF.SanitizeChoice(predict.plateDiesPlace, WTF.DIES_PLACES, "auto"),
+        plateDiesX = WTF.SanitizeWhole(predict.plateDiesX, WTF.DIES_OFFSET_MIN, WTF.DIES_OFFSET_MAX, 0),
+        plateDiesY = WTF.SanitizeWhole(predict.plateDiesY, WTF.DIES_OFFSET_MIN, WTF.DIES_OFFSET_MAX, 0),
     }
     local announce = type(db.announce) == "table" and db.announce or {}
     local cleanAnnounce = {

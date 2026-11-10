@@ -185,8 +185,11 @@ spell shows as a dim icon, so you can see what to recast.
   not listed twice. A mob leaves the list when it dies, when combat ends, or,
   out of combat, when it is out of sight for 10 seconds. In combat, a mob
   whose nameplate goes away (out of range, or nameplates off) keeps its row,
-  and its timers come back with its nameplate. These rows show timers only; the
-  game does not let AddOns target or cast on a mob picked from a list.
+  and its timers come back with its nameplate. In dungeons and raids the game
+  hides mob IDs, so WTF follows each mob by its nameplate: the list needs enemy
+  nameplates on there, and a row goes when its nameplate goes. These rows show
+  timers only; the game does not let AddOns target or cast on a mob picked from
+  a list.
 - **Two themes** on the DoT Tracker settings page. Both show only spells you
   know, as do the nameplate dots.
   - **Bars** (the default): see below.
@@ -246,9 +249,9 @@ while the dots are off. Raise the bubble with **Dot height
 above nameplates** if it overlaps your nameplate AddOn, and make it see-through
 with **Nameplate dot opacity** (100%, fully solid, by default).
 
-### Predictive DoT damage (WoW Classic Era)
+### Predictive DoT damage
 
-On Classic Era, a purple block on your target's health bar (the game's target
+A purple block on your target's health bar (the game's target
 frame), on each hostile nameplate's health bar, and on each DoT tracker row's
 health bar (with **Show mob health** on) shows the damage your
 Corruption, Curse of Agony, Immolate (its damage over time), and Siphon Life
@@ -259,7 +262,7 @@ just right of a nameplate's bar (past the target arrows on Platynator), and
 on a DoT tracker row in place of the health number (the percent stays), at
 the same size on every frame.
 
-- **Exact after the first tick:** WTF reads each tick of your DoTs from the
+- **On Classic Era, exact after the first tick:** WTF reads each tick of your DoTs from the
   combat log, so talents, spell power, and resists count; a resisted tick
   counts as a tick. WTF remembers each rank's tick for all your characters,
   so the next cast starts from it, scaled to your spell power then. Before
@@ -269,7 +272,7 @@ the same size on every frame.
   shows as soon as its nameplate or your target frame does. A DoT tracker
   row whose mob has no nameplate now keeps the mob's last health and its
   block, which still shrinks with each tick.
-- **Your DoTs only:** another Warlock's DoTs do not count.
+- **Your DoTs only:** on Classic Era, another Warlock's DoTs do not count.
 - **Settings:** under **DoT damage prediction** on the DoT Tracker page,
   **Show Predictive DoT Damage**, **Also on nameplates**, and **Show DIES**
   (all on by default). DoT tracker rows show the block when both **Show
@@ -277,10 +280,23 @@ the same size on every frame.
   (Stripes, Solid, or the bar's own texture), **Block color** (purple, red,
   orange, white, or green), **Block opacity** (70% by default), and **Block
   outline** set one look for every bar; on a bar of the same color the block
-  is drawn lighter, so it stands out. `/wtf debug_predict` lists each mob's DoTs, their ticks, and
+  is drawn lighter, so it stands out. **DIES place** (Auto, left of,
+  right of, centered on, above, or below the bar, or inside its right end)
+  and **DIES left/right** and **DIES down/up** (up to 100 pixels each way)
+  set where DIES shows, once for your target and focus frames and once for
+  nameplates. Auto, the default, puts it beside the bar on a side nothing
+  else uses. `/wtf debug_predict` lists each mob's DoTs, their ticks, and
   the damage to come.
-- **WoW: Forever:** the game keeps the combat log from AddOns there, so the
-  settings are greyed out and nothing shows. Support for Forever comes later.
+- **WoW: Forever** (needs Dyre's Toolkit 2.6 or later; not tested in game
+  yet): the game keeps the combat log from AddOns and hides damage numbers in
+  combat, so WTF follows your casts and the timing of each tick. The block
+  starts from the rank and your spell power, and tick sizes are learned from
+  the damage meter after combat (Immolate's is not, as the meter includes its
+  direct hit). In a group, another player's DoT of the same school and timing
+  can count as yours, so the block can show too much. A mob you tab away from,
+  with no nameplate, runs on time. On a DoT tracker row, **DIES** shows just
+  left of the health numbers, which stay (with no health text, at the right
+  end of the health bar).
 - **Other frame AddOns:** the block also goes on the health bars of
   **Threat Plates**, **Plater**, and **Platynator** nameplates, **Shadowed
   Unit Frames'** target frame, **BetterBlizzFrames'** target frame (also
@@ -401,7 +417,7 @@ panel) to move just that one, freely; not in combat.
 | `/wtf debug_announce` | Diagnostics: the latest summon and Soulstone cast events |
 | `/wtf debug_emote` | Diagnostics: two test emotes from a timer, one per chat function, and which the game blocks |
 | `/wtf debug_tracker` | Diagnostics: the spell IDs each tracker slot accepts, and tracked mobs |
-| `/wtf debug_predict` | Diagnostics: each mob's DoTs, ticks, and damage to come (Classic Era) |
+| `/wtf debug_predict` | Diagnostics: each mob's DoTs, ticks, and damage to come |
 | `/wtf debug_control` | Diagnostics: the control bar's spell IDs, rows, and clicks |
 
 `/warlocktools` works the same as `/wtf`, in case another AddOn uses `/wtf`.

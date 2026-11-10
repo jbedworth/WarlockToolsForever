@@ -62,15 +62,27 @@ local DIES_FONT = "Fonts\\FRIZQT__.TTF"
 local DIES_SKULL = "Interface\\TargetingFrame\\UI-TargetingFrame-Skull"
 local DIES_SIZE = {target = 14, plate = 11, row = 10}
 local DIES_GAP = 2
+-- The DIES gate's StatusBar length (see Gate): 1% short of lethal is 100 px.
+local GATE_LENGTH = 10000
 local SIDES = {
     left = {"RIGHT", "LEFT", -3, 0},
     right = {"LEFT", "RIGHT", 3, 0},
     inside = {"RIGHT", "RIGHT", -2, 0},
+    -- A player's own choice only (John, 2026-11-09: "DIES centered in the
+    -- middle of the target frame"); the toolkit never picks these itself.
+    center = {"CENTER", "CENTER", 0, 0},
+    above = {"BOTTOM", "TOP", 0, 2},
+    below = {"TOP", "BOTTOM", 0, -2},
 }
+-- The player's DIES offsets, in UI pixels, at most this far either way.
+local DIES_OFFSET_MAX = 200
 local DEFAULT_SIDE = {target = "left", plate = "right", row = "inside"}
 -- Above the bar's own texts: a tracker row's layer (+1) and slots (+2, their
 -- buttons +10), and the target frame's text frame.
 local DIES_LEVEL = 12
+-- The lifted badge's level above the clipping frame's parent: over
+-- EllesmereUI's text overlay (+20) and portrait (+15).
+local LIFT_LEVEL = 25
 -- Frame levels above the bar: a tracker row's name and texts are on a layer
 -- one above its health bar, so the block stays at the bar's own level there.
 local OVERLAY_LEVEL = {target = 1, plate = 1, row = 0}
@@ -351,6 +363,33 @@ end
 -- Whether a shown text of the bar (or its parent) is anchored just outside
 -- this edge of the bar: "right" is a text whose LEFT side is on the bar's
 -- RIGHT, "left" the mirror. Read from anchors only.
+-- On Forever, GetPoint raises an error on a restricted region ("Can't measure
+-- restricted regions": a text that shows a secret value, as Threat Plates'
+-- target-of-target; found in client, 2026-11-08). Such a text says nothing
+-- here, so its side stays free unless the adapter's `busy` says otherwise.
+local function TextOnEdge(region, bar, textEdge, barEdge)
+    if type(region) ~= "table" or type(region.GetObjectType) ~= "function"
+            or region:GetObjectType() ~= "FontString" or not region:IsShown() then
+        return false
+    end
+    if type(region.IsAnchoringRestricted) == "function" then
+        local restricted = region:IsAnchoringRestricted()
+        if IsSecret(restricted) or restricted then
+            return false
+        end
+    end
+    local count = region:GetNumPoints()
+    for index = 1, (not IsSecret(count) and type(count) == "number") and count or 0 do
+        local point, relative, relativePoint = region:GetPoint(index)
+        if not IsSecret(point) and not IsSecret(relative) and not IsSecret(relativePoint)
+                and relative == bar and type(point) == "string" and type(relativePoint) == "string"
+                and point:find(textEdge) and relativePoint:find(barEdge) then
+            return true
+        end
+    end
+    return false
+end
+
 local function TextOutside(owner, bar, side)
     if type(owner) ~= "table" or type(owner.GetRegions) ~= "function" then
         return false
@@ -358,17 +397,10 @@ local function TextOutside(owner, bar, side)
     local barEdge = side == "right" and "RIGHT$" or "LEFT$"
     local textEdge = side == "right" and "LEFT$" or "RIGHT$"
     for _, region in ipairs({owner:GetRegions()}) do
-        if type(region) == "table" and type(region.GetObjectType) == "function"
-                and region:GetObjectType() == "FontString" and region:IsShown() then
-            local count = region:GetNumPoints()
-            for index = 1, (not IsSecret(count) and type(count) == "number") and count or 0 do
-                local point, relative, relativePoint = region:GetPoint(index)
-                if not IsSecret(point) and not IsSecret(relative) and not IsSecret(relativePoint)
-                        and relative == bar and type(point) == "string" and type(relativePoint) == "string"
-                        and point:find(textEdge) and relativePoint:find(barEdge) then
-                    return true
-                end
-            end
+        -- pcall: a region the client restricts in a way the check above misses.
+        local ok, onEdge = pcall(TextOnEdge, region, bar, textEdge, barEdge)
+        if ok and onEdge then
+            return true
         end
     end
     return false
@@ -429,11 +461,27 @@ local function Anchor(overlay, bar, kind, info)
         overlay:SetReverseFill(not reverse)
     end
     overlay:SetFrameLevel(bar:GetFrameLevel() + OVERLAY_LEVEL[kind])
-    overlay.dies:SetFrameLevel(bar:GetFrameLevel() + (info and info.level or DIES_LEVEL))
+    local level = bar:GetFrameLevel() + (info and info.level or DIES_LEVEL)
+    local lifted = overlay.liftParent
+    if lifted and type(lifted.GetFrameLevel) == "function" then
+        local above = lifted:GetFrameLevel()
+        if type(above) == "number" and not IsSecret(above) then
+            level = math.max(level, above + LIFT_LEVEL)
+        end
+    end
+    overlay.dies:SetFrameLevel(level)
     -- The badge's size in UI units, whatever the bar's own scale.
-    local own, ui = overlay:GetEffectiveScale(), UIParent:GetEffectiveScale()
-    if type(own) == "number" and type(ui) == "number" and own > 0 and ui > 0 then
-        overlay.dies:SetScale(ui / own)
+    local own, ui = (overlay.holder or overlay):GetEffectiveScale(), UIParent:GetEffectiveScale()
+    local scale = type(own) == "number" and type(ui) == "number" and not IsSecret(own) and own > 0 and ui > 0
+        and ui / own
+    if scale then
+        overlay.dies:SetScale(scale)
+    end
+    if overlay.gate then
+        overlay.gate:SetFrameLevel(level)
+        if scale then
+            overlay.gate:SetScale(scale)
+        end
     end
 end
 
@@ -472,8 +520,26 @@ end
 
 -- The caller's look, repaired: fill "stripes", "solid", or "bar" (the bar's
 -- own texture); color {r, g, b}; opacity 0-100; outline "none" or "solid";
--- dies true or false; side nil, "left", "right", or "inside".
+-- dies true or false; side nil (the toolkit's choice), "left", "right",
+-- "inside", "center", "above", or "below"; x and y, the badge's offset from
+-- that place in UI pixels (right and up are positive).
 local DEFAULT_COLOR = {0.6, 0.2, 0.9}
+
+-- A whole offset within DIES_OFFSET_MAX, else 0.
+local function Offset(value)
+    if type(value) ~= "number" or IsSecret(value) or value ~= value then
+        return 0
+    end
+    return math.max(-DIES_OFFSET_MAX, math.min(DIES_OFFSET_MAX, math.floor(value + 0.5)))
+end
+
+-- The place moved by the player's offsets.
+local function Shifted(place, look)
+    if look.x == 0 and look.y == 0 then
+        return place
+    end
+    return {place[1], place[2], place[3] + look.x, place[4] + look.y}
+end
 
 local function Look(style)
     style = type(style) == "table" and style or {}
@@ -490,6 +556,8 @@ local function Look(style)
         outline = style.outline == "solid" and "solid" or "none",
         dies = style.dies ~= false,
         side = SIDES[style.side] and style.side or nil,
+        x = Offset(style.x),
+        y = Offset(style.y),
     }
 end
 
@@ -542,6 +610,71 @@ local function Edges(overlay, span)
     return edges
 end
 
+-- The DIES badge: the red skull and "DIES", size px tall.
+local function Badge(parent, size)
+    local dies = CreateFrame("Frame", nil, parent)
+    dies:EnableMouse(false)
+    local skull = dies:CreateTexture(nil, "OVERLAY")
+    skull:SetTexture(DIES_SKULL)
+    skull:SetVertexColor(DIES_COLOR[1], DIES_COLOR[2], DIES_COLOR[3])
+    skull:SetSize(size, size)
+    skull:SetPoint("LEFT", dies, "LEFT")
+    local label = dies:CreateFontString(nil, "OVERLAY")
+    label:SetFont(DIES_FONT, size, "THICKOUTLINE")
+    label:SetTextColor(DIES_COLOR[1], DIES_COLOR[2], DIES_COLOR[3])
+    label:SetShadowColor(0, 0, 0, 1)
+    label:SetShadowOffset(1, -1)
+    label:SetPoint("LEFT", skull, "RIGHT", DIES_GAP, 0)
+    label:SetText(DIES_TEXT)
+    dies.width, dies.height = size + DIES_GAP + label:GetStringWidth(), size
+    dies:SetSize(dies.width, dies.height)
+    dies.skull, dies.label = skull, label
+    return dies
+end
+
+-- A frame above the bar that cuts off its children (SetClipsChildren): the
+-- outermost one within LIFT_DEPTH steps, else nil. EllesmereUI's unit frames
+-- put the health bar in such a frame the size of the whole unit frame
+-- (EUI_UnitFrames_Layout.lua EnsureBarClip, 9.8.3), so a badge outside the
+-- bar never showed there (John's screenshot, 2026-11-09: block, no DIES).
+local LIFT_DEPTH = 6
+
+local function ClipAncestor(bar)
+    local outer
+    local frame = type(bar.GetParent) == "function" and bar:GetParent() or nil
+    for _ = 1, LIFT_DEPTH do
+        if type(frame) ~= "table" or frame == UIParent then
+            break
+        end
+        if type(frame.DoesClipChildren) == "function" then
+            local clips = frame:DoesClipChildren()
+            if not IsSecret(clips) and clips == true then
+                outer = frame
+            end
+        end
+        frame = type(frame.GetParent) == "function" and frame:GetParent() or nil
+    end
+    return outer
+end
+
+-- Where the badge and the gate live: the overlay, or, under a clipping
+-- frame, a holder on that frame's parent that shows and hides with the
+-- overlay (the overlay's OnShow and OnHide, also when its unit frame hides).
+local function BadgeHolder(overlay, bar)
+    local clip = ClipAncestor(bar)
+    if not clip then
+        return overlay
+    end
+    local parent = type(clip.GetParent) == "function" and clip:GetParent() or nil
+    local holder = CreateFrame("Frame", nil, parent or UIParent)
+    holder:EnableMouse(false)
+    holder:Hide()
+    overlay:HookScript("OnShow", function() holder:Show() end)
+    overlay:HookScript("OnHide", function() holder:Hide() end)
+    overlay.holder, overlay.liftParent = holder, parent
+    return holder
+end
+
 local function Overlay(bar, kind)
     local overlay = overlays[bar]
     if overlay then
@@ -557,40 +690,63 @@ local function Overlay(bar, kind)
     block:SetPoint("BOTTOMRIGHT", span, "BOTTOMRIGHT")
     overlay.block = block
     overlay.edges = Edges(overlay, span)
-    local size = DIES_SIZE[kind]
-    local dies = CreateFrame("Frame", nil, overlay)
-    dies:EnableMouse(false)
-    local skull = dies:CreateTexture(nil, "OVERLAY")
-    skull:SetTexture(DIES_SKULL)
-    skull:SetVertexColor(DIES_COLOR[1], DIES_COLOR[2], DIES_COLOR[3])
-    skull:SetSize(size, size)
-    skull:SetPoint("LEFT", dies, "LEFT")
-    local label = dies:CreateFontString(nil, "OVERLAY")
-    label:SetFont(DIES_FONT, size, "THICKOUTLINE")
-    label:SetTextColor(DIES_COLOR[1], DIES_COLOR[2], DIES_COLOR[3])
-    label:SetShadowColor(0, 0, 0, 1)
-    label:SetShadowOffset(1, -1)
-    label:SetPoint("LEFT", skull, "RIGHT", DIES_GAP, 0)
-    label:SetText(DIES_TEXT)
-    dies:SetSize(size + DIES_GAP + label:GetStringWidth(), size)
-    dies.skull, dies.label = skull, label
-    overlay.dies = dies
+    overlay.barKind = kind
+    overlay.dies = Badge(BadgeHolder(overlay, bar), DIES_SIZE[kind])
     overlay:Hide()
     overlays[bar] = overlay
     return overlay
 end
 
--- Puts the badge at {point, relativePoint, x, y} from the bar, once per change.
-local function PlaceDies(overlay, bar, place, strata)
+-- The DIES gate, for a secret health (Toolkit 2.6.0; WoW: Forever): Lua
+-- cannot compare the damage with the health there, so a widget does it. A
+-- clip frame the badge's size stands where the badge goes. In it, an
+-- invisible StatusBar GATE_LENGTH wide, its right edge on the clip frame's,
+-- has max = health and value = damage, and a second badge hangs on its
+-- fill's right edge. Only when the damage is at least the health does the
+-- fill reach the bar's end and put the badge in the window; 1% short moves
+-- it GATE_LENGTH / 100 px out of view. The method is Does It Die's
+-- (Joe Greive, v0.9.x, checked in client on Forever by John, 2026-11-08);
+-- the code is our own.
+local function Gate(overlay)
+    if overlay.gate then
+        return overlay.gate
+    end
+    local gate = CreateFrame("Frame", nil, overlay.holder or overlay)
+    if type(gate.SetClipsChildren) ~= "function" then
+        overlay.gate = false
+        return false
+    end
+    gate:SetClipsChildren(true)
+    gate:EnableMouse(false)
+    local badge = Badge(gate, DIES_SIZE[overlay.barKind])
+    local width, height = badge.width, badge.height
+    gate:SetSize(width, height)
+    local meter = CreateFrame("StatusBar", nil, gate)
+    meter:SetStatusBarTexture(WHITE)
+    meter:SetStatusBarColor(0, 0, 0, 0)
+    meter:EnableMouse(false)
+    meter:SetSize(GATE_LENGTH, height)
+    meter:SetPoint("RIGHT", gate, "RIGHT")
+    badge:ClearAllPoints()
+    badge:SetPoint("RIGHT", meter:GetStatusBarTexture(), "RIGHT")
+    gate.meter, gate.badge = meter, badge
+    gate:Hide()
+    overlay.gate = gate
+    return gate
+end
+
+-- Puts a badge frame (the badge, or the gate) at {point, relativePoint, x, y}
+-- from the bar, once per change.
+local function PlaceDies(frame, bar, place, strata)
     local key = table.concat({place[1], place[2], place[3], place[4], tostring(strata)}, ":")
-    if overlay.diesKey == key then
+    if frame.diesKey == key then
         return
     end
-    overlay.diesKey = key
-    overlay.dies:ClearAllPoints()
-    overlay.dies:SetPoint(place[1], bar, place[2], place[3], place[4])
+    frame.diesKey = key
+    frame:ClearAllPoints()
+    frame:SetPoint(place[1], bar, place[2], place[3], place[4])
     if strata then
-        overlay.dies:SetFrameStrata(strata)
+        frame:SetFrameStrata(strata)
     end
 end
 
@@ -618,14 +774,18 @@ end
 -- Draws the block for `damage` still to come on a bar showing `health`:
 -- kind "target", "plate", or "row"; style as Look above; info from
 -- FindPlateBar or FindUnitBar (its place and strata), or nil. Hides it for
--- no damage, a secret or no health, or a vertical bar. Returns whether DIES
--- shows, and the side it went on.
+-- no damage, no health, or a vertical bar. Returns whether DIES shows, and
+-- the side it went on. A secret health (WoW: Forever, 2.6.0) still draws: the
+-- StatusBars take it and compare it themselves (see Gate), so whether DIES
+-- shows is unknown to Lua and the first return is nil.
 function DyresToolkit.DrawPrediction(bar, kind, damage, health, style, info)
     if not bar or not DIES_SIZE[kind] then
         return false
     end
-    if IsSecret(damage) or type(damage) ~= "number" or damage <= 0 or IsSecret(health)
-            or type(health) ~= "number" or health <= 0 or Vertical(bar) or Suppressed(bar, info) then
+    local secret = IsSecret(health)
+    if IsSecret(damage) or type(damage) ~= "number" or damage <= 0
+            or (not secret and (type(health) ~= "number" or health <= 0)) or Vertical(bar)
+            or Suppressed(bar, info) then
         DyresToolkit.HidePrediction(bar)
         return false
     end
@@ -634,13 +794,37 @@ function DyresToolkit.DrawPrediction(bar, kind, damage, health, style, info)
     Anchor(overlay, bar, kind, info)
     Style(overlay, bar, look)
     overlay:SetMinMaxValues(0, health)
+    if secret then
+        -- The StatusBar clamps the value to its secret max.
+        overlay:SetValue(damage)
+        overlay.dies:Hide()
+        local gate = look.dies and Gate(overlay)
+        local side
+        if gate then
+            if not overlay.moved then
+                local place
+                place, side = DiesPlace(bar, kind, info, look.side)
+                PlaceDies(gate, bar, Shifted(place, look), info and info.strata)
+            end
+            gate.meter:SetMinMaxValues(0, health)
+            gate.meter:SetValue(damage)
+            gate:Show()
+        elseif overlay.gate then
+            overlay.gate:Hide()
+        end
+        overlay:Show()
+        return nil, side
+    end
+    if overlay.gate then
+        overlay.gate:Hide()
+    end
     overlay:SetValue(math.min(damage, health))
     local dies = look.dies and damage >= health
     local side
     if dies and not overlay.moved then
         local place
         place, side = DiesPlace(bar, kind, info, look.side)
-        PlaceDies(overlay, bar, place, info and info.strata)
+        PlaceDies(overlay.dies, bar, Shifted(place, look), info and info.strata)
     end
     overlay.dies:SetShown(dies)
     overlay:Show()
@@ -648,20 +832,22 @@ function DyresToolkit.DrawPrediction(bar, kind, damage, health, style, info)
 end
 
 -- A tracker row puts DIES where it wants it: place = {point, region,
--- relativePoint, x} (as WTF's rows), or nil for the bar's right end.
+-- relativePoint, x} (as WTF's rows), or nil for the bar's right end. The
+-- gate, for a secret health, goes to the same place.
 function DyresToolkit.MoveDies(bar, place)
     local overlay = bar and overlays[bar]
     if not overlay then
         return false
     end
-    overlay.diesKey = nil
-    overlay.dies:ClearAllPoints()
-    if place then
-        overlay.moved = true
-        overlay.dies:SetPoint(place[1], place[2], place[3], place[4], 0)
-    else
-        overlay.moved = nil
-        overlay.dies:SetPoint(SIDES.inside[1], bar, SIDES.inside[2], SIDES.inside[3], SIDES.inside[4])
+    overlay.moved = place and true or nil
+    for _, frame in ipairs({overlay.dies, overlay.gate or nil}) do
+        frame.diesKey = nil
+        frame:ClearAllPoints()
+        if place then
+            frame:SetPoint(place[1], place[2], place[3], place[4], 0)
+        else
+            frame:SetPoint(SIDES.inside[1], bar, SIDES.inside[2], SIDES.inside[3], SIDES.inside[4])
+        end
     end
     return true
 end

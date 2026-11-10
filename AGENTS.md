@@ -530,18 +530,22 @@ their other classes ("virality"):
   as TankHelper's threat display does. They are pooled and rebuilt when the
   known DoTs change.
 
-### DoT damage prediction (built 1.4.0, phase 1: Classic Era; John: "go")
+### DoT damage prediction (built 1.4.0: Classic Era; John: "go"; Forever since 1.6.0, Toolkit 2.6.0)
 
 Predict.lua. Research and John's rulings: the shared notes'
-wtf-dot-damage-prediction-research.md. Phase 2 (Forever, an estimate from
-your casts and `UNIT_COMBAT`, no DIES) is not built; it waits for John.
+wtf-dot-damage-prediction-research.md. Forever (John, 2026-11-08: "Yes, build
+it") is the Toolkit's hidden-ticks path: your casts and `UNIT_COMBAT`, with DIES
+drawn through secret health; design in ../DyresToolkit/docs/FOREVER_PREDICT.md.
+WTF needs no code for it: `predict.available` is true whenever
+`CreateDotPredictor` returns one (`predictor.hidden` on Forever).
 
 - Gated on APIs (the same gate as Dyre's Crit Mayhem): the combat log is used
   when `C_CombatLog.IsCombatLogRestricted` is absent or false and
   `C_CombatLog.GetCurrentEventInfo` (or the deprecated
-  `CombatLogGetCurrentEventInfo`) exists. Otherwise (Forever) Predict.lua
-  makes no frame and registers no event, and the three settings are greyed
-  (modify predicate) with "WoW: Forever support comes later".
+  `CombatLogGetCurrentEventInfo`) exists. Otherwise, the hidden-ticks path.
+  With neither (`HiddenTicksUsable` false, or Forever with a Toolkit before
+  2.6), no predictor is made and the settings are greyed (modify predicate);
+  their tooltips say Forever needs Dyre's Toolkit 2.6 or later.
 - By mob GUID, from `COMBAT_LOG_EVENT_UNFILTERED` with source you:
   `SPELL_AURA_APPLIED`/`REFRESH` start a DoT (a refresh starts its ticks
   over and keeps a learned tick of the same rank), `SPELL_PERIODIC_DAMAGE`
@@ -611,8 +615,8 @@ your casts and `UNIT_COMBAT`, no DIES) is not built; it waits for John.
 - Tracker rows are per GUID (John: "a row with no unit token still has the
   GUID's prediction"): where the prediction runs, a list row keeps the last
   readable health of its mob (`row.knownHealth`, dropped when the row gets
-  another mob) and shows it, with the block, while it has no unit. On
-  Forever (prediction off) such a row hides its health, as before. `Bind`
+  another mob) and shows it, with the block, while it has no unit. With a
+  secret last health (Forever in combat) such a row hides its health. `Bind`
   to the same unit still updates the health, so a reused row never keeps
   the old mob's.
 - Redrawn on its combat log events (also the tracker rows, through
@@ -652,7 +656,7 @@ your casts and `UNIT_COMBAT`, no DIES) is not built; it waits for John.
   and DoT expiry only. "Show Predictive DoT Damage" follows with
   `SetSourceEnabled` (at login too); turned off, WTF hides its blocks first,
   then steps aside and asks `Refresh(nil)` so the next source draws.
-  Registered only where the prediction runs (the combat log; Era).
+  Registered wherever a predictor is made.
 - Frame adapters (John, 1.4.0: ThreatPlates, Plater, then EllesmereUI; SUF
   next; since 1.4.1 the Toolkit's `FindPlateBar`/`FindUnitBar`, `UseBar`,
   `PrepareBar`, `DrawPrediction`, `HidePrediction`, and `MoveDies`; WTF
@@ -754,7 +758,8 @@ tells; the rule learns it, identically in MTF (keep the two the same):
   plate memory (`WTF.KnownPlate`, shared with the tracker, for secret plate
   GUIDs); never mouseover. A recast on the same mob keeps its row. A secret
   "can attack" or "dead" answer counts as a live hostile mob, a unit with a
-  secret GUID is skipped unless Core's plate memory knows its plate, and a
+  secret GUID locks by its plate memory, else its plate key (Toolkit 2.6.0's
+  `plateKey`, also for the DoT tracker; see the Toolkit's AGENTS.md), and a
   spell ID missing from the sets counts by its name (client-only cases, kept
   after a 1.3.1 report). `/wtf debug_control` reports `lastSent` (spell,
   target name, the unit locked, and each unit looked at: attack, dead,

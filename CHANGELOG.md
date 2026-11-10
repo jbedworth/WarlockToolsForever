@@ -4,6 +4,15 @@ Player-facing changes for each Warlock Tools Forever release, newest first. The
 release builder copies the section for the TOC version into the GitHub release
 notes and the CurseForge changelog, and fails if that section is missing.
 
+## 1.6.0
+
+### Features
+- WoW: Forever: Predictive DoT damage now works there, with Dyre's Toolkit 2.6 or later. The purple block and the red skull **DIES** show on your target, focus, nameplates, and DoT tracker rows, and the settings are no longer greyed out. The game hides the combat log and damage numbers in combat, so WTF follows your casts and the timing of each tick, and learns tick sizes from the damage meter after combat. In a group, another player's DoT of the same school and timing can count as yours, so the block can show too much. On a DoT tracker row on Forever, **DIES** shows just left of the health numbers, which stay; with no health text, at the right end of the health bar.
+- Choose where **DIES** shows: beside, centered on, above, or below the health bar, or inside its right end, and move it up to 100 pixels each way. One setting for your target and focus frames, one for nameplates, on the DoT Tracker page. Auto, the default, keeps today's place.
+
+### Fixes
+- In dungeons and raids, the DoT tracker's list of other mobs and the Control bar now show your mobs, with Dyre's Toolkit 2.6 or later. The game hides mob IDs there, so WTF follows each mob by its enemy nameplate. In those places, the list needs enemy nameplates on, and a row goes when the mob's nameplate goes.
+
 ## 1.5.0
 
 ### Fixes

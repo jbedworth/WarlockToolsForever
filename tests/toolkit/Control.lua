@@ -52,8 +52,9 @@ local DEFAULT_LOOK = {width = 200, header = 18, line = 16, icon = 14, padding = 
 -- hostile unit with its name in the order your own casts aim (focus, the mob
 -- under the mouse, your target, then a nameplate, with the plate memory for
 -- secret plate GUIDs); a focus-only spell on your focus alone.
-local DEFAULT_LOCK = {units = {"focus", "mouseover", "target", "plates"}, memory = true, secretHostile = true}
-local DEFAULT_FOCUS_LOCK = {units = {"focus"}, secretHostile = true}
+local DEFAULT_LOCK = {units = {"focus", "mouseover", "target", "plates"}, memory = true, secretHostile = true,
+    plateKey = true}
+local DEFAULT_FOCUS_LOCK = {units = {"focus"}, secretHostile = true, plateKey = true}
 
 -- A row click: the same spell on your focus, and nothing else (no marker, no
 -- targeting); with no focus it does nothing.
@@ -267,7 +268,7 @@ function DyresToolkit.CreateControlTracker(spec)
         local enabled = Enabled()
         local sample = not Locked()
         -- A focusBox spell on your focus shows in the box, not twice.
-        local focusGUID = focusBox and DyresToolkit.FocusWorks() and DyresToolkit.ReadGUID("focus")
+        local focusGUID = focusBox and DyresToolkit.FocusWorks() and DyresToolkit.MobKey("focus")
         if focusBox then
             local name = DyresToolkit.ReadName("focus")
             focusBox.display.name:SetText(sample and not name and "Focus (sample)" or ("Focus: " .. (name or "")))
@@ -419,13 +420,17 @@ function DyresToolkit.CreateControlTracker(spec)
         Step()
     end
 
-    local function Rebind()
+    -- focusChanged: PLAYER_FOCUS_CHANGED, not a plate event. A mob locked by
+    -- its plate key has no GUID to compare, and its focus can lose and regain
+    -- a plate under another token, so only a new focus ends that row.
+    local function Rebind(focusChanged)
         for _, row in ipairs(tracker.rows) do
             if row.focusOnly then
                 -- Your focus is no longer the mob: another mob, or none. A
                 -- focus whose GUID is secret stays (it cannot be told apart).
                 local guid = DyresToolkit.ReadGUID("focus")
-                if not UnitExists("focus") or (guid and guid ~= row.guid) or DyresToolkit.IsDead("focus") then
+                if not UnitExists("focus") or (guid and guid ~= row.guid) or DyresToolkit.IsDead("focus")
+                    or (focusChanged and DyresToolkit.KeyPlate(row.guid)) then
                     Forget(row)
                 end
             elseif row.guid then
@@ -865,6 +870,10 @@ function DyresToolkit.CreateControlTracker(spec)
             return
         end
         local spell = tracker.kinds[cast.spellID]
+        if not unit and DyresToolkit.KeyPlate(guid) and not (spell.click and DyresToolkit.FocusWorks()) then
+            tracker.lastLanded = "its nameplate went"
+            return
+        end
         local row = RowFor(guid, cast.target, spell)
         if row then
             Track(row, guid, cast.target, spell, DyresToolkit.SpellName(cast.spellID))
@@ -948,6 +957,21 @@ function DyresToolkit.CreateControlTracker(spec)
     events:SetScript("OnEvent", function(_, event, unit, first, second, third)
         if event == "NAME_PLATE_UNIT_ADDED" or event == "NAME_PLATE_UNIT_REMOVED" then
             if not DyresToolkit.IsSecret(unit) then
+                -- Its token may show another mob next, so a row or a cast
+                -- keyed by it goes now (your focus's row stays on "focus").
+                if event == "NAME_PLATE_UNIT_REMOVED" then
+                    local key = "plate:" .. unit
+                    for _, cast in pairs(tracker.casts) do
+                        if cast.guid == key then
+                            cast.guid = nil
+                        end
+                    end
+                    for _, row in ipairs(tracker.rows) do
+                        if row.guid == key and not row.focusOnly then
+                            Forget(row)
+                        end
+                    end
+                end
                 DyresToolkit.ForgetPlate(unit)
             end
             if event == "NAME_PLATE_UNIT_ADDED" then
@@ -958,7 +982,10 @@ function DyresToolkit.CreateControlTracker(spec)
             else
                 DetachTimer(unit)
             end
+            -- Layout too: a row bound to the plate just now drops its
+            -- countdown text at once, not on the next tick.
             Rebind()
+            Layout()
             return
         end
         if event == "UNIT_PET" then
@@ -974,7 +1001,9 @@ function DyresToolkit.CreateControlTracker(spec)
             -- By GUID: the death can come through any unit that shows the mob.
             local guid = not DyresToolkit.IsSecret(unit) and DyresToolkit.ReadGUID(unit)
             for _, row in ipairs(tracker.rows) do
-                if guid and row.guid == guid and DyresToolkit.IsDead(unit) then
+                local same = (guid and row.guid == guid)
+                    or (DyresToolkit.KeyPlate(row.guid) and row.boundUnit == unit)
+                if same and DyresToolkit.IsDead(unit) then
                     Forget(row)
                 end
             end
@@ -1017,7 +1046,7 @@ function DyresToolkit.CreateControlTracker(spec)
             end
             -- Your target or focus changed: learn its plate before rebinding.
             DyresToolkit.LearnPlates()
-            Rebind()
+            Rebind(event == "PLAYER_FOCUS_CHANGED")
             Layout()
         end
     end)
@@ -1042,14 +1071,21 @@ function DyresToolkit.CreateControlTracker(spec)
         ApplyClicks()
     end
 
-    -- A new look (sizes, text size, opacity): the rows' regions at once, the
-    -- engine slots rebuilt out of combat (in combat, when it ends).
-    function tracker:Rebuild()
+    -- A new look on the rows' regions only, at once, also in combat; no
+    -- engine slot is rebuilt. For a settings slider's every step: call
+    -- Rebuild once the slider stops.
+    function tracker:ApplyLook()
         local look = Look()
         for _, row in ipairs(self.rows) do
             ApplyLook(row, look)
         end
         Layout()
+    end
+
+    -- A new look (sizes, text size, opacity): the rows' regions at once, the
+    -- engine slots rebuilt out of combat (in combat, when it ends).
+    function tracker:Rebuild()
+        self:ApplyLook()
         DyresToolkit.OutOfCombat(self.rows, function()
             local current = Look()
             for _, row in ipairs(self.rows) do

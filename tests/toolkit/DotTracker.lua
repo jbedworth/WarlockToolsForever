@@ -15,6 +15,9 @@ local DyresToolkit = ns.toolkit
 -- sees the timers. It knows only which mobs you cast on, from your own cast
 -- events: the mob is locked as the cast starts (target first) and listed when
 -- it lands. A dimmed icon sits behind each slot, so a missing spell shows dim.
+-- A row's `guid` is the mob's key: its GUID, else "plate:nameplateN" where GUIDs
+-- are secret (instances), so there the list needs enemy nameplates, and a row
+-- goes with its plate.
 --
 -- Two themes: Compact (a row with the name and an icon per spell) and Bars (a
 -- block per mob, its name above one bar line per spell). Pinned rows' slots
@@ -63,7 +66,10 @@ local PANEL_COLORS = {target = "ff8787ed", focus = "ffe61a1a", list = "ff545454"
 -- nameplate first; a cast locked on the first unit with its name, target
 -- first, stopping at the first unit of that name, alive or dead.
 local DEFAULT_FIND = {"plates", "memory", "target", "focus"}
-local DEFAULT_LOCK = {units = {"target", "focus", "mouseover", "plates"}, stopAtName = true, allowDead = true}
+-- A secret GUID locks by the plate key, and a secret "can attack" is yes: a
+-- DoT cast goes only to a mob you can attack (instances; WTF player reports).
+local DEFAULT_LOCK = {units = {"target", "focus", "mouseover", "plates"}, stopAtName = true, allowDead = true,
+    plateKey = true, secretHostile = true}
 
 -- "aarrggbb" to r, g, b (0-1); white for anything else.
 function DyresToolkit.HexColor(hex)
@@ -455,11 +461,11 @@ function DyresToolkit.CreateDotTracker(spec)
         return predictor ~= nil and predictor:Available()
     end
 
-    local function DrawRow(bar, guid, health, place)
+    local function DrawRow(bar, guid, health, place, secretPlace)
         if not predictor then
             return false
         end
-        return predictor:DrawRow(bar, guid, health, place)
+        return predictor:DrawRow(bar, guid, health, place, secretPlace)
     end
 
     -- The health a row's bar last showed, when readable (Classic Era): a list
@@ -474,11 +480,17 @@ function DyresToolkit.CreateDotTracker(spec)
 
     -- Where DIES goes on a row: in place of the health number (hidden while
     -- DIES shows); with the percent only, just left of it; else the bar's end.
+    -- Then where it goes while the health is secret (WoW: Forever in combat):
+    -- the numbers stay, so DIES goes just left of the first of them, in the
+    -- room between the name and its texts (John's screenshot, 2026-11-09:
+    -- "43% |4DIES"); without texts, the bar's end.
     local function RowDiesPlace(row)
+        local first = row.healthPercent or row.healthNumber
+        local secret = first and {"RIGHT", first, "LEFT", -2} or nil
         if row.healthNumber then
-            return {"LEFT", row.healthNumber, "LEFT", 0}
+            return {"LEFT", row.healthNumber, "LEFT", 0}, secret
         elseif row.healthPercent then
-            return {"RIGHT", row.healthPercent, "LEFT", -2}
+            return {"RIGHT", row.healthPercent, "LEFT", -2}, secret
         end
     end
 
@@ -505,11 +517,12 @@ function DyresToolkit.CreateDotTracker(spec)
             bar:SetMinMaxValues(0, known.max)
             bar:SetValue(known.health)
             bar:Show()
-            DrawRow(bar, row.guid, known.health, RowDiesPlace(row))
+            local place, secretPlace = RowDiesPlace(row)
+            DrawRow(bar, row.guid, known.health, place, secretPlace)
             return
         end
         local health, maxHealth = UnitHealth(unit), UnitHealthMax(unit)
-        local guid = row.guid or DyresToolkit.ReadGUID(unit)
+        local guid = row.guid or (predictor and predictor.Key and predictor.Key(unit)) or DyresToolkit.ReadGUID(unit)
         if guid and PredictAvailable() and not DyresToolkit.IsSecret(health) and type(health) == "number"
                 and not DyresToolkit.IsSecret(maxHealth) and type(maxHealth) == "number" then
             row.knownHealth = {guid = guid, health = health, max = maxHealth}
@@ -519,7 +532,8 @@ function DyresToolkit.CreateDotTracker(spec)
         bar:SetMinMaxValues(0, maxHealth)
         bar:SetValue(health)
         bar:Show()
-        local dies = DrawRow(bar, guid, health, RowDiesPlace(row))
+        local place, secretPlace = RowDiesPlace(row)
+        local dies = DrawRow(bar, guid, health, place, secretPlace)
         if row.healthPercent then
             row.healthPercent:SetText(PercentText(unit, row.healthNumber ~= nil and not dies))
         end
@@ -888,6 +902,22 @@ function DyresToolkit.CreateDotTracker(spec)
         end
     end
 
+    -- A plate went: its token may show another mob next, so a row or a cast
+    -- keyed by it goes now.
+    local function DropPlateKey(unit)
+        local key = "plate:" .. unit
+        for _, cast in pairs(tracker.casts) do
+            if cast.guid == key then
+                cast.guid = nil
+            end
+        end
+        for _, row in ipairs(tracker.rows) do
+            if row.guid == key then
+                RemoveRow(row)
+            end
+        end
+    end
+
     local function ScheduleUnseenCheck()
         C_Timer.After(UNSEEN_SECONDS + 0.1, function()
             if InCombatLockdown() then
@@ -957,7 +987,7 @@ function DyresToolkit.CreateDotTracker(spec)
                 row.name:SetText(ReadName(PINNED[key].unit))
             end
         end
-        local target, focus = DyresToolkit.ReadGUID("target"), DyresToolkit.ReadGUID("focus")
+        local target, focus = DyresToolkit.MobKey("target"), DyresToolkit.MobKey("focus")
         tracker.shownTarget, tracker.shownFocus = target, focus
         local listed = {}
         for _, row in ipairs(tracker.rows) do
@@ -1004,8 +1034,12 @@ function DyresToolkit.CreateDotTracker(spec)
         if tracker.dead[guid] or not Enabled() then
             return
         end
+        local token = DyresToolkit.KeyPlate(guid)
+        if token and not UnitExists(token) then
+            return
+        end
         for _, row in ipairs(tracker.rows) do
-            if row.guid == guid then
+            if row.guid == guid or (token and row.guid and row.boundUnit == token) then
                 return
             end
         end
@@ -1055,15 +1089,29 @@ function DyresToolkit.CreateDotTracker(spec)
         end
     end
 
+    -- The mob and name a cast goes to. A secret name on either side cannot
+    -- decide, so your target it is (a row's text takes a secret name).
+    local function LockMob(target)
+        local guid = DyresToolkit.LockCast(target, spec.lock or DEFAULT_LOCK)
+        if guid then
+            return guid, target
+        end
+        local targetName = UnitName("target")
+        if DyresToolkit.IsSecret(target) or DyresToolkit.IsSecret(targetName) then
+            return DyresToolkit.MobKey("target"), targetName
+        end
+    end
+
     local function OnCastSent(target, castGUID, spellID)
-        if DyresToolkit.IsSecret(spellID) or DyresToolkit.IsSecret(target) or DyresToolkit.IsSecret(castGUID)
-            or type(target) ~= "string" or target == "" then
+        if DyresToolkit.IsSecret(spellID) or DyresToolkit.IsSecret(castGUID)
+            or (not DyresToolkit.IsSecret(target) and (type(target) ~= "string" or target == "")) then
             return
         end
         tracker.lastCast = {spellID = spellID, slot = tracker.spellSlots[spellID]}
         if tracker.spellSlots[spellID] then
-            local guid = DyresToolkit.LockCast(target, spec.lock or DEFAULT_LOCK)
-            tracker.casts[castGUID] = {target = target, spellID = spellID, guid = guid}
+            local guid, mobName = LockMob(target)
+            tracker.lastCast.key = guid and (DyresToolkit.KeyPlate(guid) and "plate" or "guid") or "none"
+            tracker.casts[castGUID] = {target = mobName, spellID = spellID, guid = guid}
         end
     end
 
@@ -1260,6 +1308,7 @@ function DyresToolkit.CreateDotTracker(spec)
             local oldTarget, oldFocus = tracker.shownTarget, tracker.shownFocus
             if event == "NAME_PLATE_UNIT_REMOVED" and not DyresToolkit.IsSecret(unit) then
                 NoteDeath(unit)
+                DropPlateKey(unit)
                 DyresToolkit.ForgetPlate(unit)
             elseif event == "NAME_PLATE_UNIT_ADDED" and not DyresToolkit.IsSecret(unit) then
                 DyresToolkit.ForgetPlate(unit)
@@ -1270,7 +1319,7 @@ function DyresToolkit.CreateDotTracker(spec)
             RefreshBindings()
             -- Your target or focus just left with no unit showing the mob:
             -- most likely dead, so it is not listed until a unit shows it.
-            local target, focus = DyresToolkit.ReadGUID("target"), DyresToolkit.ReadGUID("focus")
+            local target, focus = DyresToolkit.MobKey("target"), DyresToolkit.MobKey("focus")
             for _, row in ipairs(tracker.rows) do
                 if row.guid and (row.guid == oldTarget or row.guid == oldFocus) and row.guid ~= target
                         and row.guid ~= focus and row.boundUnit == "none" then
@@ -1360,8 +1409,9 @@ function DyresToolkit.CreateDotTracker(spec)
         end
         local last = self.lastCast
         if last then
-            lines[#lines + 1] = string.format("lastCast spell=%d name=%s slot=%s", last.spellID,
-                tostring(DyresToolkit.SpellName(last.spellID)), tostring(last.slot))
+            lines[#lines + 1] = string.format("lastCast spell=%d name=%s slot=%s%s", last.spellID,
+                tostring(DyresToolkit.SpellName(last.spellID)), tostring(last.slot),
+                last.key and (" mob=" .. last.key) or "")
         end
         local shown, readable, known, targetPlate = 0, 0, 0, "none"
         for index = 1, MAX_NAMEPLATE_UNITS do
@@ -1380,9 +1430,9 @@ function DyresToolkit.CreateDotTracker(spec)
             shown, readable, known, targetPlate, tostring(DyresToolkit.ReadGUID("target") ~= nil))
         for index, row in ipairs(self.rows) do
             if row.guid then
-                lines[#lines + 1] = string.format("row %d name=%s unit=%s unseen=%s held=%s", index,
-                    tostring(row.mobName), tostring(row.boundUnit), tostring(row.unseenSince ~= nil),
-                    tostring(row.held == true))
+                lines[#lines + 1] = string.format("row %d name=%s key=%s unit=%s unseen=%s held=%s", index,
+                    DyresToolkit.Describe(row.mobName), DyresToolkit.KeyPlate(row.guid) and "plate" or "guid",
+                    tostring(row.boundUnit), tostring(row.unseenSince ~= nil), tostring(row.held == true))
             end
         end
         return lines

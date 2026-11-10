@@ -22,9 +22,10 @@ local DyresToolkit = ns.toolkit
 --   base damage without spell power, for the first guess before ticks are
 --   learned.
 -- families: interval (seconds between ticks), school (for
---   GetSpellBonusDamage), coefficient (share of spell power, default
---   duration / 15 at most 1), weights (each tick's share of the average, by
---   tick; the last weight holds after the list).
+--   GetSpellBonusDamage; its mask, for UNIT_COMBAT, is 2 ^ (school - 1)),
+--   coefficient (share of spell power, default duration / 15 at most 1),
+--   weights (each tick's share of the average, by tick; the last weight
+--   holds after the list), direct (the spell also hits once).
 -- control: crowd-control spells. key, label, ids, longest (seconds), bar
 --   (tracked on the control bar), marker (default raid marker), click (a
 --   row click recasts on your focus), plateTimer (a timer under the mob's
@@ -86,7 +87,9 @@ DyresToolkit.ClassData = {
         families = {
             corruption = {interval = 3, school = 6},
             agony = {interval = 2, school = 6, weights = AGONY_WEIGHTS},
-            immolate = {interval = 3, school = 3, coefficient = 0.65},
+            -- direct: it also hits, so the damage meter's total is not its
+            -- ticks alone (DotPredict learns no tick from it on Forever).
+            immolate = {interval = 3, school = 3, coefficient = 0.65, direct = true},
             siphon = {interval = 3, school = 6, coefficient = 0.5},
         },
         familyOrder = {"corruption", "agony", "immolate", "siphon"},

@@ -1,10 +1,13 @@
 local _, WTF = ...
 
--- DoT damage prediction (John, 1.4.0: phase 1, Classic Era only): a purple
+-- DoT damage prediction (John, 1.4.0; on Forever since Toolkit 2.6.0): a purple
 -- block on the health bar of your target, of each hostile nameplate, and of
 -- each DoT tracker row with mob health on, the size of the damage your DoTs
 -- still have to deal, and "DIES" when that is at least the mob's health. It
--- needs the combat log, so on Forever (restricted) nothing is made. Since
+-- reads the combat log; where that is restricted (Forever), the Toolkit's
+-- hidden-ticks path reads your casts and UNIT_COMBAT, and the predictor's
+-- `hidden` is true. With neither (Forever with a Toolkit before 2.6), nothing
+-- is made and the settings are greyed. Since
 -- 1.5.0 the engine is Dyre's Toolkit's (DotPredict.lua's CreateDotPredictor,
 -- 2.5.0, moved from here; its header holds the rules), a HealthBars damage
 -- source at priority 10 (Dyre's Debuff Tracker draws above it). WTF keeps its
@@ -63,7 +66,7 @@ end
 -- came from (learned, saved, or guessed), and the damage to come.
 function WTF.ReportPredictDebug()
     if not predict.available then
-        WTF.Report("DoT prediction: off on this client (it needs the combat log, as on Classic Era).")
+        WTF.Report("DoT prediction: off on this client (on WoW: Forever it needs Dyre's Toolkit 2.6 or later).")
         return
     end
     for index, line in ipairs(WTF.predictor:DebugLines()) do

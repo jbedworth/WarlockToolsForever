@@ -442,9 +442,10 @@ local function AddPanelSection(page, layout, panel, colors)
     AddDefaultTick(initializer, WTF.PANEL_OPACITY_MIN, WTF.PANEL_OPACITY_MAX, WTF.DEFAULT_PANEL_OPACITY)
 end
 
--- DoT damage prediction (John, 1.4.0): greyed where the client has no combat
--- log for it (Forever, until phase 2); saved values stay as they are.
-local PREDICT_NEEDS = " Needs the combat log, as on Classic Era; WoW: Forever support comes later."
+-- DoT damage prediction (John, 1.4.0): greyed where the Toolkit makes no
+-- predictor (WoW: Forever with a Toolkit before 2.6, which reads the combat log
+-- only); saved values stay as they are.
+local PREDICT_NEEDS = " On WoW: Forever this needs Dyre's Toolkit 2.6 or later."
 
 local function AddPredictSection(page, layout)
     Heading(layout, "DoT damage prediction", "A purple block on the health bar for the damage your DoTs "
@@ -456,7 +457,8 @@ local function AddPredictSection(page, layout)
         "Predictive DoT damage: a purple block on your target's health bar, ending where its health ends, "
             .. "and, with Show mob health on, on each DoT tracker row's, for the damage your "
             .. "Corruption, Curse of Agony, Immolate, and Siphon Life still have to deal. Each DoT's tick is "
-            .. "learned from its first tick; until then it is a guess from its rank and your spell power."
+            .. "learned from its first tick (on WoW: Forever, from the damage meter after combat); until then "
+            .. "it is a guess from its rank and your spell power."
             .. PREDICT_NEEDS, Refresh)
     local plates = Flag(page, "WTF_PREDICT_PLATES", "Also on nameplates", "predict", "plates", true,
         "The same block on each hostile nameplate's health bar." .. PREDICT_NEEDS, Refresh)
@@ -498,10 +500,47 @@ local function AddPredictSection(page, layout)
     AddDefaultTick(opacity, WTF.PREDICT_OPACITY_MIN, WTF.PREDICT_OPACITY_MAX, WTF.DEFAULT_PREDICT_OPACITY)
     local outline = Choice("WTF_PREDICT_OUTLINE", "Block outline", "outline", WTF.PREDICT_OUTLINES, "solid",
         "A thin line around the block, a little lighter than its color.")
+    -- Where DIES goes (John, 2026-11-09): a place and X and Y offsets for the
+    -- target and focus frames, and the same for nameplates.
+    local function Offset(variable, name, key, tooltip)
+        local setting = Proxy(page, variable, Settings.VarType.Number, name, 0,
+            function() return WTF.db.predict[key] end,
+            function(value)
+                WTF.db.predict[key] = WTF.SanitizeWhole(value, WTF.DIES_OFFSET_MIN, WTF.DIES_OFFSET_MAX, 0)
+                Refresh()
+            end)
+        local initializer = Settings.CreateSlider(page, setting,
+            SliderOptions(WTF.DIES_OFFSET_MIN, WTF.DIES_OFFSET_MAX, 1), tooltip .. PREDICT_NEEDS)
+        AddDefaultTick(initializer, WTF.DIES_OFFSET_MIN, WTF.DIES_OFFSET_MAX, 0)
+        return initializer
+    end
+    local PLACE_TIP = "Auto puts it beside the bar, on a side nothing else uses. Center puts it in the middle of "
+        .. "the bar."
+    local diesPlace = Choice("WTF_PREDICT_DIES_PLACE", "DIES place: target and focus", "diesPlace",
+        WTF.DIES_PLACES, "auto", "Where DIES shows on your target and focus frames. " .. PLACE_TIP)
+    local diesX = Offset("WTF_PREDICT_DIES_X", "DIES left/right: target and focus", "diesX",
+        "Moves DIES on your target and focus frames, in pixels: up to 100 left or right.")
+    local diesY = Offset("WTF_PREDICT_DIES_Y", "DIES down/up: target and focus", "diesY",
+        "Moves DIES on your target and focus frames, in pixels: up to 100 down or up.")
+    local plateDiesPlace = Choice("WTF_PREDICT_PLATE_DIES_PLACE", "DIES place: nameplates", "plateDiesPlace",
+        WTF.DIES_PLACES, "auto", "Where DIES shows on nameplates. " .. PLACE_TIP)
+    local plateDiesX = Offset("WTF_PREDICT_PLATE_DIES_X", "DIES left/right: nameplates", "plateDiesX",
+        "Moves DIES on nameplates, in pixels: up to 100 left or right.")
+    local plateDiesY = Offset("WTF_PREDICT_PLATE_DIES_Y", "DIES down/up: nameplates", "plateDiesY",
+        "Moves DIES on nameplates, in pixels: up to 100 down or up.")
+    local function DiesOn() return WTF.db.predict.enabled and WTF.db.predict.dies end
+    local function PlateDiesOn() return DiesOn() and WTF.db.predict.plates end
+    for _, initializer in ipairs({diesPlace, diesX, diesY}) do
+        initializer:SetParentInitializer(dies, DiesOn)
+    end
+    for _, initializer in ipairs({plateDiesPlace, plateDiesX, plateDiesY}) do
+        initializer:SetParentInitializer(dies, PlateDiesOn)
+    end
     for _, initializer in ipairs({fill, color, opacity, outline}) do
         initializer:SetParentInitializer(enabled, function() return WTF.db.predict.enabled end)
     end
-    for _, initializer in ipairs({enabled, plates, dies, fill, color, opacity, outline}) do
+    for _, initializer in ipairs({enabled, plates, dies, fill, color, opacity, outline, diesPlace, diesX, diesY,
+            plateDiesPlace, plateDiesX, plateDiesY}) do
         if type(initializer.AddModifyPredicate) == "function" then
             initializer:AddModifyPredicate(function() return WTF.PredictAvailable() end)
         end

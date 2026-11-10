@@ -217,7 +217,7 @@ the automated test method, and the in-client checklist.
   BetterBlizzFrames' smooth bars: not named in John's tests.
 - EllesmereUI is Forever and Retail only, and John uses it on Forever: its
   nameplates and target frame (paths from Does It Die only) wait for the
-  prediction's phase 2 on Forever.
+  Forever check below.
 
 1. Restrictions in instances and during encounters.
 2. Whether the tracker's engine slots show timers in combat with the
@@ -536,6 +536,14 @@ and printing.
       nameplates (each frame AddOn), and DoT tracker rows, where it stands
       out from the row's own purple health. Each Block fill, color, opacity,
       and outline choice changes every block at once, also in combat.
+- [ ] WTF 1.6.0 with Dyre's Toolkit 2.6.0, Forever: the prediction settings
+      are not greyed, and `/wtf debug_predict` says hidden ticks. The block
+      and DIES on your target, focus, nameplates (also EllesmereUI's), and
+      DoT tracker rows, solo and in a group; on a row, DIES at the bar's right
+      end with the health numbers kept. No taint or blocked-action popup.
+      After two fights, ticks learned from the damage meter. With Dyre's
+      Toolkit 2.5, the settings are greyed and their tooltips name 2.6. Era
+      unchanged.
 - [ ] WTF 1.5.0 with Dyre's Toolkit 2.5.0 (the engines), Classic Era first,
       then Forever (the launch taint check above, now for the Toolkit's
       engine frames): everything as in 1.4.1. Frames stay where they were;

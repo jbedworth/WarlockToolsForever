@@ -1179,6 +1179,8 @@ local function fixture(options)
         end
         -- options.sharedMissing: a function an older Toolkit lacks.
         if options.sharedMissing then shared[options.sharedMissing] = nil end
+        -- options.noHiddenTicks: no predictor where the combat log is restricted.
+        if options.noHiddenTicks then shared.HiddenTicksUsable = function() return false end end
     end
     for index = before + 1, #state.frames do
         state.sharedFrames[state.frames[index]] = true
@@ -5866,8 +5868,17 @@ test("list rows show their mob's health while bound, and hide it without a unit"
     equal(row.healthPercent.text, "25%")
     state.units.nameplate4 = nil
     state.emit("NAME_PLATE_UNIT_REMOVED", "nameplate4")
-    equal(row.health.shown, false, "no unit: no health")
+    equal(row.health.shown, true, "no unit: the last readable health stays, with the prediction")
     equal(row.healthPercent.text, "")
+    -- A secret last health (Forever in combat) is not kept.
+    local secret = healthFixture("percent")
+    dot(secret, 6222, "Wolf")
+    local secretRow = shownRows(secret)[1]
+    secret.units.nameplate4.secretHealth = true
+    secret.emit("UNIT_HEALTH", "nameplate4")
+    secret.units.nameplate4 = nil
+    secret.emit("NAME_PLATE_UNIT_REMOVED", "nameplate4")
+    equal(secretRow.health.shown, false, "no unit: no health")
 end)
 test("without UnitHealthPercent the percent text stays empty", function()
     local state = healthFixture("percent", {noHealthPercent = true})
@@ -6170,8 +6181,25 @@ local function tick(state, spellID, name, amount, guid)
     state.log("SPELL_PERIODIC_DAMAGE", ME, guid or BOAR, "Boar", spellID, name, amount)
 end
 
-test("prediction: without the combat log (Forever) nothing registers, and the settings are greyed", function()
+test("prediction: without the combat log (Forever) the hidden-ticks path runs, and the settings are on", function()
     local state = predictFixture({combatLogRestricted = true, restrictCombatLog = true})
+    equal(state.wtf.PredictAvailable(), true)
+    equal(state.wtf.predictor.hidden, true)
+    for _, variable in ipairs({"WTF_PREDICT_ENABLED", "WTF_PREDICT_PLATES", "WTF_PREDICT_DIES"}) do
+        for _, object in ipairs(state.categories["DoT Tracker"].initializers) do
+            if object.setting.variable == variable then
+                equal(object.modifyPredicates[1](), true, variable .. " not greyed")
+                equal(object.tooltip:find("comes later", 1, true), nil, variable .. " says nothing false")
+            end
+        end
+    end
+    state.slash("debug_predict")
+    contains(table.concat(state.messages, "\n"), "hidden ticks")
+    equal(state.env.DyresToolkit.HealthBars.IsActiveSource("WarlockToolsForever"), true, "the source, at 10")
+end)
+
+test("prediction: with neither path nothing registers, and the settings are greyed", function()
+    local state = predictFixture({combatLogRestricted = true, restrictCombatLog = true, noHiddenTicks = true})
     equal(state.wtf.PredictAvailable(), false)
     apply(state, 6222, "Corruption")
     equal(targetOverlay(state), nil, "no block")
@@ -6181,12 +6209,10 @@ test("prediction: without the combat log (Forever) nothing registers, and the se
             if object.setting.variable == variable then initializer = object end
         end
         equal(initializer.modifyPredicates[1](), false, variable .. " greyed")
-        contains(initializer.tooltip, "WoW: Forever support comes later")
+        contains(initializer.tooltip, "Dyre's Toolkit 2.6 or later")
     end
     state.slash("debug_predict")
     contains(state.last(), "off on this client")
-    local plain = fixture()
-    equal(plain.wtf.PredictAvailable(), false, "no combat log reader: off too")
 end)
 
 test("prediction: a guess from rank and spell power, then each tick learned, ending at the fill", function()
@@ -6314,7 +6340,7 @@ test("prediction: the switches hide it, the nameplates on their own; a friend or
     equal(shownDamage(plateOverlay(state, "nameplate3")), 90)
     state.units.target.secretHealth = true
     state.emit("UNIT_HEALTH", "target")
-    equal(shownDamage(targetOverlay(state)), nil, "a secret health: nothing")
+    equal(shownDamage(targetOverlay(state)), 90, "a secret health still draws: the bar clamps it, not Lua")
     state.units.target = {name = "Dyre", guid = BOAR, friend = true}
     state.emit("PLAYER_TARGET_CHANGED")
     equal(shownDamage(targetOverlay(state)), nil, "not a mob you can attack")
@@ -6629,11 +6655,12 @@ test("prediction: tracker rows need both Show mob health and Show Predictive DoT
     equal(shownDamage(targetOverlay(neither)), nil, "both off: nothing")
 end)
 
-test("prediction: no block on Forever rows; Forever rows keep hiding health with no unit", function()
+test("prediction: Forever rows with a secret health hide it with no unit", function()
     local forever = trackerPredictFixture({combatLogRestricted = true, restrictCombatLog = true})
     dot(forever, 6222, "Wolf")
     local row = shownRows(forever)[1]
-    equal(rowOverlay(forever, row), nil)
+    forever.units.nameplate4.secretHealth = true
+    forever.emit("UNIT_HEALTH", "nameplate4")
     forever.units.nameplate4 = nil
     forever.emit("NAME_PLATE_UNIT_REMOVED", "nameplate4")
     equal(row.health.shown, false, "no unit: no health, as before")
@@ -7004,7 +7031,7 @@ test("block style: on a bar of the same color the block is lighter; other colors
     near(overlay.block.vertex[1], 0.64, "the bar turned green: the preset again")
 end)
 
-test("block style: settings are repaired and greyed on Forever", function()
+test("block style: settings are repaired and greyed with no predictor", function()
     local state = predictFixture({db = {predict = {fill = "glitter", color = "blue", opacity = 5, outline = 1}}})
     local predict = state.wtf.db.predict
     equal(predict.fill, "stripes")
@@ -7014,7 +7041,7 @@ test("block style: settings are repaired and greyed on Forever", function()
     local kept = predictFixture({db = {predict = {fill = "bar", color = "white", opacity = 35, outline = "none"}}})
     equal(kept.wtf.db.predict.fill, "bar")
     equal(kept.wtf.db.predict.opacity, 35)
-    local forever = predictFixture({combatLogRestricted = true, restrictCombatLog = true})
+    local forever = predictFixture({combatLogRestricted = true, restrictCombatLog = true, noHiddenTicks = true})
     for _, object in ipairs(forever.categories["DoT Tracker"].initializers) do
         local variable = object.setting.variable
         if variable:match("^WTF_PREDICT_") then
@@ -7022,6 +7049,26 @@ test("block style: settings are repaired and greyed on Forever", function()
         end
     end
     equal(forever.settings.WTF_PREDICT_OPACITY.default, 70)
+end)
+
+test("DIES place and offsets: Auto and 0 by default, repaired, and saved from the settings", function()
+    local state = predictFixture({db = {predict = {diesPlace = "moon", diesX = 500, diesY = 1.5,
+        plateDiesPlace = "center", plateDiesX = -7}}})
+    local predict = state.wtf.db.predict
+    equal(predict.diesPlace, "auto", "an unknown place")
+    equal(predict.diesX, 100, "at most 100")
+    equal(predict.diesY, 0, "not whole")
+    equal(predict.plateDiesPlace, "center")
+    equal(predict.plateDiesX, -7)
+    equal(predict.plateDiesY, 0)
+    state.settings.WTF_PREDICT_DIES_PLACE:SetValue("center")
+    state.settings.WTF_PREDICT_DIES_Y:SetValue(-12)
+    equal(predict.diesPlace, "center")
+    equal(predict.diesY, -12)
+    equal(state.settings.WTF_PREDICT_PLATE_DIES_X.default, 0)
+    local fresh = predictFixture()
+    equal(fresh.wtf.db.predict.diesPlace, "auto")
+    equal(fresh.wtf.db.predict.plateDiesPlace, "auto")
 end)
 
 test("debug_predict lists each mob's DoTs, ticks, and damage to come", function()

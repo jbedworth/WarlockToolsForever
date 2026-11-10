@@ -106,6 +106,77 @@ function DyresToolkit.KnownPlate(guid)
     end
 end
 
+-- Plate keys ----------------------------------------------------------------------
+
+-- Creature GUIDs are secret in instances (Does It Die's notes, PR #8; WTF
+-- player reports, 2026-11: the other-mobs list was empty in groups). A mob
+-- keeps its nameplate token until NAME_PLATE_UNIT_REMOVED, so "plate:nameplateN"
+-- stands in for the GUID while the plate is up. A holder of such a key must
+-- drop it when that plate goes: the token then may show another mob.
+local function PlateTokenOf(plate)
+    if type(plate) ~= "table" or IsSecret(plate)
+        or (type(plate.IsForbidden) == "function" and plate:IsForbidden()) then
+        return nil
+    end
+    local token = plate.namePlateUnitToken or (type(plate.UnitFrame) == "table" and plate.UnitFrame.unit)
+    if not IsSecret(token) and type(token) == "string" and token:match("^nameplate%d+$") then
+        return token
+    end
+end
+
+-- The nameplate token of the mob a unit shows, else nil (no plate, or plates
+-- off). GetNamePlateForUnit first; UnitIsUnit may be secret where GUIDs are.
+function DyresToolkit.PlateToken(unit)
+    if IsSecret(unit) or type(unit) ~= "string" then
+        return nil
+    end
+    if unit:match("^nameplate%d+$") then
+        return UnitExists(unit) and unit or nil
+    end
+    if not UnitExists(unit) then
+        return nil
+    end
+    if type(C_NamePlate) == "table" and type(C_NamePlate.GetNamePlateForUnit) == "function" then
+        -- pcall: the client's rules for this call in instances are not checked.
+        local ok, plate = pcall(C_NamePlate.GetNamePlateForUnit, unit)
+        local token = ok and PlateTokenOf(plate)
+        if token then
+            return token
+        end
+    end
+    for index = 1, MAX_NAMEPLATE_UNITS do
+        local plateUnit = "nameplate" .. index
+        if UnitExists(plateUnit) then
+            local same = UnitIsUnit(unit, plateUnit)
+            if not IsSecret(same) and same == true then
+                return plateUnit
+            end
+        end
+    end
+end
+
+-- The key of a mob on this plate: the plate memory's GUID, else the token's.
+function DyresToolkit.PlateKey(token)
+    return plates[token] or ("plate:" .. token)
+end
+
+-- The token inside a "plate:nameplateN" key, else nil (a GUID, or no key).
+function DyresToolkit.KeyPlate(key)
+    if type(key) == "string" and not IsSecret(key) then
+        return key:match("^plate:(nameplate%d+)$")
+    end
+end
+
+-- The key of the mob a unit shows: its GUID, else its plate's key, else nil.
+function DyresToolkit.MobKey(unit)
+    local guid = ReadGUID(unit)
+    if guid then
+        return guid
+    end
+    local token = DyresToolkit.PlateToken(unit)
+    return token and DyresToolkit.PlateKey(token) or nil
+end
+
 -- Finding a unit ------------------------------------------------------------------
 
 -- The unit token showing this mob now, in the caller's order: unit tokens,
@@ -113,12 +184,16 @@ end
 -- memory, for plates whose GUID is secret). The default is WTF's Control bar
 -- order: focus first (it stays on the mob when its nameplate drops), then
 -- target, plates, memory. Never mouseover by default: it changes with the
--- pointer and has no event to rebind on.
+-- pointer and has no event to rebind on. A plate key's unit is its token.
 local DEFAULT_FIND_ORDER = {"focus", "target", "plates", "memory"}
 
 function DyresToolkit.FindUnit(guid, order)
     if type(guid) ~= "string" then
         return nil
+    end
+    local token = DyresToolkit.KeyPlate(guid)
+    if token then
+        return UnitExists(token) and token or nil
     end
     for _, step in ipairs(order or DEFAULT_FIND_ORDER) do
         if step == "plates" then
@@ -148,6 +223,7 @@ end
 -- to 40. Options, so each caller keeps its own rules:
 --   units          the order; default focus, mouseover, target, plates
 --   memory         a nameplate whose GUID is secret may use the plate memory
+--   plateKey       a unit whose GUID is secret locks by its plate key (MobKey)
 --   secretHostile  a secret "can attack" counts as yes (WTF Control: a
 --                  secret answer must not drop the cast); default no
 --   allowDead      skip the "not dead" check (WTF's DoT tracker)
@@ -193,7 +269,8 @@ function DyresToolkit.LockCast(targetName, opts)
         if UnitExists(unit) then
             local plate = unit:match("^nameplate") ~= nil
             if ReadName(unit) == targetName then
-                local guid = ReadGUID(unit) or (opts.memory and plate and plates[unit]) or nil
+                local guid = ReadGUID(unit) or (opts.memory and plate and plates[unit])
+                    or (opts.plateKey and DyresToolkit.MobKey(unit)) or nil
                 local hostile, canAttack = Hostile(unit, opts.secretHostile)
                 local alive = opts.allowDead or not IsDead(unit)
                 look[#look + 1] = string.format("%s(attack=%s dead=%s guid=%s)", unit,
