@@ -1,0 +1,4 @@
+<Bindings>
+    <Binding name="CLICK WarlockToolsForeverSmartCurse:LeftButton" runOnUp="true" header="WARLOCKTOOLSFOREVER"
+        category="ADDONS"/>
+</Bindings>

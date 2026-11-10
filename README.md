@@ -180,7 +180,8 @@ spell shows as a dim icon, so you can see what to recast.
 - **Second row: your focus**, with a matching red outline, shown while you have
   a hostile focus.
 - **Click a slot in either row** to cast that spell on your target or focus.
-  The Bane and Curse slots recast the last Bane or Curse you used.
+  The Bane and Curse slots recast the last Bane or Curse you used, or, for
+  the Curse slot, the smart curse (below).
 - **Below: every other mob you DoTed**, up to eight. Your target and focus are
   not listed twice. A mob leaves the list when it dies, when combat ends, or,
   out of combat, when it is out of sight for 10 seconds. In combat, a mob
@@ -236,6 +237,26 @@ spell shows as a dim icon, so you can see what to recast.
   without its timers or health. Target or focus it once to fix that row; at
   the end of combat the list clears. A mouseover cast on a mob with the same
   name as your target can also count for your target.
+
+### Smart curse
+
+With **Dyre's Toolkit 2.7** or later, set **Curse slot click** to **Smart
+curse** (DoT Tracker settings page, **Curse slot**). A click on the target or
+focus row's Curse slot then casts:
+
+- **No modifier:** Curse of Tongues on a mob with mana, else Curse of the
+  Elements, else Curse of Weakness (each once you know it). The choice is made
+  out of combat as your target changes: in combat the game lets no click read
+  the mob.
+- **Shift:** Curse of Weakness. **Ctrl:** Curse of Tongues (Weakness if you do
+  not know it). **Alt:** Curse of Recklessness.
+
+A letter on the Curse slot's icon (T, E, or W) shows the best curse for that
+mob, also in combat; **Show the smart curse letter** turns it off. The
+**"! Curse"** macro and the **Smart curse** key binding (Key Bindings, under
+Warlock Tools Forever) cast the same curse at your target, in either mode, once
+you know Curse of Weakness. **Last used** (the default) keeps the recast of the
+curse you cast last.
 
 ### DoT dots on nameplates
 
@@ -363,7 +384,8 @@ on, also when you tab or move the mouse before it lands.
   mobs (the Focus box is the one Fear click). A **Fear timer under each
   feared mob's nameplate** shows which one is about to break: hover its
   nameplate and press "! Fear", or click it to target it.
-- **Macros:** WTF keeps "! Fear", "! Banish", and "! Seduction" in your
+- **Macros:** WTF keeps "! Fear", "! Banish", "! Seduction", and "! Curse" (the
+  smart curse, above) in your
   character macros, each once you know its spell ("! Seduction" once your
   Succubus or Incubus has learned Seduction from its Grimoire). "! Fear" makes
   the mob under your mouse (else your target) your focus and fears it. Hold

@@ -47,6 +47,7 @@ WarlockToolsForever/
     Control.lua
     Probe.lua
     Options.lua
+    Bindings.xml
     LICENSE
 ```
 
@@ -67,7 +68,8 @@ or directories are not permitted. Exclude
 agent guidance, generated logs, and all credentials/player data.
 
 Use an explicit file allowlist. Do not ZIP the checkout and maintain a growing
-list of exclusions. Keep `LICENSE` in the package, but do not load it in the TOC.
+list of exclusions. Keep `LICENSE` and `Bindings.xml` in the package, but do not list them in the
+TOC (the game loads Bindings.xml from the AddOn folder by itself).
 There are no media since 1.3.0, when the shield display and its crescent
 textures moved to Dyre's Shields Up. A texture added later must pass the
 builder's check (uncompressed 32-bit, square, power-of-two TGA).

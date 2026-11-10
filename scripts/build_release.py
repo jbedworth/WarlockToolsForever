@@ -22,7 +22,8 @@ from pathlib import Path
 ADDON = "WarlockToolsForever"
 RUNTIME_FILES = ("Commands.lua", "Core.lua", "Layout.lua", "Shards.lua", "Stones.lua", "Announce.lua", "Tracker.lua",
                  "Dots.lua", "Predict.lua", "Control.lua", "Probe.lua", "Options.lua")
-TEXT_FILES = (ADDON + ".toc",) + RUNTIME_FILES + ("LICENSE",)
+# Bindings.xml: the game loads it from the AddOn folder by itself (not in the TOC).
+TEXT_FILES = (ADDON + ".toc",) + RUNTIME_FILES + ("Bindings.xml", "LICENSE")
 # Runtime textures shipped in the package: none since 1.4.1 (the DoT
 # prediction block's stripes went to Dyre's Toolkit 2.4.0 with its drawing;
 # the shield crescents to Dyre's Shields Up in 1.3.0). One added later must be

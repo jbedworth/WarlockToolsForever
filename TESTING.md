@@ -536,6 +536,16 @@ and printing.
       nameplates (each frame AddOn), and DoT tracker rows, where it stands
       out from the row's own purple health. Each Block fill, color, opacity,
       and outline choice changes every block at once, also in combat.
+- [ ] WTF 1.7.0 with Dyre's Toolkit 2.7.0, smart curse (Era, then Forever):
+      the DoT Tracker page's "Curse slot" settings; with Smart curse, the
+      target row's Curse slot casts Tongues on a caster, Elements (or
+      Weakness) on a warrior mob, Shift Weakness, Ctrl Tongues, Alt
+      Recklessness; the T/E/W letter changes in combat as you tab between
+      mobs; the choice of the plain click follows a target change only after
+      combat. "! Curse" appears once Weakness is known and goes with Keep
+      control macros off. Key Bindings shows "Smart curse" under Warlock Tools
+      Forever, and the key casts on key release (runOnUp). With Toolkit 2.6,
+      no Curse slot settings and no "! Curse".
 - [ ] WTF 1.6.0 with Dyre's Toolkit 2.6.0, Forever: the prediction settings
       are not greyed, and `/wtf debug_predict` says hidden ticks. The block
       and DIES on your target, focus, nameplates (also EllesmereUI's), and

@@ -46,6 +46,7 @@ class CurseForgeTests(unittest.TestCase):
             (f"## Interface: 16001, 11509\n## Version: {version}\n"
              + "\n".join(builder.RUNTIME_FILES) + "\n").encode("utf-8"))
         (source / "LICENSE").write_bytes(builder.MIT_NOTICE.encode("utf-8"))
+        (source / "Bindings.xml").write_bytes(b"<Bindings/>\n")
         for name in builder.RUNTIME_FILES:
             (source / name).write_bytes(b"local addonName, WTF = ...\n")
         for name in builder.MEDIA_FILES:

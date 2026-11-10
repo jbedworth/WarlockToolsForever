@@ -210,14 +210,14 @@ local function AddControlPage(parent)
         end
     end
     Flag(page, "WTF_CONTROL_MACROS", "Keep control macros", "control", "macros", true,
-        "Keep \"! Fear\", \"! Banish\", and \"! Seduction\" in your character macros for your action bars, "
+        "Keep \"! Fear\", \"! Banish\", \"! Seduction\", and \"! Curse\" in your character macros for your action bars, "
             .. "each once you know its spell. \"! Fear\" makes the mob under your mouse (else your target) your "
             .. "focus and fears it; Shift-press it to fear another mob and keep your focus. The Focus box above "
             .. "the Control bar shows your focus's Fear; click it to fear your focus again. \"! Banish\" and "
             .. "\"! Seduction\" focus the hostile mob under your mouse (or your target, out of combat) and cast on "
             .. "your focus; \"! Banish\" also marks it with the moon. \"! Seduction\" appears once your Succubus "
-            .. "or Incubus has learned Seduction from its Grimoire, and casts only while one is your pet. Turning "
-            .. "this off deletes them.", function() WTF.ApplyControlMacros() end)
+            .. "or Incubus has learned Seduction from its Grimoire, and casts only while one is your pet. \"! Curse\" "
+            .. "is the smart curse (DoT Tracker page). Turning this off deletes them.", function() WTF.ApplyControlMacros() end)
     Flag(page, "WTF_CONTROL_PLATE_TIMERS", "Fear timers on nameplates", "control", "plateTimers", true,
         "A thin bar under each feared mob's nameplate that drains with your Fear's time left, so you see which "
             .. "one is about to break; click its nameplate to target it.", RefreshControl)
@@ -447,6 +447,35 @@ end
 -- only); saved values stay as they are.
 local PREDICT_NEEDS = " On WoW: Forever this needs Dyre's Toolkit 2.6 or later."
 
+-- The smart curse (John, 2026-11-10; Dyre's Toolkit 2.7.0): only with a
+-- Toolkit that has it.
+local SMART_CURSE_HELP = "Smart curse: with no modifier, Curse of Tongues on a mob with mana, else Curse of "
+    .. "the Elements, else Curse of Weakness, chosen out of combat as your target changes. Shift casts Weakness, "
+    .. "Ctrl Tongues (Weakness if you do not know Tongues), Alt Recklessness. The \"! Curse\" macro and the "
+    .. "Smart curse key binding (Key Bindings, Warlock Tools Forever) cast it too."
+
+local function AddCurseSection(page, layout)
+    if not (WTF.SmartCurseAvailable and WTF.SmartCurseAvailable()) then
+        return
+    end
+    Heading(layout, "Curse slot", SMART_CURSE_HELP)
+    local mode = Proxy(page, "WTF_TRACKER_CURSE_MODE", Settings.VarType.String, "Curse slot click", "last",
+        function() return WTF.db.tracker.curseMode end,
+        function(value) WTF.SetCurseMode(value) end)
+    local modeInitializer = Settings.CreateDropdown(page, mode, function()
+        local container = Settings.CreateControlTextContainer()
+        container:Add("last", "Last used")
+        container:Add("smart", "Smart curse")
+        return container:GetData()
+    end, "What a click on the target or focus row's Curse slot casts. Last used: the curse you cast last. "
+        .. SMART_CURSE_HELP .. " A change in combat applies when combat ends.")
+    local marker = Flag(page, "WTF_TRACKER_CURSE_MARKER", "Show the smart curse letter", "tracker", "curseMarker",
+        true, "With Smart curse, a letter on the Curse slot's icon for that mob's best curse: T Tongues, "
+            .. "E Elements, W Weakness. It changes also in combat.",
+        function() WTF.SetCurseMarker(WTF.db.tracker.curseMarker) end)
+    marker:SetParentInitializer(modeInitializer, function() return WTF.db.tracker.curseMode == "smart" end)
+end
+
 local function AddPredictSection(page, layout)
     Heading(layout, "DoT damage prediction", "A purple block on the health bar for the damage your DoTs "
         .. "still have to deal." .. PREDICT_NEEDS)
@@ -632,6 +661,7 @@ local function AddTrackerPage(parent)
     for _, panel in ipairs(WTF.TRACKER_PANELS) do
         AddPanelSection(page, layout, panel, colors[panel.key])
     end
+    AddCurseSection(page, layout)
     AddPredictSection(page, layout)
 end
 

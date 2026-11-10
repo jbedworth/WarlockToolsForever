@@ -480,7 +480,24 @@ their other classes ("virality"):
 - Pinned slots are `SecureActionButtonTemplate` buttons over the engine slots:
   `/use [@target,harm,nodead] <name>` (or `[@focus,exists,harm,nodead]`), by name so the highest
   rank is used. Bane and Curse slots recast the last Bane or Curse cast (saved
-  per character). Their attributes change only out of combat. The pinned rows
+  per character). Smart curse (1.7.0; John, 2026-11-10, from a player
+  comment; Toolkit 2.7.0's DotTracker, see its AGENTS.md "Smart curse"):
+  `db.tracker.curseMode` "smart" (default "last") makes the Curse slot cast
+  the engine's smart curse, `curseMarker` (default true) shows its T/E/W
+  letter; Core repairs both. Settings "Curse slot click" and "Show the smart
+  curse letter" (a child, greyed with Last used) on the DoT Tracker page
+  under "Curse slot" (a vertical Settings page: the DoTs page is a canvas
+  with no dropdown); each calls `ApplySmartCurse`. Tracker.lua passes
+  `names.smartCurse = "WarlockToolsForeverSmartCurse"` (Bindings.xml binds
+  `CLICK WarlockToolsForeverSmartCurse:LeftButton`, runOnUp, header
+  WARLOCKTOOLSFOREVER; the game loads Bindings.xml by itself, so it is in
+  the package but not the TOC; Tracker.lua sets the binding's names), and
+  writes "! Curse" from `onSmartCurse` with its own Toolkit macro keeper:
+  written while `db.control.macros` is on and Weakness is known (in either
+  mode), deleted when the macros are off, and deleted when Weakness goes only
+  if this session wrote it. Without `tracker.ApplySmartCurse` (Toolkit before
+  2.7) no settings and no macro. The Recklessness button on the Fear row
+  waits for John's test of Fear with Curse of Recklessness. Their attributes change only out of combat. The pinned rows
   live in their sections' frames, and the game shows and hides the rows with
   `RegisterStateDriver(row, "visibility", "[@target,harm,nodead] show; hide")`
   (focus: `[@focus,exists,harm,nodead]`); the list
@@ -1118,7 +1135,7 @@ general frameworks, or speculative modules without agreement.
   bullets under `### Features`, `### Fixes`, and `### Other changes`, in that
   order, leaving out an empty one. The builder's section ends only at the
   next `## `, so the `###` headings stay in the release notes.
-- Package only WarlockToolsForever.toc, Commands.lua, Core.lua, Layout.lua, Shards.lua, Stones.lua, Announce.lua, Tracker.lua, Dots.lua, Predict.lua, Control.lua, Probe.lua, Options.lua, and LICENSE
+- Package only WarlockToolsForever.toc, Commands.lua, Core.lua, Layout.lua, Shards.lua, Stones.lua, Announce.lua, Tracker.lua, Dots.lua, Predict.lua, Control.lua, Probe.lua, Options.lua, Bindings.xml, and LICENSE
   (no textures, no sound files) under the top-level
   `WarlockToolsForever/` folder, named
   `WarlockToolsForever-<version>-forever.zip`, with the builder's

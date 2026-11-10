@@ -15,6 +15,14 @@ local DEFAULT_POINT = {"CENTER", "CENTER", -260, 120}
 local NAMES = {target = "WarlockToolsForeverTracker", focus = "WarlockToolsForeverTrackerFocus",
     list = "WarlockToolsForeverTrackerList"}
 
+-- The smart curse (John, 2026-11-10, from a player comment; Toolkit 2.7.0):
+-- the engine's hidden secure button for a key binding (Bindings.xml), and
+-- the "! Curse" macro with the same text.
+local SMART_CURSE_BUTTON = "WarlockToolsForeverSmartCurse"
+local CURSE_MACRO = "! Curse"
+BINDING_HEADER_WARLOCKTOOLSFOREVER = "Warlock Tools Forever"
+_G["BINDING_NAME_CLICK " .. SMART_CURSE_BUTTON .. ":LeftButton"] = "Smart curse"
+
 local tracker = {available = false}
 
 function WTF.CheckTrackerCapabilities()
@@ -109,6 +117,50 @@ function WTF.SetTrackerPanelOpacity(key, percent)
     end
 end
 
+-- Whether the Toolkit has the smart curse (2.7.0 or later).
+function WTF.SmartCurseAvailable()
+    return tracker.available and type(tracker.engine.ApplySmartCurse) == "function"
+end
+
+-- "! Curse": written while the control macros are on and you know Curse of
+-- Weakness; deleted when they are off, and when you lose Weakness (only one
+-- this session wrote). Out of combat (in combat, when it ends).
+local function WriteCurseMacro(body)
+    local keeper = tracker.keeper
+    if not keeper then
+        return
+    end
+    WTF.shared.OutOfCombat(keeper, function()
+        if WTF.db.control.macros == false then
+            keeper:Delete(CURSE_MACRO)
+        elseif body then
+            keeper:Write(CURSE_MACRO, body)
+        elseif keeper.written[CURSE_MACRO] then
+            keeper:Delete(CURSE_MACRO)
+        end
+    end)
+end
+
+function WTF.ApplyCurseMacro()
+    if WTF.SmartCurseAvailable() then
+        WriteCurseMacro(tracker.engine:SmartCurseBody())
+    end
+end
+
+function WTF.SetCurseMode(mode)
+    WTF.db.tracker.curseMode = mode == "smart" and "smart" or "last"
+    if WTF.SmartCurseAvailable() then
+        tracker.engine:ApplySmartCurse()
+    end
+end
+
+function WTF.SetCurseMarker(on)
+    WTF.db.tracker.curseMarker = on ~= false
+    if WTF.SmartCurseAvailable() then
+        tracker.engine:ApplySmartCurse()
+    end
+end
+
 function WTF.ResetTrackerPosition()
     WTF.db.tracker.position = nil
     WTF.db.tracker.sections = {}
@@ -134,7 +186,7 @@ function WTF.InitializeTracker()
         priority = TRACKER_PRIORITY,
         class = "WARLOCK",
         store = WTF.db.tracker,
-        names = NAMES,
+        names = {target = NAMES.target, focus = NAMES.focus, list = NAMES.list, smartCurse = SMART_CURSE_BUTTON},
         point = DEFAULT_POINT,
         slotColor = WTF.SlotColor,
         panelColor = WTF.PanelColor,
@@ -144,6 +196,7 @@ function WTF.InitializeTracker()
         ctrlMove = WTF.toolkit ~= nil,
         predictor = WTF.predictor,
         onSpellsChanged = function() WTF.RefreshPlateDots() end,
+        onSmartCurse = function(body) WriteCurseMacro(body) end,
     })
     if not engine then
         WTF.Report("The DoT tracker stays off: this client lacks " .. tostring(why) .. ".")
@@ -151,6 +204,10 @@ function WTF.InitializeTracker()
     end
     tracker.engine = engine
     tracker.available = true
+    if WTF.SmartCurseAvailable() then
+        tracker.keeper = WTF.shared.CreateMacroKeeper({warn = WTF.Warn})
+        WTF.ApplyCurseMacro()
+    end
 end
 
 function WTF.ReportTrackerDebug()

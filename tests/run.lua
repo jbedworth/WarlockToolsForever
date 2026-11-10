@@ -1181,6 +1181,15 @@ local function fixture(options)
         if options.sharedMissing then shared[options.sharedMissing] = nil end
         -- options.noHiddenTicks: no predictor where the combat log is restricted.
         if options.noHiddenTicks then shared.HiddenTicksUsable = function() return false end end
+        -- options.noSmartCurse: a DoT tracker before Toolkit 2.7 (no smart curse).
+        if options.noSmartCurse then
+            local create = shared.CreateDotTracker
+            shared.CreateDotTracker = function(spec)
+                local made, why = create(spec)
+                if made then made.ApplySmartCurse, made.SmartCurseBody = nil, nil end
+                return made, why
+            end
+        end
     end
     for index = before + 1, #state.frames do
         state.sharedFrames[state.frames[index]] = true
@@ -5225,7 +5234,7 @@ test("the DoT Tracker page: General, then a section per panel with its color and
             names[#names + 1] = heading.heading
         end
     end
-    equal(table.concat(names, ","), "General,Target,Focus,Others,DoT damage prediction")
+    equal(table.concat(names, ","), "General,Target,Focus,Others,Curse slot,DoT damage prediction")
     equal(headings[1].position, 0, "General first")
     equal(page.initializers[1].setting.variable, "WTF_TRACKER_THEME", "the shared settings under General")
     for index, case in ipairs({{"TARGET", "ff8787ed"}, {"FOCUS", "ffe61a1a"}, {"LIST", "ff545454"}}) do
@@ -7150,6 +7159,93 @@ test("engines: announcements fill %Z with your zone and drop an empty %T with it
     equal(state.sent[1].message, "Banishing Imp in Redridge Mountains")
     equal(state.wtf.FormatAnnouncement("Summoning %T now", ""), "Summoning now", "an empty %T")
     equal(state.wtf.FormatAnnouncement("Summoning %T to %Z", "Dyre"), "Summoning Dyre to Redridge Mountains")
+end)
+
+-- The smart curse (John, 2026-11-10; Toolkit 2.7.0) ------------------------------
+
+local function curseMacro(state)
+    for _, macro in ipairs(state.macros) do
+        if macro.name == "! Curse" then return macro end
+    end
+end
+
+local function macroTextsWith(state, text)
+    local found = {}
+    for _, frame in ipairs(state.frames) do
+        local body = frame.attributes and frame.attributes.macrotext1
+        if type(body) == "string" and body:find(text, 1, true) then found[#found + 1] = frame end
+    end
+    return found
+end
+
+test("smart curse: curseMode and curseMarker are repaired on load", function()
+    local bad = trackerFixture({db = {tracker = {curseMode = "best", curseMarker = "yes"}}})
+    equal(bad.wtf.db.tracker.curseMode, "last", "only last or smart")
+    equal(bad.wtf.db.tracker.curseMarker, true, "a boolean, on by default")
+    local fresh = trackerFixture()
+    equal(fresh.wtf.db.tracker.curseMode, "last", "last used by default")
+    equal(fresh.wtf.db.tracker.curseMarker, true)
+    local kept = trackerFixture({db = {tracker = {curseMode = "smart", curseMarker = false}}})
+    equal(kept.wtf.db.tracker.curseMode, "smart")
+    equal(kept.wtf.db.tracker.curseMarker, false)
+end)
+
+test("smart curse: the Curse slot settings switch the pinned Curse slot's click", function()
+    local state = trackerFixture()
+    local page = state.categories["DoT Tracker"]
+    local mode = initializerFor(page, "WTF_TRACKER_CURSE_MODE")
+    local marker = initializerFor(page, "WTF_TRACKER_CURSE_MARKER")
+    equal(mode.setting.name, "Curse slot click")
+    equal(marker.setting.name, "Show the smart curse letter")
+    equal(marker.parentInitializer, mode, "under the mode")
+    equal(marker.predicate(), false, "greyed with Last used")
+    equal(#macroTextsWith(state, "[@target,harm,nodead,mod:shift] Curse of Weakness"), 0, "last used: no smart click")
+    state.settings.WTF_TRACKER_CURSE_MODE:SetValue("smart")
+    equal(state.wtf.db.tracker.curseMode, "smart", "saved")
+    equal(marker.predicate(), true)
+    equal(#macroTextsWith(state, "[@target,harm,nodead,mod:shift] Curse of Weakness") > 0, true,
+        "the target row's Curse slot casts the smart curse")
+    state.settings.WTF_TRACKER_CURSE_MARKER:SetValue(false)
+    equal(state.wtf.db.tracker.curseMarker, false, "saved")
+    state.settings.WTF_TRACKER_CURSE_MODE:SetValue("last")
+    equal(#macroTextsWith(state, "[@target,harm,nodead,mod:shift] Curse of Weakness"), 0, "back to last used")
+end)
+
+test("smart curse: a hidden button for the key binding, named in Bindings.xml", function()
+    local state = trackerFixture()
+    local button = state.env.WarlockToolsForeverSmartCurse
+    equal(type(button), "table", "the engine made it")
+    equal(button.shown, false, "never shown")
+    contains(button.attributes.macrotext1, "/use [mod:shift] Curse of Weakness")
+    equal(state.env.BINDING_HEADER_WARLOCKTOOLSFOREVER, "Warlock Tools Forever")
+    equal(state.env["BINDING_NAME_CLICK WarlockToolsForeverSmartCurse:LeftButton"], "Smart curse")
+    local file = assert(io.open("Bindings.xml", "rb"))
+    local text = file:read("*a")
+    file:close()
+    contains(text, 'name="CLICK WarlockToolsForeverSmartCurse:LeftButton"')
+    contains(text, 'header="WARLOCKTOOLSFOREVER"')
+end)
+
+test("smart curse: \"! Curse\" follows Weakness and the control macros switch", function()
+    local state = trackerFixture()
+    local macro = curseMacro(state)
+    equal(type(macro), "table", "written with Curse of Weakness known")
+    equal(macro.body, state.env.WarlockToolsForeverSmartCurse.attributes.macrotext1, "the key binding's text")
+    state.settings.WTF_CONTROL_MACROS:SetValue(false)
+    equal(curseMacro(state), nil, "macros off: deleted")
+    state.settings.WTF_CONTROL_MACROS:SetValue(true)
+    equal(type(curseMacro(state)), "table", "on again: written")
+    local unknown = trackerFixture({spellbook = {{spellID = 6222, name = "Corruption"}}})
+    equal(curseMacro(unknown), nil, "no Curse of Weakness: no macro")
+    equal(unknown.env.WarlockToolsForeverSmartCurse.attributes.macrotext1, nil, "and no click")
+end)
+
+test("smart curse: without Toolkit 2.7 no settings and no macro", function()
+    local state = trackerFixture({noSmartCurse = true})
+    equal(state.wtf.SmartCurseAvailable(), false)
+    equal(state.settings.WTF_TRACKER_CURSE_MODE, nil, "no mode setting")
+    equal(state.settings.WTF_TRACKER_CURSE_MARKER, nil, "no letter setting")
+    equal(curseMacro(state), nil, "no \"! Curse\"")
 end)
 
 test("an older Toolkit that lacks one shared function counts as none", function()

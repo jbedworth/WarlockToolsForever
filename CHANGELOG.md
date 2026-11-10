@@ -4,6 +4,11 @@ Player-facing changes for each Warlock Tools Forever release, newest first. The
 release builder copies the section for the TOC version into the GitHub release
 notes and the CurseForge changelog, and fails if that section is missing.
 
+## 1.7.0
+
+### Features
+- Smart curse (with Dyre's Toolkit 2.7 or later): set **Curse slot click** to **Smart curse** on the DoT Tracker page, and a click on the target or focus row's Curse slot casts Curse of Tongues on a mob with mana, else Curse of the Elements, else Curse of Weakness, chosen out of combat as your target changes. Hold Shift for Weakness, Ctrl for Tongues (Weakness if you do not know Tongues), or Alt for Recklessness. A letter on the Curse slot's icon (T, E, or W) shows the best curse for that mob, also in combat; **Show the smart curse letter** turns it off. The new **"! Curse"** macro (with **Keep control macros**) and the **Smart curse** key binding (Key Bindings, Warlock Tools Forever) cast the same curse at your target. **Last used** (the default) keeps today's recast.
+
 ## 1.6.0
 
 ### Features

@@ -35,6 +35,7 @@ class ProvenanceTests(unittest.TestCase):
         for name in build_release.RUNTIME_FILES:
             (source / name).write_text("local value = true\n", encoding="utf-8", newline="\n")
         (source / "LICENSE").write_text(build_release.MIT_NOTICE + "\n", encoding="utf-8", newline="\n")
+        (source / "Bindings.xml").write_text("<Bindings/>\n", encoding="utf-8", newline="\n")
         for name in build_release.MEDIA_FILES:
             (source / name).parent.mkdir(parents=True, exist_ok=True)
             (source / name).write_bytes((ROOT / name).read_bytes())

@@ -35,7 +35,7 @@ class ReleaseTests(unittest.TestCase):
         self.base = Path(self.temp.name)
         self.source = self.base / "source"
         self.source.mkdir()
-        for name in ("WarlockToolsForever.toc", "LICENSE"):
+        for name in ("WarlockToolsForever.toc", "Bindings.xml", "LICENSE"):
             # Git may check these templates out as CRLF on Windows. Fixture-only
             # conversion gives valid LF input without changing the real sources.
             (self.source / name).write_bytes((ROOT / name).read_bytes().replace(b"\r\n", b"\n"))
@@ -270,6 +270,14 @@ class ReleaseTests(unittest.TestCase):
             self.assertFalse((ROOT / name).exists(), name)
         self.assertFalse((ROOT / "Textures").exists())
         self.assertFalse((ROOT / "Sounds").exists())
+
+    def test_package_ships_the_key_bindings_outside_the_toc(self):
+        # 1.7.0: the smart curse's key binding. The game loads Bindings.xml by
+        # itself; listed in the TOC it would load as a UI file.
+        self.assertIn("Bindings.xml", builder.PACKAGE_FILES)
+        self.assertNotIn("Bindings.xml", (ROOT / "WarlockToolsForever.toc").read_text(encoding="utf-8"))
+        text = (ROOT / "Bindings.xml").read_text(encoding="utf-8")
+        self.assertIn('name="CLICK WarlockToolsForeverSmartCurse:LeftButton"', text)
         path, _ = self.build()
         with zipfile.ZipFile(path) as archive:
             self.assertFalse([name for name in archive.namelist()

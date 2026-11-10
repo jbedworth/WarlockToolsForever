@@ -183,6 +183,7 @@ local REQUIRED_NAMESPACE = {
     "ReportTrackerDebug", "TrackerCandidateFilters", "TrackerKnowsSlot", "SetTrackerTheme",
     "InitializePlateDots", "RefreshPlateDots", "HasTrackableDots", "ApplyTrackerColors", "ApplyDotColors",
     "InitializePredict", "RefreshPredict", "PredictAvailable", "ReportPredictDebug", "DotTracker",
+    "SmartCurseAvailable", "ApplyCurseMacro", "SetCurseMode", "SetCurseMarker",
     "RefreshTrackerPrediction",
     "ReportRestrictions", "ResetFocusWorks", "InitializeProbe", "InitializeOptions", "OpenSettings",
 }
@@ -557,6 +558,11 @@ function WTF.SanitizeDB(db)
         colorsVersion = COLORS_VERSION,
         panelColors = {},
         order = WTF.SanitizeDotOrder(tracker.order),
+        -- The smart curse (Toolkit 2.7.0): the pinned Curse slot recasts the
+        -- last curse ("last", default) or the smart pick ("smart"); its letter
+        -- shows unless false.
+        curseMode = tracker.curseMode == "smart" and "smart" or "last",
+        curseMarker = tracker.curseMarker ~= false,
     }
     for _, key in ipairs({"lastBane", "lastCurse", "lastControl"}) do
         db.tracker[key] = type(tracker[key]) == "string" and tracker[key] or nil

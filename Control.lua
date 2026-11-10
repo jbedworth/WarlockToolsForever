@@ -103,6 +103,8 @@ function WTF.ApplyControlMacros()
     if control.available then
         control.tracker:ApplyMacros()
     end
+    -- "! Curse" (Tracker.lua) follows the same switch.
+    WTF.ApplyCurseMacro()
 end
 
 -- Display ----------------------------------------------------------------------

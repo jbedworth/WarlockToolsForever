@@ -48,6 +48,8 @@ DyresToolkit.ClassData = {
             -- debuffs, without your Banes; the IDs identify your curse casts.
             {key = "curse", label = "Curse", color = "ff9e40d9", dot = true, lastUsed = "lastCurse",
                 dispelType = "Curse", excludeSlot = "bane",
+                -- The smart curse (2.7.0): the first rank of each, cast by name.
+                smart = {weakness = 702, tongues = 1714, elements = 1490, recklessness = 704},
                 ids = {702, 1108, 6205, 7646, 11707, 11708, 704, 7658, 7659, 11717, 1490, 11721, 11722, 17862,
                     17937, 1714, 11719, 18223}},
             -- Agony, Doom, and Havoc: one Bane per target.

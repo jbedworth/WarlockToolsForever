@@ -79,6 +79,71 @@ function DyresToolkit.HexColor(hex)
     return tonumber(hex:sub(3, 4), 16) / 255, tonumber(hex:sub(5, 6), 16) / 255, tonumber(hex:sub(7, 8), 16) / 255
 end
 
+-- The smart curse (2.7.0; John, 2026-11-10, on a WTF player comment). A
+-- secure click cannot read the mob in combat (no macro condition tests mana
+-- or class, and attributes are locked), so modifiers choose: Alt
+-- Recklessness, Shift Weakness, Ctrl Tongues (else Weakness), and no
+-- modifier the smart pick, set out of combat from the mob. The marker reads
+-- the mob at any time, so it still shows the best curse in combat.
+local SMART_MARKS = {tongues = "T", elements = "E", weakness = "W"}
+
+-- True for a mob with a mana bar, false for one without, nil when unknown
+-- (no unit, no API, or a secret value).
+function DyresToolkit.UnitHasMana(unit)
+    if type(UnitPowerType) ~= "function" or type(UnitPowerMax) ~= "function" or not UnitExists(unit) then
+        return nil
+    end
+    local power = UnitPowerType(unit)
+    if DyresToolkit.IsSecret(power) or type(power) ~= "number" then
+        return nil
+    end
+    if power ~= 0 then
+        return false
+    end
+    local most = UnitPowerMax(unit, 0)
+    if DyresToolkit.IsSecret(most) or type(most) ~= "number" then
+        return nil
+    end
+    return most > 0
+end
+
+-- names: the known spell names {weakness, tongues, elements, recklessness}.
+-- The no-modifier curse and its key: Tongues on a mob with mana (if known),
+-- else Elements (if known), else Weakness; nil without Weakness.
+function DyresToolkit.SmartCursePick(names, unit)
+    if type(names) ~= "table" or not names.weakness then
+        return nil
+    end
+    if unit and names.tongues and DyresToolkit.UnitHasMana(unit) == true then
+        return names.tongues, "tongues"
+    end
+    if names.elements then
+        return names.elements, "elements"
+    end
+    return names.weakness, "weakness"
+end
+
+-- The macro text. With a unit, every clause aims there (a pinned slot);
+-- without, the game's own aim (the "! Curse" macro and the keybind).
+function DyresToolkit.SmartCurseMacro(names, pick, unit)
+    if type(names) ~= "table" or not names.weakness then
+        return nil
+    end
+    pick = pick or DyresToolkit.SmartCursePick(names)
+    local aim = unit and ("@" .. unit .. (unit == "focus" and ",exists" or "") .. ",harm,nodead") or nil
+    local function When(modifier)
+        return "[" .. (aim and (aim .. ",") or "") .. "mod:" .. modifier .. "] "
+    end
+    local clauses = {}
+    if names.recklessness then
+        clauses[#clauses + 1] = When("alt") .. names.recklessness
+    end
+    clauses[#clauses + 1] = When("shift") .. names.weakness
+    clauses[#clauses + 1] = When("ctrl") .. (names.tongues or names.weakness)
+    clauses[#clauses + 1] = (aim and ("[" .. aim .. "] ") or "") .. pick
+    return "/use " .. table.concat(clauses, "; ")
+end
+
 -- spec (required: addon, store, slots or class, names):
 --   addon       the owning AddOn's folder name
 --   priority    owner priority for "dots:<CLASS>" (10 class AddOn, 5 DDT)
@@ -90,8 +155,15 @@ end
 --               lineHeight, textScale, namePosition}, order (slot keys),
 --               health, healthText ("none", "number", "percent", "both"),
 --               panelOpacity {target, focus, list}, position, sections
---               {target, focus, list}, and each slot's lastUsed key
---   names       {target, focus, list}: the three section frames' names
+--               {target, focus, list}, and each slot's lastUsed key;
+--               curseMode ("last", the default, or "smart": the slot with
+--               `smart` data casts the smart curse) and curseMarker (false:
+--               no smart marker)
+--   names       {target, focus, list}: the three section frames' names;
+--               optional smartCurse: a hidden secure button with the smart
+--               curse, for a CLICK keybind (made only with this name)
+--   onSmartCurse  function(body): the "! Curse" macro body, or nil without
+--               Curse of Weakness; out of combat, when it changes
 --   point       the default place {point, relativePoint, x, y}
 --   slotColor   function(key) -> r, g, b (default the slot's color)
 --   panelColor  function(key) -> r, g, b (default WTF's panel colors)
@@ -708,24 +780,116 @@ function DyresToolkit.CreateDotTracker(spec)
         end
     end
 
+    -- The smart curse's known names, or nil without Curse of Weakness.
+    local SMART_SLOT
+    for _, slot in ipairs(SLOTS) do
+        if type(slot.smart) == "table" then
+            SMART_SLOT = slot
+        end
+    end
+
+    local function SmartNames()
+        if not SMART_SLOT then
+            return nil
+        end
+        local names = {}
+        for key, id in pairs(SMART_SLOT.smart) do
+            local name = DyresToolkit.SpellName(id)
+            names[key] = name and tracker.known[name] and name or nil
+        end
+        return names.weakness and names or nil
+    end
+
+    local function SmartMode()
+        return store.curseMode == "smart"
+    end
+
+    -- The smart pick each place's click was last set to ("macro" is the
+    -- unit-less one), so a target change rewrites only what changed.
+    local function SmartPicks(names)
+        local picks = {macro = DyresToolkit.SmartCursePick(names, "target") or false}
+        for key, pinned in pairs(tracker.pinned) do
+            picks[key] = DyresToolkit.SmartCursePick(names, pinned.unit) or false
+        end
+        return picks
+    end
+
     -- Pinned slot clicks cast by name, so the game uses the highest rank known.
     local function ApplyCastButtons()
         DyresToolkit.OutOfCombat(tracker.pinned, function()
-            for _, pinned in pairs(tracker.pinned) do
+            local names = SmartNames()
+            local picks = names and SmartPicks(names) or {}
+            for key, pinned in pairs(tracker.pinned) do
                 for slotIndex, button in pairs(pinned.casts) do
-                    local name = SlotSpellName(SLOTS[slotIndex])
-                    button:SetAttribute("type1", name and "macro" or nil)
-                    button:SetAttribute("macrotext1", name and ("/use [@" .. pinned.unit
-                        .. (pinned.unit == "focus" and ",exists" or "") .. ",harm,nodead] " .. name) or nil)
-                    button.spellName = name
+                    local slot = SLOTS[slotIndex]
+                    local smart = names and slot == SMART_SLOT and SmartMode()
+                    local name = smart and picks[key] or SlotSpellName(slot)
+                    local text = name and (smart and DyresToolkit.SmartCurseMacro(names, name, pinned.unit)
+                        or ("/use [@" .. pinned.unit .. (pinned.unit == "focus" and ",exists" or "")
+                            .. ",harm,nodead] " .. name))
+                    button:SetAttribute("type1", text and "macro" or nil)
+                    button:SetAttribute("macrotext1", text or nil)
+                    button.spellName, button.smart = name, smart and names or nil
+                end
+            end
+            local body = names and ("#showtooltip\n" .. DyresToolkit.SmartCurseMacro(names, picks.macro)) or nil
+            if tracker.smartButton then
+                tracker.smartButton:SetAttribute("type1", body and "macro" or nil)
+                tracker.smartButton:SetAttribute("macrotext1", body)
+            end
+            tracker.smartPicks = picks
+            if body ~= tracker.smartBody then
+                tracker.smartBody = body
+                if spec.onSmartCurse then
+                    spec.onSmartCurse(body)
                 end
             end
         end)
     end
 
+    -- The marker: the best curse for each pinned row's mob, also in combat.
+    local function UpdateSmartMarks()
+        local names = SmartMode() and store.curseMarker ~= false and SmartNames()
+        for _, pinned in pairs(tracker.pinned) do
+            local button = SMART_SLOT and pinned.casts[SLOT_INDEX[SMART_SLOT.key]]
+            if button and button.mark then
+                local key = names and UnitExists(pinned.unit) and select(2, DyresToolkit.SmartCursePick(names, pinned.unit))
+                button.mark:SetText(key and SMART_MARKS[key] or "")
+            end
+        end
+    end
+
+    -- The mob changed: the marker at once; the clicks out of combat, only
+    -- when a pick changed (in combat, once it ends).
+    local function SmartTargetChanged()
+        UpdateSmartMarks()
+        local names = SmartNames()
+        if not names then
+            return
+        end
+        local picks, old = SmartPicks(names), tracker.smartPicks or {}
+        for key, pick in pairs(picks) do
+            if old[key] ~= pick then
+                ApplyCastButtons()
+                return
+            end
+        end
+    end
+
     local function ShowCastTooltip(button)
         GameTooltip:SetOwner(button, "ANCHOR_TOP")
-        if button.spellName then
+        local names = button.smart
+        if names then
+            GameTooltip:SetText("Smart curse on your " .. button.unit .. ".", 1, 1, 1)
+            GameTooltip:AddLine("Click: " .. button.spellName .. " (picked out of combat)", 1, 1, 1)
+            GameTooltip:AddLine("Ctrl-click: " .. (names.tongues or names.weakness), 1, 1, 1)
+            GameTooltip:AddLine("Shift-click: " .. names.weakness, 1, 1, 1)
+            if names.recklessness then
+                GameTooltip:AddLine("Alt-click: " .. names.recklessness, 1, 1, 1)
+            end
+            GameTooltip:AddLine("The letter shows the best curse for this mob: T Tongues for a caster, "
+                .. "else E Elements or W Weakness.", 0.7, 0.7, 0.7, true)
+        elseif button.spellName then
             GameTooltip:SetText("Click: cast " .. button.spellName .. " on your " .. button.unit .. ".", 1, 1, 1)
         else
             GameTooltip:SetText("You know no spell for this slot yet; it recasts the last one you used.",
@@ -804,6 +968,17 @@ function DyresToolkit.CreateDotTracker(spec)
             button:SetAttribute("useOnKeyDown", false)
             button:SetHighlightTexture("Interface\\Buttons\\ButtonHilight-Square", "ADD")
             button.unit = pinned.unit
+            if SLOTS[slotIndex] == SMART_SLOT then
+                -- The smart marker: on the icon's lower right corner.
+                local mark = ScaleFont(button:CreateFontString(nil, "OVERLAY", "NumberFontNormalSmall"))
+                if IsCompact() then
+                    mark:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", 1, -1)
+                else
+                    mark:SetPoint("BOTTOMRIGHT", button, "BOTTOMLEFT", BarIcon() + 2, -1)
+                end
+                mark:SetTextColor(1, 0.82, 0)
+                button.mark = mark
+            end
             button:SetScript("OnEnter", ShowCastTooltip)
             button:SetScript("OnLeave", function() GameTooltip:Hide() end)
             row.casts[slotIndex] = button
@@ -1198,6 +1373,7 @@ function DyresToolkit.CreateDotTracker(spec)
                 tracker.rows[index] = row
             end
             ApplyCastButtons()
+            UpdateSmartMarks()
             ApplyPinnedVisibility()
             Layout()
         end)
@@ -1273,6 +1449,10 @@ function DyresToolkit.CreateDotTracker(spec)
             ApplySpellSets()
         elseif event == "MODIFIER_STATE_CHANGED" then
             UpdateCtrlMove()
+        elseif event == "UNIT_DISPLAYPOWER" or event == "UNIT_MAXPOWER" then
+            if unit == "target" or unit == "focus" then
+                SmartTargetChanged()
+            end
         elseif event == "PLAYER_REGEN_DISABLED" then
             UpdateCtrlMove(true)
         elseif event == "UNIT_HEALTH" or event == "UNIT_MAXHEALTH" then
@@ -1304,6 +1484,9 @@ function DyresToolkit.CreateDotTracker(spec)
             elseif event == "PLAYER_FOCUS_CHANGED" and tracker.pinned.focus then
                 tracker.pinned.focus.container:UpdateAllAuras()
                 UpdateHealth(tracker.pinned.focus)
+            end
+            if event == "PLAYER_TARGET_CHANGED" or event == "PLAYER_FOCUS_CHANGED" then
+                SmartTargetChanged()
             end
             local oldTarget, oldFocus = tracker.shownTarget, tracker.shownFocus
             if event == "NAME_PLATE_UNIT_REMOVED" and not DyresToolkit.IsSecret(unit) then
@@ -1386,6 +1569,20 @@ function DyresToolkit.CreateDotTracker(spec)
         return Owned()
     end
 
+    -- The owner changed curseMode or curseMarker: the clicks (out of
+    -- combat) and the marker (at once).
+    function tracker:ApplySmartCurse()
+        ApplyCastButtons()
+        UpdateSmartMarks()
+    end
+
+    -- The "! Curse" macro body, or nil without Curse of Weakness.
+    function tracker:SmartCurseBody()
+        local names = SmartNames()
+        return names and ("#showtooltip\n" .. DyresToolkit.SmartCurseMacro(names,
+            (DyresToolkit.SmartCursePick(names, "target"))))
+    end
+
     -- Lines for the owner's debug command (it adds its own prefix).
     function tracker:DebugLines()
         local lines = {}
@@ -1406,6 +1603,27 @@ function DyresToolkit.CreateDotTracker(spec)
             local cast = self.pinned.target and self.pinned.target.casts[slotIndex]
             lines[#lines + 1] = string.format("slot=%s recast=%s matches=%s ids=%s", slot.key,
                 tostring(cast and cast.spellName), matches, table.concat(ids, ","))
+        end
+        if SMART_SLOT then
+            local picks = self.smartPicks or {}
+            lines[#lines + 1] = string.format("smart mode=%s weakness=%s mana target=%s focus=%s click target=%s "
+                .. "focus=%s macro=%s", tostring(store.curseMode or "last"), tostring(SmartNames() ~= nil),
+                tostring(DyresToolkit.UnitHasMana("target")), tostring(DyresToolkit.UnitHasMana("focus")),
+                tostring(picks.target), tostring(picks.focus), tostring(picks.macro))
+            for _, key in ipairs({"target", "focus"}) do
+                local pinned = self.pinned[key]
+                local button = pinned and pinned.casts[SLOT_INDEX[SMART_SLOT.key]]
+                local mark = button and button.mark
+                if mark then
+                    lines[#lines + 1] = string.format("smart mark %s text=%q shown=%s visible=%s level=%s "
+                        .. "container=%s rowShown=%s marker=%s", key, tostring(mark:GetText()),
+                        tostring(mark:IsShown()), tostring(mark:IsVisible()), tostring(button:GetFrameLevel()),
+                        tostring(pinned.container:GetFrameLevel()), tostring(pinned:IsShown()),
+                        tostring(store.curseMarker))
+                else
+                    lines[#lines + 1] = "smart mark " .. key .. " none (no Curse slot button on this row)"
+                end
+            end
         end
         local last = self.lastCast
         if last then
@@ -1465,8 +1683,16 @@ function DyresToolkit.CreateDotTracker(spec)
     tracker.shown = ShownSlots()
     for _, event in ipairs({"PLAYER_REGEN_ENABLED", "PLAYER_REGEN_DISABLED", "PLAYER_TARGET_CHANGED",
         "PLAYER_FOCUS_CHANGED", "NAME_PLATE_UNIT_ADDED", "NAME_PLATE_UNIT_REMOVED", "SPELLS_CHANGED",
-        "UNIT_HEALTH", "UNIT_MAXHEALTH", "MODIFIER_STATE_CHANGED"}) do
+        "UNIT_HEALTH", "UNIT_MAXHEALTH", "MODIFIER_STATE_CHANGED", "UNIT_DISPLAYPOWER", "UNIT_MAXPOWER"}) do
         events:RegisterEvent(event)
+    end
+    if type(spec.names.smartCurse) == "string" then
+        -- The keybind's button: never shown; a CLICK binding clicks it.
+        local button = CreateFrame("Button", spec.names.smartCurse, UIParent, "SecureActionButtonTemplate")
+        button:RegisterForClicks("AnyUp", "AnyDown")
+        button:SetAttribute("useOnKeyDown", false)
+        button:Hide()
+        tracker.smartButton = button
     end
     for _, event in ipairs({"UNIT_SPELLCAST_SENT", "UNIT_SPELLCAST_SUCCEEDED", "UNIT_SPELLCAST_FAILED",
         "UNIT_SPELLCAST_INTERRUPTED"}) do
