@@ -184,6 +184,7 @@ local REQUIRED_NAMESPACE = {
     "InitializePlateDots", "RefreshPlateDots", "HasTrackableDots", "ApplyTrackerColors", "ApplyDotColors",
     "InitializePredict", "RefreshPredict", "PredictAvailable", "ReportPredictDebug", "DotTracker",
     "SmartCurseAvailable", "ApplyCurseMacro", "SetCurseMode", "SetCurseMarker",
+    "TrackerOutlineAvailable", "SetTrackerOutlineWidth",
     "RefreshTrackerPrediction",
     "ReportRestrictions", "ResetFocusWorks", "InitializeProbe", "InitializeOptions", "OpenSettings",
 }
@@ -412,6 +413,13 @@ WTF.PANEL_OPACITY_MIN = 10
 WTF.PANEL_OPACITY_MAX = 100
 WTF.DEFAULT_PANEL_OPACITY = 100
 
+-- The pinned target and focus rows' solid outline, in whole pixels (John,
+-- 2026-11-11, from a player asking to hide it; Dyre's Toolkit 2.8.0 draws it
+-- and has the same range in TRACKER_OUTLINE). 0 draws none; 3 is the old look.
+WTF.OUTLINE_WIDTH_MIN = 0
+WTF.OUTLINE_WIDTH_MAX = 20
+WTF.DEFAULT_OUTLINE_WIDTH = 3
+
 -- Nameplate DoT dot opacity, in percent (author-approved: 100, today's look).
 WTF.PLATE_DOTS_OPACITY_MIN = 10
 WTF.PLATE_DOTS_OPACITY_MAX = 100
@@ -548,6 +556,8 @@ function WTF.SanitizeDB(db)
         plateDotsOffset = WTF.SanitizePlateDotsOffset(tracker.plateDotsOffset),
         plateDotsOpacity = WTF.SanitizeWhole(tracker.plateDotsOpacity, WTF.PLATE_DOTS_OPACITY_MIN,
             WTF.PLATE_DOTS_OPACITY_MAX, WTF.DEFAULT_PLATE_DOTS_OPACITY),
+        outlineWidth = WTF.SanitizeWhole(tracker.outlineWidth, WTF.OUTLINE_WIDTH_MIN, WTF.OUTLINE_WIDTH_MAX,
+            WTF.DEFAULT_OUTLINE_WIDTH),
         sizes = {},
         panelOpacity = {},
         -- Mob health (author-approved, player request): off by default.
@@ -703,6 +713,8 @@ local function InstallInputHooks()
         if keys:GetPropagateKeyboardInput() then
             keys:SetScript("OnKeyDown", OnInput)
             keys:EnableKeyboard(true)
+            -- For /wtf debug_stones: whether a key press can run waiting work.
+            WTF.keyInputHooked = true
         end
     end
     WorldFrame:HookScript("OnMouseDown", OnInput)

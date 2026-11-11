@@ -161,6 +161,19 @@ function WTF.SetCurseMarker(on)
     end
 end
 
+-- Whether the Toolkit draws the outline at a set width (2.8.0 or later).
+function WTF.TrackerOutlineAvailable()
+    local toolkit = rawget(_G, "DyresToolkit")
+    return type(toolkit) == "table" and type(toolkit.TRACKER_OUTLINE) == "table"
+end
+
+-- Out of combat; in combat the engine rebuilds when combat ends.
+function WTF.SetTrackerOutlineWidth(width)
+    WTF.db.tracker.outlineWidth = WTF.SanitizeWhole(width, WTF.OUTLINE_WIDTH_MIN, WTF.OUTLINE_WIDTH_MAX,
+        WTF.DEFAULT_OUTLINE_WIDTH)
+    Rebuild()
+end
+
 function WTF.ResetTrackerPosition()
     WTF.db.tracker.position = nil
     WTF.db.tracker.sections = {}

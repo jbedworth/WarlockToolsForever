@@ -4,6 +4,14 @@ Player-facing changes for each Warlock Tools Forever release, newest first. The
 release builder copies the section for the TOC version into the GitHub release
 notes and the CurseForge changelog, and fails if that section is missing.
 
+## 1.7.1
+
+### Features
+- DoT tracker: **Target and focus outline** on the DoT Tracker page (General) sets how thick the purple and red outlines around your target and focus rows are, from 0 to 20 px. The default is 3 px, as before. Set it to 0 to hide them. Needs Dyre's Toolkit 2.8 or later.
+
+### Fixes
+- Healthstone trading: when WTF cannot put the Healthstone into the trade window, it no longer stops without a word. It tries again at your next key press or click, or tells you to drag the stone in yourself. `/wtf debug_stones` now shows the reason for each try.
+
 ## 1.7.0
 
 ### Features

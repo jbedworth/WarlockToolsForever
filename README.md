@@ -179,6 +179,9 @@ spell shows as a dim icon, so you can see what to recast.
   target as you tab or click, and hides when you have no hostile target.
 - **Second row: your focus**, with a matching red outline, shown while you have
   a hostile focus.
+- **Target and focus outline** (DoT Tracker page, General; needs Dyre's
+  Toolkit 2.8 or later) sets how thick these two outlines are, 0 to 20 px
+  (default 3). Set it to 0 to hide them.
 - **Click a slot in either row** to cast that spell on your target or focus.
   The Bane and Curse slots recast the last Bane or Curse you used, or, for
   the Curse slot, the smart curse (below).

@@ -426,52 +426,79 @@ end
 -- click. While item moves are restricted (WTF.MoveRestricted: combat or an
 -- AddOn restriction) WTF picks up nothing and clicks nothing; it tries at the
 -- next key press, and if that is restricted too, or too late, it says once to
--- drag the stone in yourself. WTF never presses Trade for you.
+-- drag the stone in yourself. WTF never presses Trade for you. No stop is
+-- silent (1.7.1, John: the trade opened with nothing in it): each tries
+-- again or warns, and the trade log of /wtf debug_stones names the reason
+-- ("place <reason> <detail>").
 local DRAG_YOURSELF = "The game did not let WTF put the Healthstone into the trade window; drag it in yourself."
 local PlaceTradeStone
 
+local function LogPlace(reason, detail)
+    LogTrade("place", reason, detail)
+end
+
+local function GiveUp(reason, detail)
+    LogPlace(reason, detail)
+    stones.pendingTrade = nil
+    WTF.Warn(DRAG_YOURSELF)
+end
+
 -- One more try at the next key press or click, or the warning on the retry.
-local function RetryOrGiveUp(retry)
+local function RetryOrGiveUp(retry, reason, detail)
     if retry then
-        stones.pendingTrade = nil
-        WTF.Warn(DRAG_YOURSELF)
+        GiveUp(reason, detail)
     else
+        LogPlace(reason, detail or "retry")
         WTF.RunOnNextInput(function() PlaceTradeStone(true) end)
     end
 end
 
 function PlaceTradeStone(retry)
     local trade = stones.pendingTrade
-    if not trade or GetCursorInfo() then
+    if not trade then
         return
     end
     if retry and GetTime() - trade.time > TRADE_WAIT then
-        stones.pendingTrade = nil
-        WTF.Warn(DRAG_YOURSELF)
+        GiveUp("late")
+        return
+    end
+    -- What you hold on the cursor stays yours: wait for the next input.
+    local held = GetCursorInfo()
+    if held then
+        RetryOrGiveUp(retry, "cursorBusy", WTF.Describe(held))
         return
     end
     if WTF.MoveRestricted() then
         stones.lastRestricted = GetTime()
-        RetryOrGiveUp(retry)
+        RetryOrGiveUp(retry, "restricted")
         return
     end
     local bag, slot = FindItemSlot(trade.itemID)
+    if not bag then
+        GiveUp("noStone", trade.itemID)
+        return
+    end
     local tradeSlot = FreeTradeSlot()
-    if not bag or not tradeSlot then
-        stones.pendingTrade = nil
+    if not tradeSlot then
+        GiveUp("noFreeSlot")
         return
     end
     C_Container.PickupContainerItem(bag, slot)
     local kind, itemID = GetCursorInfo()
+    if kind == nil then
+        -- The pickup took nothing (refused, or the item is still settling).
+        RetryOrGiveUp(retry, "pickupEmpty")
+        return
+    end
     if kind ~= "item" or itemID ~= trade.itemID then
         ClearCursor()
-        stones.pendingTrade = nil
+        GiveUp("wrongCursor", WTF.Describe(kind) .. ":" .. WTF.Describe(itemID))
         return
     end
     if WTF.MoveRestricted() then
         ClearCursor()
         stones.lastRestricted = GetTime()
-        RetryOrGiveUp(retry)
+        RetryOrGiveUp(retry, "restricted")
         return
     end
     stones.placing, stones.refused = true, false
@@ -479,9 +506,10 @@ function PlaceTradeStone(retry)
     stones.placing = false
     if stones.refused or GetCursorInfo() then
         ClearCursor()
-        RetryOrGiveUp(retry)
+        RetryOrGiveUp(retry, stones.refused and "refused" or "stillOnCursor")
         return
     end
+    LogPlace("placed", tradeSlot)
     stones.pendingTrade = nil
     WTF.Report("Healthstone in the trade window. Press Trade to give it.")
 end
@@ -766,8 +794,13 @@ events:SetScript("OnEvent", function(_, event, ...)
         stones.pendingTrade = nil
         return
     elseif event == "ADDON_ACTION_BLOCKED" or event == "ADDON_ACTION_FORBIDDEN" then
-        if ... == addonName and stones.placing then
-            stones.refused = true
+        if stones.placing then
+            -- Logged by name: a refusal may name another AddOn.
+            local blocked, call = ...
+            LogTrade(event, blocked, call)
+            if blocked == addonName then
+                stones.refused = true
+            end
         end
         return
     elseif event == "UNIT_SPELLCAST_SENT" or event == "UNIT_SPELLCAST_SUCCEEDED" then
@@ -902,9 +935,10 @@ function WTF.ReportStoneDebug()
     local healthRank = WTF.HealthstoneRankForTarget()
     WTF.Report(string.format("debug_stones targetLevel=%s healthstoneRank=%s pending=%s",
         tostring(FriendlyPlayerLevel()), tostring(healthRank and healthRank.spell), tostring(stones.pending)))
-    WTF.Report(string.format("debug_stones lastGiftWhisper=%s moveRestricted=%s lastRestricted=%s",
+    WTF.Report(string.format("debug_stones lastGiftWhisper=%s moveRestricted=%s lastRestricted=%s keyHook=%s",
         tostring(stones.lastGift), tostring(WTF.MoveRestricted()),
-        stones.lastRestricted and string.format("%.1fs ago", GetTime() - stones.lastRestricted) or "never"))
+        stones.lastRestricted and string.format("%.1fs ago", GetTime() - stones.lastRestricted) or "never",
+        tostring(WTF.keyInputHooked == true)))
     local now = GetTime()
     for _, entry in ipairs(stones.tradeLog) do
         WTF.Report(string.format("debug_stones trade %.1fs ago %s %s %s", now - entry.time, entry.event,

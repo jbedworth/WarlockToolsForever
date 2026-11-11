@@ -3846,6 +3846,61 @@ test("a trade window long after the click, or from someone else, gets nothing", 
     state.emit("TRADE_SHOW")
     equal(state.tradeSlots[1], nil, "no request pending")
 end)
+-- 1.7.1 (John: the trade opened, and nothing went in, with no word): no stop
+-- is silent, and /wtf debug_stones names each reason.
+local function tradeDebug(state)
+    state.clear()
+    state.slash("debug_stones")
+    return table.concat(state.messages, "|")
+end
+test("a trade placement says why it stops: no free slot, no stone", function()
+    local full = tradeFixture()
+    for slot = 1, 6 do full.tradeSlots[slot] = 2589 end
+    full.clickButton(HEALTH, "LeftButton")
+    full.clear()
+    full.emit("TRADE_SHOW")
+    contains(full.last(), "drag it in yourself")
+    contains(tradeDebug(full), "place noFreeSlot")
+    local gone = tradeFixture()
+    gone.clickButton(HEALTH, "LeftButton")
+    gone.bags[0].items[1] = nil
+    gone.clear()
+    gone.emit("TRADE_SHOW")
+    contains(gone.last(), "drag it in yourself")
+    contains(tradeDebug(gone), "place noStone 5511")
+end)
+test("a busy cursor or an empty pickup waits for the next key press", function()
+    local busy = tradeFixture()
+    busy.clickButton(HEALTH, "LeftButton")
+    busy.cursor = {itemID = 2589, count = 1, bag = 0, slot = 2}
+    busy.emit("TRADE_SHOW")
+    equal(busy.tradeSlots[1], nil)
+    equal(busy.cursor.itemID, 2589, "what you hold stays on the cursor")
+    busy.cursor = nil
+    busy.press()
+    equal(busy.tradeSlots[1], 5511, "placed at the key press")
+    local text = tradeDebug(busy)
+    contains(text, "place cursorBusy item")
+    contains(text, "place placed 1")
+    contains(text, "keyHook=true")
+    local settling = tradeFixture()
+    settling.clickButton(HEALTH, "LeftButton")
+    settling.pickupMisses = 1
+    settling.emit("TRADE_SHOW")
+    equal(settling.tradeSlots[1], nil)
+    settling.press()
+    equal(settling.tradeSlots[1], 5511, "placed at the key press")
+    contains(tradeDebug(settling), "place pickupEmpty retry")
+end)
+test("a refusal is logged with the AddOn the game named", function()
+    local state = tradeFixture()
+    state.tradeNeedsHardware = true
+    state.clickButton(HEALTH, "LeftButton")
+    state.emit("TRADE_SHOW")
+    local text = tradeDebug(state)
+    contains(text, "ADDON_ACTION_BLOCKED WarlockToolsForever UNKNOWN()")
+    contains(text, "place refused retry")
+end)
 test("a Soulstone on someone is remembered, reported, and announced when it ends", function()
     local state = stonesFixture()
     state.emit("UNIT_SPELLCAST_SENT", "player", "Meatrod-Theog", "ss", 20707)
@@ -6031,12 +6086,13 @@ test("the dots switch and height setting apply at once", function()
     equal(bubbleOn(state, "nameplate1"), nil)
     local page = state.categories["DoT Tracker"]
     equal(page.initializers[1].setting.variable, "WTF_TRACKER_THEME")
-    equal(page.initializers[2].setting.variable, "WTF_TRACKER_PLATE_DOTS")
-    equal(page.initializers[3].parentInitializer, page.initializers[2])
+    equal(page.initializers[2].setting.variable, "WTF_TRACKER_OUTLINE_WIDTH")
+    equal(page.initializers[3].setting.variable, "WTF_TRACKER_PLATE_DOTS")
+    equal(page.initializers[4].parentInitializer, page.initializers[3])
 end)
 test("the dot height slider has a gold mark at the default, hidden on reuse", function()
     local state = dotsFixture()
-    local initializer = state.categories["DoT Tracker"].initializers[3]
+    local initializer = state.categories["DoT Tracker"].initializers[4]
     local frame = state.env.CreateFrame("Frame")
     local slider = state.env.CreateFrame("Slider")
     frame.SliderWithSteppers = {Slider = slider}
@@ -6060,7 +6116,40 @@ test("without a known DoT the dots stay off and cannot be turned on", function()
     local state = dotsFixture({spellbook = {{spellID = 686, name = "Shadow Bolt"}}})
     equal(state.wtf.HasTrackableDots(), false)
     equal(bubbleOn(state, "nameplate1"), nil)
-    equal(state.categories["DoT Tracker"].initializers[2].modifyPredicates[1](), false)
+    equal(state.categories["DoT Tracker"].initializers[3].modifyPredicates[1](), false)
+end)
+-- The pinned rows' outline width (John, 2026-11-11; Dyre's Toolkit 2.8.0).
+test("the target and focus outline: saved 0-20 px, default 3, 0 draws none", function()
+    for saved, expected in pairs({[0] = 0, [7] = 7, [20] = 20, [21] = 20, [-1] = 0, [2.5] = 3, junk = 3}) do
+        local state = dotsFixture({db = {tracker = {outlineWidth = saved}}})
+        equal(state.wtf.db.tracker.outlineWidth, expected, "saved " .. tostring(saved))
+    end
+    local state = dotsFixture()
+    equal(state.wtf.db.tracker.outlineWidth, 3, "the old look by default")
+    equal(state.wtf.OUTLINE_WIDTH_MAX, state.env.DyresToolkit.TRACKER_OUTLINE.max, "the Toolkit's range")
+    local engine = state.wtf.DotTracker()
+    assert(engine.pinned.target.outline and engine.pinned.focus.outline, "an outline by default")
+    state.settings.WTF_TRACKER_OUTLINE_WIDTH:SetValue(0)
+    equal(state.wtf.db.tracker.outlineWidth, 0)
+    equal(engine.pinned.target.outline, nil, "0 hides the target outline")
+    equal(engine.pinned.focus.outline, nil, "and the focus outline")
+    state.settings.WTF_TRACKER_OUTLINE_WIDTH:SetValue(12)
+    assert(engine.pinned.target.outline, "drawn again")
+end)
+test("the outline slider shows px and a default mark, and greys without Toolkit 2.8", function()
+    local state = dotsFixture()
+    local outline
+    for _, initializer in ipairs(state.categories["DoT Tracker"].initializers) do
+        if initializer.setting and initializer.setting.variable == "WTF_TRACKER_OUTLINE_WIDTH" then
+            outline = initializer
+        end
+    end
+    equal(outline.setting.name, "Target and focus outline")
+    contains(outline.tooltip, "0 hides it")
+    equal(outline.tooltip:find("2.8", 1, true), nil, "no need named while the Toolkit has it")
+    equal(outline.modifyPredicates[1](), true)
+    state.env.DyresToolkit.TRACKER_OUTLINE = nil
+    equal(outline.modifyPredicates[1](), false, "greyed before Toolkit 2.8")
 end)
 test("nameplate dots follow the per-slot nameplate choices", function()
     local state = dotsFixture({db = {tracker = {plateDots = true, onPlates = {immolate = false}}},

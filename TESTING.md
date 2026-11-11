@@ -536,6 +536,17 @@ and printing.
       nameplates (each frame AddOn), and DoT tracker rows, where it stands
       out from the row's own purple health. Each Block fill, color, opacity,
       and outline choice changes every block at once, also in combat.
+- [ ] WTF 1.7.1 with Dyre's Toolkit 2.8.0, "Target and focus outline" (Forever,
+      then Era): the slider shows "3 px" with the gold mark at 3, and the
+      rows look as before. 0 hides both outlines and the rows close up; 20
+      draws thick outlines with no overlap; a change in combat applies when
+      combat ends. With Dyre's Toolkit 2.7 the slider is greyed and its
+      tooltip names 2.8.
+- [ ] WTF 1.7.1, Healthstone trade (Forever, then Era): with a friend targeted,
+      left-click the Healthstone button. The stone goes in, or a key press
+      puts it in, or the "drag it in yourself" warning shows; never nothing.
+      `/wtf debug_stones` lists a `place <reason>` line for each try and
+      `keyHook=true`.
 - [ ] WTF 1.7.0 with Dyre's Toolkit 2.7.0, smart curse (Era, then Forever):
       the DoT Tracker page's "Curse slot" settings; with Smart curse, the
       target row's Curse slot casts Tongues on a caster, Elements (or

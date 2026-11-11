@@ -317,6 +317,14 @@ their other classes ("virality"):
   it, each shown only while that unit is a live hostile; then a list of up to
   8 other mobs you DoTed. The list leaves out your target and focus, so no mob
   shows twice. Tabbing or a new focus changes what the pinned rows show.
+- Outline width (John, 2026-11-11, from a player asking to hide it; 1.7.1):
+  "Target and focus outline", a slider on the DoT Tracker page's General
+  section, saved as `tracker.outlineWidth`, whole px 0-20, default 3 (the old
+  look); 0 draws none. Dyre's Toolkit 2.8.0 draws it (`TRACKER_OUTLINE`, the
+  same range; the stacked rows' step is width + 4, so the default moves
+  nothing). `WTF.SetTrackerOutlineWidth` saves and rebuilds (in combat, when
+  combat ends). Greyed (modify predicate) without `TRACKER_OUTLINE`, with
+  "Needs Dyre's Toolkit 2.8 or later" in its tooltip.
 - Sections (author-approved, player request; always, no switch): the target
   row, the focus row, and the list are three frames
   (`WarlockToolsForeverTracker`, `WarlockToolsForeverTrackerFocus`,

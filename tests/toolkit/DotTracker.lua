@@ -39,9 +39,10 @@ local HEALTH_INSET = 3
 local HEALTH_ICON_GAP = 2
 local HEALTH_TEXT_WIDTH = {number = 34, percent = 30, both = 70}
 local BAR_BACKGROUND = {0.1, 0.1, 0.1, 0.6}
-local OUTLINE = 3
+-- The pinned rows' solid outline: store.outlineWidth, whole pixels (2.8.0;
+-- John, 2026-11-11, from a player asking to hide it); 0 draws none.
 local OUTLINE_GAP = 2
-local PINNED_SPACING = OUTLINE + OUTLINE_GAP + 2
+DyresToolkit.TRACKER_OUTLINE = {min = 0, max = 20, default = 3}
 local SLOT_GAP = 6
 local PADDING = 6
 -- Seconds a list row stays without a unit to bind, out of combat; in combat
@@ -154,7 +155,9 @@ end
 --               textScale, namePosition} and sizes.bars {barWidth,
 --               lineHeight, textScale, namePosition}, order (slot keys),
 --               health, healthText ("none", "number", "percent", "both"),
---               panelOpacity {target, focus, list}, position, sections
+--               panelOpacity {target, focus, list}, outlineWidth (the
+--               pinned rows' outline, TRACKER_OUTLINE: 0-20 px, default 3,
+--               0 none; a change needs Rebuild), position, sections
 --               {target, focus, list}, and each slot's lastUsed key;
 --               curseMode ("last", the default, or "smart": the slot with
 --               `smart` data casts the smart curse) and curseMarker (false:
@@ -336,6 +339,19 @@ function DyresToolkit.CreateDotTracker(spec)
 
     local function Sizes()
         return store.sizes[IsCompact() and "compact" or "bars"]
+    end
+
+    local function OutlineWidth()
+        local spec, width = DyresToolkit.TRACKER_OUTLINE, tonumber(store.outlineWidth)
+        if not width or width ~= width then
+            return spec.default
+        end
+        return math.max(spec.min, math.min(spec.max, math.floor(width + 0.5)))
+    end
+
+    -- The stacked pinned rows' step keeps the outlines clear of each other.
+    local function PinnedSpacing()
+        return OutlineWidth() + OUTLINE_GAP + 2
     end
 
     local function TextScale()
@@ -899,7 +915,7 @@ function DyresToolkit.CreateDotTracker(spec)
     end
 
     local function StackOffset(key)
-        local step = RowStep() + PINNED_SPACING
+        local step = RowStep() + PinnedSpacing()
         return key == "target" and 0 or key == "focus" and step or step * 2
     end
 
@@ -985,13 +1001,16 @@ function DyresToolkit.CreateDotTracker(spec)
         end
         row:EnableMouse(true)
         DragScripts(row, key)
-        local outline = CreateFrame("Frame", nil, row, "BackdropTemplate")
-        local inset = OUTLINE + OUTLINE_GAP
-        outline:SetPoint("TOPLEFT", -inset, inset)
-        outline:SetPoint("BOTTOMRIGHT", inset, -inset)
-        outline:SetBackdrop({edgeFile = "Interface\\Buttons\\WHITE8X8", edgeSize = OUTLINE})
-        outline:EnableMouse(false)
-        row.outline = outline
+        local width = OutlineWidth()
+        if width > 0 then
+            local outline = CreateFrame("Frame", nil, row, "BackdropTemplate")
+            local inset = width + OUTLINE_GAP
+            outline:SetPoint("TOPLEFT", -inset, inset)
+            outline:SetPoint("BOTTOMRIGHT", inset, -inset)
+            outline:SetBackdrop({edgeFile = "Interface\\Buttons\\WHITE8X8", edgeSize = width})
+            outline:EnableMouse(false)
+            row.outline = outline
+        end
         ColorPanel(row)
         return row
     end
@@ -1142,7 +1161,7 @@ function DyresToolkit.CreateDotTracker(spec)
         else
             for _, key in ipairs({"target", "focus"}) do
                 if not sections[key] and IsLiveHostile(PINNED[key].unit) then
-                    listTop = math.max(listTop, StackOffset(key) + RowStep() + PINNED_SPACING)
+                    listTop = math.max(listTop, StackOffset(key) + RowStep() + PinnedSpacing())
                 end
             end
         end
@@ -1399,7 +1418,7 @@ function DyresToolkit.CreateDotTracker(spec)
     function Place()
         local stack, position, point = tracker.stack, store.position, spec.point
         local sections = type(store.sections) == "table" and store.sections or {}
-        stack:SetSize(RowWidth(), (RowStep() + PINNED_SPACING) * 2)
+        stack:SetSize(RowWidth(), (RowStep() + PinnedSpacing()) * 2)
         stack:ClearAllPoints()
         if position then
             stack:SetPoint(position.point, UIParent, position.relativePoint, position.x, position.y)

@@ -86,10 +86,16 @@ local function Percent(value)
     return string.format("%d%%", value)
 end
 
-local function SliderOptions(minValue, maxValue, step, percent)
+local function Pixels(value)
+    return string.format("%d px", value)
+end
+
+-- format: true for percent, or a function for the value's text.
+local function SliderOptions(minValue, maxValue, step, format)
     local options = Settings.CreateSliderOptions(minValue, maxValue, step)
     if type(MinimalSliderWithSteppersMixin) == "table" and type(options.SetLabelFormatter) == "function" then
-        options:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right, percent and Percent or nil)
+        local formatter = format == true and Percent or (type(format) == "function" and format or nil)
+        options:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right, formatter)
     end
     return options
 end
@@ -593,6 +599,20 @@ local function AddTrackerPage(parent)
         return container:GetData()
     end, "Compact: a row per mob with an icon per spell. Bars: a block per mob with a bar per spell you know, "
         .. "draining as its time runs out. A change in combat applies when combat ends.")
+    -- The pinned rows' outline width (John, 2026-11-11; Dyre's Toolkit 2.8.0).
+    local outline = Proxy(page, "WTF_TRACKER_OUTLINE_WIDTH", Settings.VarType.Number, "Target and focus outline",
+        WTF.DEFAULT_OUTLINE_WIDTH,
+        function() return WTF.db.tracker.outlineWidth end,
+        function(value) WTF.SetTrackerOutlineWidth(value) end)
+    local outlineInitializer = Settings.CreateSlider(page, outline,
+        SliderOptions(WTF.OUTLINE_WIDTH_MIN, WTF.OUTLINE_WIDTH_MAX, 1, Pixels),
+        "How thick the solid outline around the target (purple) and focus (red) rows is, in pixels. 0 hides it. "
+            .. "A change in combat applies when combat ends."
+            .. (WTF.TrackerOutlineAvailable() and "" or " Needs Dyre's Toolkit 2.8 or later."))
+    AddDefaultTick(outlineInitializer, WTF.OUTLINE_WIDTH_MIN, WTF.OUTLINE_WIDTH_MAX, WTF.DEFAULT_OUTLINE_WIDTH)
+    if type(outlineInitializer.AddModifyPredicate) == "function" then
+        outlineInitializer:AddModifyPredicate(function() return WTF.TrackerOutlineAvailable() end)
+    end
     local dotsInitializer = Flag(page, "WTF_TRACKER_PLATE_DOTS", "Show DoT dots on nameplates", "tracker",
         "plateDots", false,
         "In combat, a bubble above each hostile nameplate with a dot per DoT you know: colored while it is up, "
