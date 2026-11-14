@@ -184,6 +184,7 @@ local REQUIRED_NAMESPACE = {
     "InitializePlateDots", "RefreshPlateDots", "HasTrackableDots", "ApplyTrackerColors", "ApplyDotColors",
     "InitializePredict", "RefreshPredict", "PredictAvailable", "ReportPredictDebug", "DotTracker",
     "SmartCurseAvailable", "ApplyCurseMacro", "SetCurseMode", "SetCurseMarker",
+    "SetStonesScale", "SetShardCounterScale",
     "TrackerOutlineAvailable", "SetTrackerOutlineWidth",
     "RefreshTrackerPrediction",
     "ReportRestrictions", "ResetFocusWorks", "InitializeProbe", "InitializeOptions", "OpenSettings",
@@ -234,6 +235,21 @@ function WTF.SanitizeShardLow(value)
         return WTF.DEFAULT_SHARD_LOW
     end
     return math.max(WTF.SHARD_LOW_MIN, math.min(WTF.SHARD_LOW_MAX, value))
+end
+
+-- The Stones bar's and the shard counter's size, in percent (John,
+-- 2026-11-12, from a player comment; as the control bar's Bar size).
+WTF.FRAME_SCALE_MIN = 50
+WTF.FRAME_SCALE_MAX = 150
+WTF.FRAME_SCALE_STEP = 5
+WTF.DEFAULT_FRAME_SCALE = 100
+
+function WTF.SanitizeFrameScale(value)
+    if not IsWholeNumber(value) then
+        return WTF.DEFAULT_FRAME_SCALE
+    end
+    local stepped = math.floor(value / WTF.FRAME_SCALE_STEP + 0.5) * WTF.FRAME_SCALE_STEP
+    return math.max(WTF.FRAME_SCALE_MIN, math.min(WTF.FRAME_SCALE_MAX, stepped))
 end
 
 -- Chat messages longer than this are cut by the client.
@@ -531,6 +547,7 @@ function WTF.SanitizeDB(db)
         counter = shards.counter ~= false,
         counterLow = WTF.SanitizeShardLow(shards.counterLow),
         counterPosition = SanitizePosition(shards.counterPosition),
+        counterScale = WTF.SanitizeFrameScale(shards.counterScale),
     }
     local stones = type(db.stones) == "table" and db.stones or {}
     local soulstone = type(stones.soulstone) == "table" and stones.soulstone or nil
@@ -538,6 +555,7 @@ function WTF.SanitizeDB(db)
         enabled = stones.enabled ~= false,
         shown = stones.shown ~= false,
         position = SanitizePosition(stones.position),
+        scale = WTF.SanitizeFrameScale(stones.scale),
         macros = stones.macros ~= false,
         remindSoulstone = stones.remindSoulstone ~= false,
         remindHealthstone = stones.remindHealthstone ~= false,

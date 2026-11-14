@@ -9,8 +9,10 @@ local DyresToolkit = ns.toolkit
 --
 -- Rules every Dyre's AddOn keeps: macros change only out of combat; AddOn
 -- code never calls SetRaidTarget, so a marker comes only from a macro's /tm,
--- which runs from your key press, untainted, also in combat; every @focus
--- condition has `exists`; spells are cast with /use.
+-- which runs from your key press, untainted, also in combat; spells are cast
+-- with /use. The focus macros' @focus clauses have no `exists` (John,
+-- 2026-11-12: "exists is a no-op, drop it"): `harm` is false with no unit,
+-- so `[@focus,harm,nodead]` already fails without a focus.
 
 local MACRO_ICON = 134400
 -- Leave the last character slots free for the player's own macros.
@@ -166,15 +168,35 @@ end
 -- Macro text -----------------------------------------------------------------
 
 -- The game's /tm for a unit, or nothing for no marker. "!" keeps a second
--- press from toggling the marker off; "exists" keeps it from marking nothing.
+-- press from toggling the marker off; "harm" keeps it from marking nothing
+-- (false with no unit).
 function DyresToolkit.MarkLine(unit, marker)
     if type(marker) ~= "number" or marker <= 0 then
         return nil
     end
-    return "/tm [@" .. unit .. ",harm,nodead,exists] !" .. marker
+    return "/tm [@" .. unit .. ",harm,nodead] !" .. marker
 end
 
-local FOCUS_LINE = "/focus [@mouseover,harm,nodead][nocombat,harm,nodead]"
+-- The focus lines (John, 2026-11-12, tested in client; from an MTF player:
+-- "Once in battle, the polymorph macro doesn't work"). The game's /focus
+-- (SlashCommands.lua, live 580, classic_era 576) runs FocusUnit(action) when
+-- the clause's unit is "focus", and the action text is empty, so a @focus
+-- clause focuses your target: it can never keep the focus. So the line
+-- matches only when the focus must change, and no match keeps it:
+--   the mob under the mouse; a missing or friendly focus (noharm is true with
+--   no unit) or a dead focus: your target. A live enemy focus: no clause
+--   matches, the focus stays ("Once focus is set, it's locked on").
+-- CLEAR_LINE comes first (John: "someone can shift-click, clear and retarget
+-- something"): Shift or a right-click (John, 2026-11-13: "make it so the
+-- user can use shift or right-click to get the switching focus behavior";
+-- [btn:2] is the action button's right mouse button; a key binding is
+-- always button 1, so with a key only Shift clears) clears the focus;
+-- /focus then takes the mouseover or target. No dead test (John: "Focus is auto-lost if the mob dies"). Only
+-- while focus works: the chain's macros stay under 255 letters ("Polymorph:
+-- Turtle" with the Era chain is 236; with this line, 267), and the chain
+-- does not rely on the focus.
+local CLEAR_LINE = "/clearfocus [mod:shift][btn:2]"
+local FOCUS_LINE = "/focus [@mouseover,harm,nodead][@focus,noharm][@focus,dead]"
 -- shift: without Shift, the mob under the mouse, else your target, becomes the focus.
 local SHIFT_FOCUS_LINE = "/focus [nomod:shift,@mouseover,harm,nodead][nomod:shift,harm,nodead]"
 local SHIFT_CAST = "[mod:shift,@mouseover,harm,nodead][mod:shift,harm,nodead]"
@@ -183,8 +205,8 @@ local SHIFT_CAST = "[mod:shift,@mouseover,harm,nodead][mod:shift,harm,nodead]"
 -- focus that teaches FocusWorks; on Era it does nothing).
 local FALLBACK = "[@mouseover,harm,nodead%s][harm,nodead%s]"
 
--- A control spell's macro: make the mob under the mouse (else your target out
--- of combat) your focus, mark it, and cast on it. options:
+-- A control spell's macro: keep a live enemy focus (Shift clears it), else
+-- make the mob under the mouse, else your target, your focus, mark it, and cast on it. options:
 --   spell      the spell ID or name (an ID with no name here gives nil)
 --   marker     a raid marker index for the /tm line, or nil/0 for none
 --   condition  extra macro conditions for the cast, such as ",pet:Succubus/Incubus"
@@ -214,14 +236,18 @@ function DyresToolkit.FocusCastMacro(options)
     local fallback = chain and FALLBACK:format(condition, condition) or ""
     if options.shift then
         return show .. "\n" .. SHIFT_FOCUS_LINE .. "\n/use " .. SHIFT_CAST
-            .. "[@focus,exists,harm,nodead" .. condition .. "]" .. fallback .. " " .. spell
+            .. "[@focus,harm,nodead" .. condition .. "]" .. fallback .. " " .. spell
     end
-    local lines = {show, FOCUS_LINE}
+    local lines = {show}
+    if not chain then
+        lines[#lines + 1] = CLEAR_LINE
+    end
+    lines[#lines + 1] = FOCUS_LINE
     local mark = DyresToolkit.MarkLine("focus", options.marker)
     if mark and chain then
         mark = mark:gsub(" !", FALLBACK:format("", "") .. " !", 1)
     end
     lines[#lines + 1] = mark
-    lines[#lines + 1] = "/use [@focus,exists,harm,nodead" .. condition .. "]" .. fallback .. " " .. spell
+    lines[#lines + 1] = "/use [@focus,harm,nodead" .. condition .. "]" .. fallback .. " " .. spell
     return table.concat(lines, "\n")
 end

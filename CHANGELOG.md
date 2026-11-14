@@ -4,6 +4,14 @@ Player-facing changes for each Warlock Tools Forever release, newest first. The
 release builder copies the section for the TOC version into the GitHub release
 notes and the CurseForge changelog, and fails if that section is missing.
 
+## 1.8.0
+
+### Features
+- **Stones bar size** (Stones page) and **Shard counter size** (Soul Shards page) make the Stones bar and the shard counter smaller or bigger, from 50% to 150%. Each keeps its center. A Stones bar change in combat applies when combat ends; the shard counter changes at once.
+
+### Fixes
+- "! Banish" and "! Seduction" (with Dyre's Toolkit 2.9 or later): in combat, with no mob under your mouse, they now make your target your focus when you have no live hostile focus. Before, they kept a dead focus in combat, so the cast failed once your first focus died. A live hostile focus now stays your focus also out of combat; mouse over a new mob, hold Shift as you press the macro, or right-click it on your action bar, to change it.
+
 ## 1.7.1
 
 ### Features

@@ -648,6 +648,25 @@ function WTF.RefreshStonesMover()
     end
 end
 
+-- The bar holds secure buttons, so its size changes only out of combat; it
+-- keeps its center (and saves it).
+local function ApplyBarScale()
+    if not buttons.bar then
+        return
+    end
+    if InCombatLockdown() then
+        stones.scalePending = true
+        return
+    end
+    stones.scalePending = false
+    WTF.ScaleKeepingCenter(buttons.bar, WTF.db.stones.scale / 100)
+end
+
+function WTF.SetStonesScale(percent)
+    WTF.db.stones.scale = WTF.SanitizeFrameScale(percent)
+    ApplyBarScale()
+end
+
 function WTF.ResetStonesPosition()
     WTF.db.stones.position = nil
     if InCombatLockdown() then
@@ -811,6 +830,9 @@ events:SetScript("OnEvent", function(_, event, ...)
             stones.resetPending = false
             PlaceBar(buttons.bar)
         end
+        if stones.scalePending then
+            ApplyBarScale()
+        end
         if stones.pending then
             Refresh()
         end
@@ -867,6 +889,8 @@ function WTF.InitializeStones()
     buttons.bar = bar
     buttons.soulstone = CreateStoneButton(bar, "WarlockToolsForeverSoulstone", "soulstone", 1)
     buttons.healthstone = CreateStoneButton(bar, "WarlockToolsForeverHealthstone", "healthstone", 2)
+    -- The saved place is in the bar's own scale, so the scale comes first.
+    bar:SetScale(WTF.db.stones.scale / 100)
     PlaceBar(bar)
     -- Level requirements need item data, which arrives later on first use.
     if type(C_Item.RequestLoadItemDataByID) == "function" then

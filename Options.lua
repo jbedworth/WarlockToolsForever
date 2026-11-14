@@ -296,13 +296,29 @@ local function AddShardPage(parent)
     local lowInitializer = Settings.CreateSlider(page, low, lowOptions,
         "The counter turns red at this many Soul Shards or fewer.")
     lowInitializer:SetParentInitializer(counterInitializer, function() return WTF.db.shards.counter end)
+    local counterScale = Proxy(page, "WTF_SHARDS_COUNTER_SCALE", Settings.VarType.Number, "Shard counter size",
+        WTF.DEFAULT_FRAME_SCALE,
+        function() return WTF.db.shards.counterScale end,
+        function(value) WTF.SetShardCounterScale(value) end)
+    local counterScaleInitializer = Settings.CreateSlider(page, counterScale,
+        SliderOptions(WTF.FRAME_SCALE_MIN, WTF.FRAME_SCALE_MAX, WTF.FRAME_SCALE_STEP, true),
+        "How big the shard counter is, in percent. It keeps its center, and changes at once, also in combat.")
+    counterScaleInitializer:SetParentInitializer(counterInitializer, function() return WTF.db.shards.counter end)
 end
 
 local function AddStonesPage(parent)
     local page = Settings.RegisterVerticalLayoutSubcategory(parent, STONES_TITLE)
-    Flag(page, "WTF_STONES_SHOWN", "Show the Stones bar", "stones", "shown", true,
+    local shownInitializer = Flag(page, "WTF_STONES_SHOWN", "Show the Stones bar", "stones", "shown", true,
         "The bar with the Soulstone and Healthstone buttons. Changes in combat apply when combat ends.",
         RefreshStones)
+    local scale = Proxy(page, "WTF_STONES_SCALE", Settings.VarType.Number, "Stones bar size",
+        WTF.DEFAULT_FRAME_SCALE,
+        function() return WTF.db.stones.scale end,
+        function(value) WTF.SetStonesScale(value) end)
+    local scaleInitializer = Settings.CreateSlider(page, scale,
+        SliderOptions(WTF.FRAME_SCALE_MIN, WTF.FRAME_SCALE_MAX, WTF.FRAME_SCALE_STEP, true),
+        "How big the Stones bar is, in percent. It keeps its center. A change in combat applies when combat ends.")
+    scaleInitializer:SetParentInitializer(shownInitializer, function() return WTF.db.stones.shown end)
     Flag(page, "WTF_STONES_MACROS", "Keep stone macros", "stones", "macros", true,
         "Keep \"! Healthstone\" and \"! Soulstone\" in your character macros for your action bars: "
             .. "left-click uses your best stone, right-click creates one. Turning this off deletes them.",

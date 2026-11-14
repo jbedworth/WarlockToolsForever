@@ -2962,9 +2962,10 @@ test('"! Banish" marks and casts on the same unit, your focus', function()
     local body = state.wtf.ControlMacroBody({name = "! Banish", spell = 710, known = "banish", marker = "banish"})
     local lines = {}
     for line in body:gmatch("[^\n]+") do lines[#lines + 1] = line end
-    equal(lines[2], "/focus [@mouseover,harm,nodead][nocombat,harm,nodead]")
-    equal(lines[3], "/tm [@focus,harm,nodead,exists] !5", "the moon goes on the focus")
-    equal(lines[4], "/use [@focus,exists,harm,nodead] Banish", "and so does the cast")
+    equal(lines[2], "/clearfocus [mod:shift][btn:2]", "Shift or a right-click clears it")
+    equal(lines[3], "/focus [@mouseover,harm,nodead][@focus,noharm][@focus,dead]", "a live enemy focus stays")
+    equal(lines[4], "/tm [@focus,harm,nodead] !5", "the moon goes on the focus")
+    equal(lines[5], "/use [@focus,harm,nodead] Banish", "and so does the cast")
 end)
 test("each mob you Fear or Banish gets its own bar, bound to its unit", function()
     local state = controlFixture()
@@ -3219,17 +3220,17 @@ end)
 test("control macros appear only for the spells you know; Seduction needs your Succubus", function()
     local state = controlFixture({known = {[FEAR] = true}})
     local fear = "#showtooltip Fear\n/focus [nomod:shift,@mouseover,harm,nodead][nomod:shift,harm,nodead]"
-        .. "\n/use [mod:shift,@mouseover,harm,nodead][mod:shift,harm,nodead][@focus,exists,harm,nodead] Fear"
+        .. "\n/use [mod:shift,@mouseover,harm,nodead][mod:shift,harm,nodead][@focus,harm,nodead] Fear"
     equal(macroBody(state, "! Fear"), fear,
         "a plain press focuses the mob under the mouse (else your target) and fears the focus; "
             .. "Shift fears the mob under the mouse (else your target) and keeps the focus")
-    equal(#fear, 181, "the body's length, well under 255")
+    equal(#fear, 174, "the body's length, well under 255")
     equal(macroBody(state, "! Banish"), nil, "no Banish before you learn it")
     equal(macroBody(state, "! Seduction"), nil, "no Seduction before Summon Succubus")
     state.known[BANISH] = true
     state.emit("SPELLS_CHANGED")
-    equal(macroBody(state, "! Banish"), "#showtooltip Banish\n/focus [@mouseover,harm,nodead][nocombat,harm,nodead]"
-        .. "\n/tm [@focus,harm,nodead,exists] !5\n/use [@focus,exists,harm,nodead] Banish",
+    equal(macroBody(state, "! Banish"), "#showtooltip Banish\n/clearfocus [mod:shift][btn:2]\n/focus [@mouseover,harm,nodead][@focus,noharm][@focus,dead]"
+        .. "\n/tm [@focus,harm,nodead] !5\n/use [@focus,harm,nodead] Banish",
         "the moon by the game's /tm, also in combat")
     state.known[712] = true
     state.emit("SPELLS_CHANGED")
@@ -3237,7 +3238,7 @@ test("control macros appear only for the spells you know; Seduction needs your S
     -- The Succubus learns Seduction from its Grimoire.
     state.petKnown = {[6358] = true}
     state.emit("UNIT_PET", "player")
-    contains(macroBody(state, "! Seduction"), "/use [@focus,exists,harm,nodead,pet:Succubus/Incubus] Seduction",
+    contains(macroBody(state, "! Seduction"), "/use [@focus,harm,nodead,pet:Succubus/Incubus] Seduction",
         "does nothing unless your pet is a Succubus or an Incubus")
     state.combat = true
     state.settings.WTF_CONTROL_MACROS:SetValue(false)
@@ -3253,7 +3254,7 @@ test("the Banish marker setting goes into the macro, rebuilt out of combat; the 
     banishAt(state, "nameplate4")
     local click = state.env.WarlockToolsForeverControlClick1
     state.settings.WTF_CONTROL_MARKER_BANISH:SetValue(8)
-    contains(macroBody(state, "! Banish"), "/tm [@focus,harm,nodead,exists] !8")
+    contains(macroBody(state, "! Banish"), "/tm [@focus,harm,nodead] !8")
     equal(click.attributes.macrotext1, CLICK_BANISH)
     state.combat = true
     state.settings.WTF_CONTROL_MARKER_BANISH:SetValue(0)
@@ -3900,6 +3901,49 @@ test("a refusal is logged with the AddOn the game named", function()
     local text = tradeDebug(state)
     contains(text, "ADDON_ACTION_BLOCKED WarlockToolsForever UNKNOWN()")
     contains(text, "place refused retry")
+end)
+-- Sizes (John, 2026-11-12, from a player comment): percent, 50-150, step 5.
+test("the Stones bar and shard counter sizes are repaired and start at the saved size", function()
+    for saved, expected in pairs({[73] = 75, [999] = 150, [10] = 50, [2.5] = 100, junk = 100}) do
+        local state = fixture({db = {stones = {scale = saved}, shards = {counterScale = saved}}})
+        equal(state.wtf.db.stones.scale, expected, "stones " .. tostring(saved))
+        equal(state.wtf.db.shards.counterScale, expected, "counter " .. tostring(saved))
+    end
+    local state = fixture()
+    equal(state.wtf.db.stones.scale, 100, "today's size by default")
+    equal(state.env.WarlockToolsForeverStones:GetScale(), 1)
+    local sized = fixture({db = {stones = {scale = 80}, shards = {counterScale = 120}}})
+    equal(sized.env.WarlockToolsForeverStones:GetScale(), 0.8)
+    equal(sized.wtf.shardCounter:GetScale(), 1.2)
+end)
+test("the Stones bar size waits for combat to end and keeps the bar's center", function()
+    local state = fixture()
+    local bar = state.env.WarlockToolsForeverStones
+    bar.protected = true -- its secure buttons make it protected in client
+    local x, y = state.absCenter(bar)
+    state.combat = true
+    state.settings.WTF_STONES_SCALE:SetValue(70)
+    equal(state.wtf.db.stones.scale, 70, "saved at once")
+    equal(bar:GetScale(), 1, "no change in combat")
+    state.combat = false
+    state.emit("PLAYER_REGEN_ENABLED")
+    equal(bar:GetScale(), 0.7, "applied when combat ends")
+    local newX, newY = state.absCenter(bar)
+    equal(math.floor(newX + 0.5), math.floor(x + 0.5), "same center")
+    equal(math.floor(newY + 0.5), math.floor(y + 0.5))
+    equal(state.wtf.db.stones.position ~= nil, true, "the kept place is saved")
+end)
+test("the shard counter size changes at once, also in combat", function()
+    local state = fixture()
+    local counter = state.wtf.shardCounter
+    local x, y = state.absCenter(counter)
+    state.combat = true
+    state.settings.WTF_SHARDS_COUNTER_SCALE:SetValue(130)
+    equal(counter:GetScale(), 1.3)
+    local newX, newY = state.absCenter(counter)
+    equal(math.floor(newX + 0.5), math.floor(x + 0.5), "same center")
+    equal(math.floor(newY + 0.5), math.floor(y + 0.5))
+    equal(state.wtf.db.shards.counterScale, 130)
 end)
 test("a Soulstone on someone is remembered, reported, and announced when it ends", function()
     local state = stonesFixture()
@@ -5026,11 +5070,11 @@ end)
 -- in era"; rule shared with MTF): until a focus is seen to work, the macros
 -- fall back, rows take no clicks, and the Focus box is hidden.
 local CHAIN_FEAR = "#showtooltip Fear\n/focus [nomod:shift,@mouseover,harm,nodead][nomod:shift,harm,nodead]"
-    .. "\n/use [mod:shift,@mouseover,harm,nodead][mod:shift,harm,nodead][@focus,exists,harm,nodead]"
+    .. "\n/use [mod:shift,@mouseover,harm,nodead][mod:shift,harm,nodead][@focus,harm,nodead]"
     .. "[@mouseover,harm,nodead][harm,nodead] Fear"
-local CHAIN_BANISH = "#showtooltip Banish\n/focus [@mouseover,harm,nodead][nocombat,harm,nodead]"
-    .. "\n/tm [@focus,harm,nodead,exists][@mouseover,harm,nodead][harm,nodead] !5"
-    .. "\n/use [@focus,exists,harm,nodead][@mouseover,harm,nodead][harm,nodead] Banish"
+local CHAIN_BANISH = "#showtooltip Banish\n/focus [@mouseover,harm,nodead][@focus,noharm][@focus,dead]"
+    .. "\n/tm [@focus,harm,nodead][@mouseover,harm,nodead][harm,nodead] !5"
+    .. "\n/use [@focus,harm,nodead][@mouseover,harm,nodead][harm,nodead] Banish"
 
 test("a client whose focus is not yet seen gets fallback macros, no Focus box, and click-free rows", function()
     local state = controlFixture({focusWorks = false, known = {[FEAR] = true, [BANISH] = true, [712] = true}})
@@ -5040,8 +5084,8 @@ test("a client whose focus is not yet seen gets fallback macros, no Focus box, a
     equal(macroBody(state, "! Banish"), CHAIN_BANISH, "the moon goes on the mob it banishes")
     state.petKnown = {[6358] = true}
     state.emit("UNIT_PET", "player")
-    equal(macroBody(state, "! Seduction"), "#showtooltip Seduction\n/focus [@mouseover,harm,nodead][nocombat,harm,nodead]"
-        .. "\n/use [@focus,exists,harm,nodead,pet:Succubus/Incubus][@mouseover,harm,nodead,pet:Succubus/Incubus]"
+    equal(macroBody(state, "! Seduction"), "#showtooltip Seduction\n/focus [@mouseover,harm,nodead][@focus,noharm][@focus,dead]"
+        .. "\n/use [@focus,harm,nodead,pet:Succubus/Incubus][@mouseover,harm,nodead,pet:Succubus/Incubus]"
         .. "[harm,nodead,pet:Succubus/Incubus] Seduction")
     equal(state.drivers[focusBox(state)], "hide", "no Focus box")
     equal(focusBox(state).attributes.macrotext1, nil)
@@ -5081,9 +5125,9 @@ test("once a focus is seen, the Forever forms, the Focus box, and clicks come ba
     equal(state.drivers[focusBox(state)], "hide")
     state.combat = false
     state.emit("PLAYER_REGEN_ENABLED")
-    equal(macroBody(state, "! Banish"), "#showtooltip Banish\n/focus [@mouseover,harm,nodead][nocombat,harm,nodead]"
-        .. "\n/tm [@focus,harm,nodead,exists] !5\n/use [@focus,exists,harm,nodead] Banish")
-    contains(macroBody(state, "! Fear"), "[@focus,exists,harm,nodead] Fear")
+    equal(macroBody(state, "! Banish"), "#showtooltip Banish\n/clearfocus [mod:shift][btn:2]\n/focus [@mouseover,harm,nodead][@focus,noharm][@focus,dead]"
+        .. "\n/tm [@focus,harm,nodead] !5\n/use [@focus,harm,nodead] Banish")
+    contains(macroBody(state, "! Fear"), "[@focus,harm,nodead] Fear")
     equal(state.drivers[focusBox(state)], "[@focus,exists,harm,nodead] show; hide")
     banishAt(state, "nameplate4")
     equal(state.env.WarlockToolsForeverControlClick1.attributes.macrotext1, CLICK_BANISH, "the Banish click")
@@ -5101,7 +5145,7 @@ test("a missing focus teaches nothing; the flag is one per client, for every cha
     -- Another character on the same client, with its own fresh settings.
     local other = controlFixture({focusWorks = false, toolkitDB = state.toolkitDB})
     equal(other.toolkitDB.focusWorks, true, "learned once, for every character")
-    equal(macroBody(other, "! Banish"):find("][harm,nodead]", 1, true), nil, "no fallback")
+    equal(macroBody(other, "! Banish"):find("[@mouseover,harm,nodead][harm,nodead]", 1, true), nil, "no fallback")
     equal(other.drivers[focusBox(other)], "[@focus,exists,harm,nodead] show; hide", "the Focus box")
     for _, damaged in ipairs({"yes", false, 1}) do
         local repaired = controlFixture({focusWorks = false, accountDB = {focusWorks = damaged}})
@@ -5116,7 +5160,7 @@ test("a 1.3.3 test build's per-character flag moves to the account once", functi
     equal(state.toolkitDB.focusWorks, true, "carried into the Toolkit's flag")
     equal(state.wtf.accountDB.focusWorks, nil, "and dropped from WTF's")
     equal(state.wtf.db.control.focusWorks, nil, "the per-character key goes")
-    equal(macroBody(state, "! Banish"):find("][harm,nodead]", 1, true), nil, "the focus macros")
+    equal(macroBody(state, "! Banish"):find("[@mouseover,harm,nodead][harm,nodead]", 1, true), nil, "the focus macros")
     local untouched = controlFixture({focusWorks = false, db = {control = {focusWorks = "yes"}}})
     equal(untouched.toolkitDB.focusWorks, nil, "only a true one moves")
     equal(untouched.wtf.db.control.focusWorks, nil)

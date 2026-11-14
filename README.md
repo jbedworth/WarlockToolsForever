@@ -99,12 +99,14 @@ game unchanged.
 - **Shard counter:** a Soul Shard icon on screen with your shard count: red
   when low (2 or fewer by default; **Low shard warning** sets it), green at
   your limit. Hover it for the count and the limit. Hide it on the Soul
-  Shards settings page; see [Moving frames](#moving-frames) to place it.
+  Shards settings page, and change its size there (**Shard counter size**,
+  50-150%); see [Moving frames](#moving-frames) to place it.
 
 ## Stones
 
 A small bar with a Soulstone and a Healthstone button; see
-[Moving frames](#moving-frames) to place it.
+[Moving frames](#moving-frames) to place it. **Stones bar size** on the
+Stones settings page makes it smaller or bigger (50-150%).
 
 - **Left-click** uses the best stone you carry. A Soulstone goes on your
   friendly target, grouped or not, or on you without one; Soulstones cannot
@@ -394,8 +396,12 @@ on, also when you tab or move the mouse before it lands.
   the mob under your mouse (else your target) your focus and fears it. Hold
   Shift as you press it to Fear the mob under your mouse (else your target)
   and keep your focus, for juggling a second mob.
-  "! Banish" and "! Seduction" focus the hostile mob under your mouse (or your
-  target, out of combat) and cast on your focus; "! Seduction" does nothing
+  "! Banish" and "! Seduction" focus the hostile mob under your mouse; with
+  none, a live hostile focus stays your focus, else your target becomes it,
+  also in combat. Hold Shift as you press one, or right-click it on your
+  action bar, to clear your focus first, so your target (or the mob under
+  your mouse) becomes it. Then they cast on
+  your focus; "! Seduction" does nothing
   unless your pet is a Succubus or an Incubus. Turn them off on the Control settings page.
 
 ## Settings

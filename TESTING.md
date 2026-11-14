@@ -536,6 +536,12 @@ and printing.
       nameplates (each frame AddOn), and DoT tracker rows, where it stands
       out from the row's own purple health. Each Block fill, color, opacity,
       and outline choice changes every block at once, also in combat.
+- [ ] WTF 1.8.0, sizes (Forever, then Era): "Stones bar size" (Stones page)
+      and "Shard counter size" (Soul Shards page) at 50% and 150%: each frame
+      keeps its center, and its buttons and drag still work. After /reload
+      each keeps its size and place. A Stones bar change in combat applies
+      when combat ends, with no blocked-action error; the counter changes at
+      once.
 - [ ] WTF 1.7.1 with Dyre's Toolkit 2.8.0, "Target and focus outline" (Forever,
       then Era): the slider shows "3 px" with the gold mark at 3, and the
       rows look as before. 0 hides both outlines and the rows close up; 20

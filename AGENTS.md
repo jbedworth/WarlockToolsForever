@@ -125,7 +125,10 @@ their other classes ("virality"):
   frame (not secure, so it updates and moves in combat) with the Soul Shard
   icon and the carried count, outlined: green at or above the limit, red at
   or below the Low shard warning setting (0-10, default 2, author's choice),
-  white between.
+  white between. "Shard counter size" (`shards.counterScale`, percent 50-150,
+  step 5, default 100; John, 2026-11-12, from a player comment) scales it,
+  keeping its center (`ScaleKeepingCenter`, which saves the place); a plain
+  frame, so also in combat. The scale is set before the saved place.
   Updates on `BAG_UPDATE_DELAYED` and limit changes; on by default, with a
   show switch; it moves with the one lock below; its place is saved per
   character and reset by `/wtf reset`. It keeps UIParent's strata, MEDIUM
@@ -200,7 +203,11 @@ their other classes ("virality"):
 
 ### Stones (built)
 
-- A movable bar (`WarlockToolsForeverStones`, gold border, brown background)
+- A movable bar (`WarlockToolsForeverStones`, gold border, brown background;
+  "Stones bar size", `stones.scale`, percent 50-150, step 5, default 100, John,
+  2026-11-12: scaled keeping its center, out of combat only, as its secure
+  buttons make it protected; a change in combat waits for
+  `PLAYER_REGEN_ENABLED`; the scale is set before the saved place)
   with two `SecureActionButtonTemplate` buttons, `WarlockToolsForeverSoulstone`
   and `WarlockToolsForeverHealthstone`. Left-click uses the best stone carried (Soulstone:
   `/use [@target,help,nodead][@player] item:ID`; Healthstone: `/use item:ID`).
@@ -755,7 +762,7 @@ tells; the rule learns it, identically in MTF (keep the two the same):
   one is carried into the account value once at load, and the key goes.
 - Until it is true: the macros keep their `/focus` line (on Forever it sets
   the focus that teaches WTF; on Era it does nothing) and add the mob under
-  the mouse, then your target, after `[@focus,exists,harm,nodead]`: "! Fear"
+  the mouse, then your target, after `[@focus,harm,nodead]`: "! Fear"
   appends `[@mouseover,harm,nodead][harm,nodead]` to its cast (Shift still
   fears the mob under the mouse, else your target, without the focus);
   "! Banish"'s `/tm` and `/use` and "! Seduction"'s `/use` (with its pet
@@ -806,10 +813,20 @@ tells; the rule learns it, identically in MTF (keep the two the same):
 - Markers come only from the game's `/tm` (author-approved, as MTF): a
   macro's `/tm` runs untainted from the key press (pinned SlashCommands.lua),
   so it works in and out of combat. "! Banish" is exactly MTF's "! Polymorph"
-  with Banish (John, 1.3.1): `#showtooltip Banish`, `/focus
-  [@mouseover,harm,nodead][nocombat,harm,nodead]`, `/tm
-  [@focus,harm,nodead,exists] !N` (`WTF.MarkLine`; N is the Banish marker
-  setting, and None leaves the line out), `/use [@focus,exists,harm,nodead]
+  with Banish (John, 1.3.1): `#showtooltip Banish`, `/clearfocus
+  [mod:shift][btn:2]` (only while the focus works; John, 2026-11-13: "make
+  it so the user can use shift or right-click to get the switching focus
+  behavior"; a key binding is always button 1, so a key clears only with
+  Shift), `/focus
+  [@mouseover,harm,nodead][@focus,noharm][@focus,dead]` (Toolkit 2.9.0, John,
+  2026-11-12, after a client test: the mob under the mouse; a live enemy focus
+  matches nothing and stays; a missing, friendly, or dead focus gives your
+  target, also in combat; Shift or a right-click clears the focus first; a dead mob drops
+  the focus by itself, John: "Focus is auto-lost if the mob dies"). A `@focus` clause
+  that matches a live focus would refocus your target: the game's /focus
+  turns it into `FocusUnit("")`), `/tm
+  [@focus,harm,nodead] !N` (`WTF.MarkLine`; N is the Banish marker
+  setting, and None leaves the line out), `/use [@focus,harm,nodead]
   Banish`. "!" keeps a second press from toggling it off. A marker change
   rebuilds the macros out of combat. The row click, "! Fear", and
   "! Seduction" have no `/tm`; Banish from the plain spell button gets no
@@ -862,16 +879,16 @@ tells; the rule learns it, identically in MTF (keep the two the same):
   "! Fear" once you know Fear, inverted in 1.3.1 (John: "set focus by
   default, shift fears a mob without changing focus"): `/focus
   [nomod:shift,@mouseover,harm,nodead][nomod:shift,harm,nodead]` then `/use
-  [mod:shift,@mouseover,harm,nodead][mod:shift,harm,nodead][@focus,exists,
-  harm,nodead] Fear` (181 letters): a plain press makes the mob under the
+  [mod:shift,@mouseover,harm,nodead][mod:shift,harm,nodead][@focus,
+  harm,nodead] Fear` (174 letters): a plain press makes the mob under the
   mouse, else the target, your focus and fears it (with neither, your focus
   as it was); Shift fears the mob under the mouse, else the target, and
   keeps the focus. No /tm, as Fear has no marker setting; "! Banish" once you know Banish and "! Seduction" once your summoned demon
   knows Seduction (a Grimoire teaches it; the pet spellbook, by ID or by name,
   so a Succubus or an Incubus counts; checked on `UNIT_PET` and
   `SPELLS_CHANGED`; the macro stays when the demon is dismissed; per the
-  author, a learned Grimoire teaches both the Succubus and the Incubus): `#showtooltip`, `/focus [@mouseover,harm,nodead]
-  [nocombat,harm,nodead]`, `/use [@focus,exists,harm,nodead] <spell>` (Seduction
+  author, a learned Grimoire teaches both the Succubus and the Incubus): `#showtooltip`, `/clearfocus [mod:shift][btn:2]`
+  (focus works only), `/focus [@mouseover,harm,nodead][@focus,noharm][@focus,dead]`, `/use [@focus,harm,nodead] <spell>` (Seduction
   with `pet:Succubus/Incubus`, so it does nothing without one). "! Banish"
   also has its `/tm` line (see the marker rules above); the others have none.
   Written with Stones' macro writer, out of combat; off deletes them.
@@ -919,9 +936,12 @@ tells; the rule learns it, identically in MTF (keep the two the same):
   letter counts): the pinned SlashCommands.lua `/use` handler tries an item
   (SecureCmdItemParse, C_Item.GetItemInfo(name)), else CastSpellByName, so
   it casts spells. No spell WTF names is an item's name; a new spell whose
-  name is also an item's keeps `/cast` on its line. Every `@focus` condition
-  has `exists` (author: focus conditions need it), as in
-  `[@focus,exists,harm,nodead]`; the `/tm` lines use `[@focus,harm,nodead,exists]`.
+  name is also an item's keeps `/cast` on its line. The Toolkit's control
+  macros (Macros.lua: "! Fear", "! Banish", "! Seduction", and their `/tm`
+  lines) have no `exists` since 2.9.0 (John, 2026-11-12: "exists is a no-op,
+  drop it"): `[@focus,harm,nodead]` already fails with no focus. The click
+  macrotexts, the DoT tracker's focus casts, and the state drivers keep
+  `[@focus,exists,harm,nodead]` until the Toolkit changes them too.
 
 ### Magnetic frames (built)
 
