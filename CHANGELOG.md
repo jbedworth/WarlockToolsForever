@@ -4,6 +4,11 @@ Player-facing changes for each Warlock Tools Forever release, newest first. The
 release builder copies the section for the TOC version into the GitHub release
 notes and the CurseForge changelog, and fails if that section is missing.
 
+## 1.8.1
+
+### Fixes
+- Soul Shards: shards gained in a dungeon or raid above your limit are now deleted after you leave it, on your next key presses. Before, a shard WTF could not delete inside could stay for good, for example after a `/reload` in the dungeon. Shards you brought in (from your bank, for a raid) stay, less the ones you used.
+
 ## 1.8.0
 
 ### Features

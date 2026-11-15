@@ -199,7 +199,23 @@ their other classes ("virality"):
   shard stays; another may go). `/wtf debug_shards` shows the count, limit,
   and keep count, the stop reason, the last attempt (result, count, keep
   count, combat, restriction), each deletion (slot, count and keep count
-  before it), and each gain with the keep count after it.
+  before it), each gain with the keep count after it, and `inInstance` and
+  `instanceKeep`.
+- Instances (John, 2026-11-15, after a player in Orgrimmar kept 22 shards over
+  a limit of 16, with no gain logged since login: "if the user leaves a
+  dungeon, let's check their shard count and trim it to the max set number"):
+  on `PLAYER_ENTERING_WORLD` inside an instance (`IsInInstance()`), the keep
+  count is saved per character as `shards.instanceKeep` (once; a `/reload` or
+  relog inside keeps the saved value), and each drop inside lowers it to the
+  count. On `PLAYER_ENTERING_WORLD` outside, the keep count goes down to it and
+  it is cleared, so shards gained inside go on the next inputs, down to the
+  limit, whatever kept them (a reload inside resets the keep count to the
+  count; not confirmed which cause the players hit). Shards brought in stay
+  (John's raid case: bank shards for a raid). A shard traded inside is
+  trimmed too (no bank or mail inside). With deletion off or stopped, nothing
+  is saved and the value is cleared, so turning it on deletes nothing.
+  Repaired on load (`WTF.SanitizeInstanceKeep`: a whole number 0-1000, else
+  nil).
 
 ### Stones (built)
 

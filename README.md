@@ -81,7 +81,11 @@ game unchanged.
   9 seconds of a Shadowburn hit (Forever's Shadowburn gives a shard if the
   target dies within 8 seconds). Shards you
   move into your bags yourself, from the bank, mail, or trade, are never
-  deleted, even above the limit.
+  deleted, even above the limit. The one exception: in a dungeon or raid.
+- **Dungeons and raids:** as you leave one, WTF deletes the shards above your
+  limit that you got inside, on your next key presses, also after a `/reload`
+  or a relog. The shards you brought in stay, less the ones you used. A
+  shard traded to you inside counts as one you got inside.
 - **Only the new shard goes.** If you carry more than the limit on purpose, WTF
   deletes only the shard Drain Soul just created and keeps the rest. WTF
   remembers how many shards to keep: the shards you had at login and the ones

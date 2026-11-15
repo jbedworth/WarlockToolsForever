@@ -2092,6 +2092,71 @@ test("using shards lowers the keep count, so new ones above the limit go", funct
     for _ = 1, 3 do state.press() end
     equal(state.count(), 14, "one of the two is within the limit")
 end)
+-- John, 2026-11-15: a player kept extra shards from a dungeon; leaving one
+-- trims what was gained inside, and keeps what was brought in.
+local function enterInstance(state, inside)
+    state.inInstance = inside
+    state.emit("PLAYER_ENTERING_WORLD")
+end
+test("shards gained in a dungeon and kept go as you leave it", function()
+    local state = fullSoulBagWith({})
+    enterInstance(state, true)
+    equal(state.wtf.db.shards.instanceKeep, 14, "the keep count as you enter is saved")
+    -- Gains WTF did not see as created (for any reason) raise the keep count.
+    state.arrive(3, 1)
+    state.arrive(3, 2)
+    state.press()
+    equal(state.count(), 16, "kept inside")
+    enterInstance(state, false)
+    equal(state.wtf.db.shards.instanceKeep, nil, "cleared as you leave")
+    for _ = 1, 3 do state.press() end
+    equal(state.count(), 14, "trimmed to the limit on the next key presses")
+end)
+test("shards brought into a dungeon stay as you leave, less the ones used", function()
+    local state = fullSoulBagWith({})
+    for slot = 1, 3 do state.arrive(3, slot) end
+    equal(state.count(), 17, "from the bank, for a raid: kept")
+    enterInstance(state, true)
+    equal(state.wtf.db.shards.instanceKeep, 17)
+    state.bags[5].items[1] = nil
+    state.emit("BAG_UPDATE_DELAYED")
+    equal(state.wtf.db.shards.instanceKeep, 16, "a shard used inside lowers it")
+    state.arrive(3, 4)
+    state.arrive(3, 5)
+    equal(state.count(), 18)
+    enterInstance(state, false)
+    for _ = 1, 4 do state.press() end
+    equal(state.count(), 16, "the two gained inside go; the ones brought in stay")
+end)
+test("the keep count as you entered survives a reload inside the dungeon", function()
+    local state = fullSoulBagWith({db = {shards = {instanceKeep = 14}}})
+    state.inInstance = true
+    state.arrive(3, 1)
+    state.arrive(3, 2)
+    enterInstance(state, true)
+    equal(state.wtf.db.shards.instanceKeep, 14, "the saved value stays")
+    state.slash("debug_shards")
+    contains(table.concat(state.messages, "|"), "inInstance=true instanceKeep=14")
+    enterInstance(state, false)
+    for _ = 1, 3 do state.press() end
+    equal(state.count(), 14)
+end)
+test("with shard deletion off, entering and leaving a dungeon deletes nothing", function()
+    local state = fullSoulBagWith({db = {shards = {enabled = false}}})
+    enterInstance(state, true)
+    equal(state.wtf.db.shards.instanceKeep, nil, "nothing saved")
+    state.arrive(3, 1)
+    enterInstance(state, false)
+    state.wtf.db.shards.enabled = true
+    state.press()
+    equal(state.count(), 15, "the shard stays")
+end)
+test("a damaged saved instance keep count is repaired on load", function()
+    for _, value in ipairs({-1, 2.5, "14", 5000}) do
+        local state = fullSoulBagWith({db = {shards = {instanceKeep = value}}})
+        equal(state.wtf.db.shards.instanceKeep, nil, tostring(value))
+    end
+end)
 test("lowering the limit deletes no shard", function()
     local state = fullSoulBagWith({})
     state.settings.WTF_SHARDS_AUTO_LIMIT:SetValue(false)

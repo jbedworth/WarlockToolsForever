@@ -11,6 +11,14 @@ local addonName, WTF = ...
 -- than the keep count, each key press or click deletes one shard. A created
 -- shard WTF could not delete at once therefore still goes later, and two
 -- shards arriving together are both deleted, however the client reports them.
+--
+-- Instances (John, 2026-11-15, after a player kept extra shards from a
+-- dungeon: "if the user leaves a dungeon, let's check their shard count and
+-- trim it"): the keep count as you enter an instance is saved per character
+-- (shards.instanceKeep, so a /reload or relog inside keeps it) and lowered by
+-- each drop inside. As you leave, the keep count goes down to it, so shards
+-- gained inside and kept for any reason go on the next key presses, down to
+-- the limit; shards you brought in (from the bank, for a raid) stay.
 local SOUL_SHARD_ITEM_ID = 6265
 -- Bit in GetContainerNumFreeSlots' bagFamily that marks a soul bag.
 local SOUL_BAG_FAMILY = 4
@@ -478,6 +486,34 @@ local function OnBagsChanged()
         LogGain(change, count, created)
     elseif change < 0 then
         state.keep = math.min(state.keep, count)
+        local instanceKeep = WTF.db.shards.instanceKeep
+        if instanceKeep ~= nil then
+            WTF.db.shards.instanceKeep = math.min(instanceKeep, count)
+        end
+    end
+end
+
+local function InInstance()
+    if type(IsInInstance) ~= "function" then
+        return false
+    end
+    local inside = IsInInstance()
+    return inside == true or inside == 1
+end
+
+-- On PLAYER_ENTERING_WORLD, after the bag scan. With deletion off or stopped,
+-- nothing is saved or trimmed, so turning it on later deletes nothing.
+local function OnZoneChanged()
+    local shards = WTF.db.shards
+    if not shards.enabled or state.blocked then
+        shards.instanceKeep = nil
+    elseif InInstance() then
+        if shards.instanceKeep == nil then
+            shards.instanceKeep = state.keep
+        end
+    elseif shards.instanceKeep ~= nil then
+        state.keep = math.min(state.keep, shards.instanceKeep)
+        shards.instanceKeep = nil
     end
 end
 
@@ -499,8 +535,11 @@ end
 
 local events = CreateFrame("Frame")
 events:SetScript("OnEvent", function(_, event, ...)
-    if event == "BAG_UPDATE_DELAYED" or event == "PLAYER_ENTERING_WORLD" then
+    if event == "BAG_UPDATE_DELAYED" then
         OnBagsChanged()
+    elseif event == "PLAYER_ENTERING_WORLD" then
+        OnBagsChanged()
+        OnZoneChanged()
     elseif event == "ADDON_ACTION_BLOCKED" or event == "ADDON_ACTION_FORBIDDEN" then
         local blockedAddon = ...
         if blockedAddon == addonName and state.deleting then
@@ -639,11 +678,12 @@ function WTF.ReportShardDebug()
     end
     local limit, source = WTF.GetShardLimit()
     WTF.Report(string.format(
-        "debug_shards count=%d limit=%d keep=%d source=%s enabled=%s blocked=%s restricted=%s held=%s channeling=%s secretCasts=%s settling=%s",
+        "debug_shards count=%d limit=%d keep=%d source=%s enabled=%s blocked=%s restricted=%s held=%s channeling=%s secretCasts=%s settling=%s inInstance=%s instanceKeep=%s",
         WTF.CountShards(), limit, state.keep, source, tostring(WTF.db and WTF.db.shards.enabled),
         tostring(state.blocked), tostring(DeletionRestricted()),
         state.heldAt and string.format("%.1fs ago", GetTime() - state.heldAt) or "never", tostring(state.channeling),
-        tostring(state.secretCasts), tostring(Settling())))
+        tostring(state.secretCasts), tostring(Settling()), tostring(InInstance()),
+        tostring(WTF.db and WTF.db.shards.instanceKeep)))
     -- The counter frame (player report, Classic Era: "the soul shard tracker is
     -- missing"): whether startup made it, and where and how it shows.
     if counter then

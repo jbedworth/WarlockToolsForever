@@ -219,6 +219,9 @@ WTF.SHARD_LOW_MIN = 0
 WTF.SHARD_LOW_MAX = 10
 WTF.DEFAULT_SHARD_LOW = 2
 
+-- More shards than any bags can carry: a larger saved value is damaged.
+local INSTANCE_KEEP_MAX = 1000
+
 local function IsWholeNumber(value)
     return type(value) == "number" and value == math.floor(value)
 end
@@ -228,6 +231,14 @@ function WTF.SanitizeShardLimit(value)
         return WTF.DEFAULT_SHARD_LIMIT
     end
     return math.max(WTF.SHARD_LIMIT_MIN, math.min(WTF.SHARD_LIMIT_MAX, value))
+end
+
+-- The shards kept when you entered an instance (Shards.lua), or nil outside one.
+function WTF.SanitizeInstanceKeep(value)
+    if not IsWholeNumber(value) or value < 0 or value > INSTANCE_KEEP_MAX then
+        return nil
+    end
+    return value
 end
 
 function WTF.SanitizeShardLow(value)
@@ -548,6 +559,7 @@ function WTF.SanitizeDB(db)
         counterLow = WTF.SanitizeShardLow(shards.counterLow),
         counterPosition = SanitizePosition(shards.counterPosition),
         counterScale = WTF.SanitizeFrameScale(shards.counterScale),
+        instanceKeep = WTF.SanitizeInstanceKeep(shards.instanceKeep),
     }
     local stones = type(db.stones) == "table" and db.stones or {}
     local soulstone = type(stones.soulstone) == "table" and stones.soulstone or nil

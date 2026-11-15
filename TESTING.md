@@ -276,6 +276,12 @@ and printing.
       boss fight (Encounter restriction) the same: no ADDON_ACTION_BLOCKED in
       BugGrabber, and `/wtf debug_shards` shows `restricted=true` and a
       recent `held=` during the fight.
+- [ ] Enter a dungeon at your limit (`debug_shards`: `inInstance=true
+      instanceKeep=` your count). Get a few shards above your limit inside and
+      `/reload` there. Leave: the extra shards go on your next key presses,
+      one chat line each, down to your limit, and `instanceKeep=nil`. Then
+      bring bank shards above your limit into a dungeon, use one, and leave:
+      those stay, less the one used.
 - [ ] A Warlock who has not learned Siphon Life (or a curse): learn a new
       rank of a DoT you know, in and out of combat: no "aura slot ... was not
       found" error in BugGrabber, and the tracker shows the new rank.
