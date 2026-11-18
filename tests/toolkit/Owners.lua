@@ -1,4 +1,4 @@
-local _, ns = ...
+local addonName, ns = ...
 local DyresToolkit = ns.toolkit
 
 -- One owner per kind, for every Dyre's AddOn (Toolkit 2.5.0, engine stage B;
@@ -14,6 +14,12 @@ local DyresToolkit = ns.toolkit
 -- DyresToolkit`) may claim, so no other AddOn can silence one.
 
 local kinds = {}
+
+-- A Dyre's AddOn, or the toolkit itself (2.9.0: it owns the group warnings
+-- and tank tools; its own TOC has no Group line).
+local function Allowed(addon)
+    return addon == addonName or ns.InFamily(addon)
+end
 
 local function Owner(kind)
     local best
@@ -63,7 +69,7 @@ function DyresToolkit.ClaimOwner(kind, addon, priority)
     if not Valid(kind, addon) then
         return false, "a claim needs a kind and an addon"
     end
-    if not ns.InFamily(addon) then
+    if not Allowed(addon) then
         return false, "owner claims are for Dyre's AddOns"
     end
     local entry = Entry(kind)
@@ -90,7 +96,7 @@ function DyresToolkit.SetOwnerEnabled(kind, addon, enabled)
     if not entry then
         return false, "never claimed"
     end
-    if not ns.InFamily(addon) then
+    if not Allowed(addon) then
         return false, "owner claims are for Dyre's AddOns"
     end
     local before = Owner(kind)

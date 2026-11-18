@@ -43,6 +43,31 @@ local DyresToolkit = ns.toolkit
 -- DyresToolkitDB.ticks[rank spell ID] = {tick, power}, shared by every
 -- Dyre's AddOn, with a one-time copy of an owner's older table
 -- (spec.legacyTicks: WTF's WarlockToolsForeverAccountDB.ticks).
+--
+-- Every class (the DDT class gate; lead, 2026-11-14, John: "go with your
+-- recommendations"; Dyre's Debuff Tracker's class audit):
+--   - A rank may have no base damage (false; option a): no first guess, so
+--     the DoT counts from its first tick with an amount (the combat log), a
+--     saved tick, or its tooltip (Forever). A rank with no duration (nil:
+--     Forever-only spells whose duration is not checked) counts only when
+--     its tooltip gives one. A nil level is not in the sources.
+--   - Finishers (family `finisher`; Rip, Rupture): the combo points are read
+--     at UNIT_SPELLCAST_SENT, as Does It Die does (by SUCCEEDED they are
+--     spent). `pointDuration` {base, per point} gives the duration (Rupture
+--     6 + 2 per point, LibClassicDurations); the tooltip's "N points: X
+--     damage over Y sec" line gives the damage (Does It Die's
+--     parseFinisher, the method only). Unreadable points (secret in combat
+--     on Forever): 1 point, so the guess errs low, and nothing is saved.
+--     Saved ticks are per point: ticks[rank].points[n] = {tick, power}.
+--   - Late starts (family `late`; Serpent Sting, Fireball, Pyroblast,
+--     Frostfire Bolt): the DoT starts as the projectile lands, not at the
+--     cast. On the hidden path a `direct` one starts at its own hit in its
+--     school; until a landing or a first tick, each tick slot may come
+--     PROJECTILE_TRAVEL later (Does It Die: Serpent Sting's first tick came
+--     3.6-3.9 s after the cast). The Era combat log starts it at the aura.
+--   - `mask` overrides the school's mask (Frostfire 4 + 16, Does It Die);
+--     `ground` (Immolation Trap) never starts from a cast on the hidden path:
+--     the trap has no mob at the cast.
 
 local LOW_LEVEL = 20
 local LOW_LEVEL_PENALTY = 0.0375
@@ -64,6 +89,9 @@ local SENT_EXPIRY = 10
 local MIN_METER_TICKS = 2
 local METER_SHARE_MIN, METER_SHARE_MAX = 0.5, 2.5
 local METER_RETRY, METER_TRIES = 0.5, 20
+-- A projectile's flight, at most (Does It Die's PROJECTILE_TRAVEL).
+local PROJECTILE_TRAVEL = 1.5
+local MAX_POINTS = 5
 
 -- The combat log's reader, else nil (CombatLogGetCurrentEventInfo is only a
 -- deprecation fallback on Era); the same gate as Dyre's Crit Mayhem.
@@ -107,9 +135,30 @@ local function AllRanks()
     return all, families
 end
 
+local function GoodTick(entry)
+    return type(entry) == "table" and type(entry.tick) == "number" and entry.tick > 0
+        and type(entry.power) == "number" and entry.power >= 0
+end
+
 local function KnownTick(id, entry, ranks, families)
     return type(id) == "number" and type(entry) == "table" and (ranks[id] or families[entry.family] == true)
-        and type(entry.tick) == "number" and entry.tick > 0 and type(entry.power) == "number" and entry.power >= 0
+        and GoodTick(entry)
+end
+
+-- A finisher's ticks per combo point: only whole points 1-5 with a good tick.
+local function RepairPoints(entry)
+    if entry.points == nil then
+        return
+    end
+    if type(entry.points) ~= "table" then
+        entry.points = nil
+        return
+    end
+    for points, each in pairs(entry.points) do
+        if type(points) ~= "number" or points < 1 or points > MAX_POINTS or points % 1 ~= 0 or not GoodTick(each) then
+            entry.points[points] = nil
+        end
+    end
 end
 
 -- The table repaired this session (SavedVariables replace ns.db at load).
@@ -129,6 +178,8 @@ function DyresToolkit.LearnedTicks()
         for id, entry in pairs(saved) do
             if not KnownTick(id, entry, ranks, families) then
                 saved[id] = nil
+            else
+                RepairPoints(entry)
             end
         end
     end
@@ -189,7 +240,7 @@ function DyresToolkit.CreateDotPredictor(spec)
     local store = spec.store
     local api = DyresToolkit.HealthBars
     local predict = {mobs = {}, byName = {}, lastCast = {}, plates = {}, units = {}, read = EventInfoReader(),
-        player = UnitGUID("player"), hidden = hidden, sent = {}, power = {}, spells = {}, tally = {}}
+        player = UnitGUID("player"), hidden = hidden, sent = {}, power = {}, spells = {}, tally = {}, points = {}}
     local events = CreateFrame("Frame")
     ImportTicks(spec.addon, spec.legacyTicks)
 
@@ -218,13 +269,102 @@ function DyresToolkit.CreateDotPredictor(spec)
         return predict.spells[rankID] or RANKS[rankID]
     end
 
-    local function GuessTotal(rankID, power)
-        local rank = RankOf(rankID)
-        local share = FAMILIES[rank[1]].coefficient or math.min(1, rank[3] / 15)
-        if rank[4] < LOW_LEVEL then
+    -- Nil for a rank with no base damage (option a): no first guess.
+    local function GuessTotal(rank, duration, power)
+        if type(rank[2]) ~= "number" then
+            return nil
+        end
+        local share = FAMILIES[rank[1]].coefficient or math.min(1, duration / 15)
+        if type(rank[4]) == "number" and rank[4] < LOW_LEVEL then
             share = share * (1 - (LOW_LEVEL - rank[4]) * LOW_LEVEL_PENALTY)
         end
         return rank[2] + power * share
+    end
+
+    -- Combo points ----------------------------------------------------------------
+
+    -- Your combo points now, else nil (secret, unreadable, or none): the most
+    -- any readable API says (Does It Die's readComboPoints, the method only).
+    local function ComboPoints()
+        local best
+        local function Consider(ok, points)
+            if ok and not DyresToolkit.IsSecret(points) and type(points) == "number" and points > 0 then
+                best = math.max(best or 0, points)
+            end
+        end
+        if type(GetComboPoints) == "function" then
+            Consider(pcall(GetComboPoints, "player", "target"))
+        end
+        local kind = type(Enum) == "table" and type(Enum.PowerType) == "table" and Enum.PowerType.ComboPoints
+        if kind and type(UnitPower) == "function" then
+            Consider(pcall(UnitPower, "player", kind))
+        end
+        return best and math.min(best, MAX_POINTS) or nil
+    end
+
+    local function FamilyOfSpell(spellID)
+        if DyresToolkit.IsSecret(spellID) or type(spellID) ~= "number" then
+            return nil
+        end
+        local rank = RANKS[spellID]
+        return rank and rank[1] or predict.byName[DyresToolkit.SpellName(spellID) or ""]
+    end
+
+    -- A finisher's points as it is sent (nil: unreadable).
+    local function NotePoints(spellID)
+        local family = FamilyOfSpell(spellID)
+        if family and FAMILIES[family].finisher then
+            predict.points[family] = {points = ComboPoints(), at = GetTime()}
+        end
+    end
+
+    -- The points of the family's last send, if recent.
+    local function SentPoints(family)
+        local sent = predict.points[family]
+        if sent and GetTime() - sent.at <= SENT_EXPIRY then
+            return sent.points
+        end
+    end
+
+    -- The DoT's duration: by points for a finisher with `pointDuration`
+    -- (unknown points: 1, so it errs low), else the rank's.
+    local function Duration(family, rank, points)
+        local per = FAMILIES[family].pointDuration
+        if type(per) == "table" then
+            return per[1] + per[2] * (points or 1)
+        end
+        return rank[3]
+    end
+
+    -- The saved tick for this rank (and points, for a finisher); nil when
+    -- a finisher's points are unknown.
+    local function SavedTick(rankID, family, points)
+        local saved = DyresToolkit.LearnedTicks()[rankID]
+        if not FAMILIES[family].finisher then
+            return saved
+        end
+        local each = points and saved and type(saved.points) == "table" and saved.points[points]
+        return GoodTick(each) and each or nil
+    end
+
+    local function SaveTick(dot, family)
+        local tick = math.floor(dot.average * 10 + 0.5) / 10
+        local ticks = DyresToolkit.LearnedTicks()
+        if FAMILIES[dot.family].finisher then
+            if not dot.points then
+                return
+            end
+            local entry = ticks[dot.rank]
+            if type(entry) ~= "table" then
+                entry = {}
+            end
+            entry.tick, entry.power, entry.family = tick, dot.power, family
+            entry.points = type(entry.points) == "table" and entry.points or {}
+            entry.points[dot.points] = {tick = tick, power = dot.power}
+            ticks[dot.rank] = entry
+            return
+        end
+        ticks[dot.rank] = {tick = tick, power = dot.power, family = family}
     end
 
     -- A tick is the average tick, except with weights (Curse of Agony): the
@@ -258,6 +398,10 @@ function DyresToolkit.CreateDotPredictor(spec)
     end
 
     local function DotRemaining(dot, now)
+        -- No base damage and nothing learned yet: nothing to count.
+        if not dot.average then
+            return 0
+        end
         local remaining = 0
         for tick = TicksDone(dot, now) + 1, dot.ticks do
             remaining = remaining + TickAmount(dot, tick)
@@ -526,23 +670,35 @@ function DyresToolkit.CreateDotPredictor(spec)
         if not rank then
             return
         end
+        local finisher = FAMILIES[family].finisher
+        local points = finisher and SentPoints(family) or nil
+        local duration = Duration(family, rank, points)
+        local interval = FAMILIES[family].interval
+        if type(duration) ~= "number" or duration < interval then
+            return
+        end
+        predict.points[family] = nil
         local mob = predict.mobs[guid] or {dots = {}}
         mob.name = name or mob.name
         predict.mobs[guid] = mob
-        local interval = FAMILIES[family].interval
-        local ticks = math.floor(rank[3] / interval + 0.5)
+        local ticks = math.floor(duration / interval + 0.5)
         local old = mob.dots[family]
         local power = SpellPower(family)
+        local hasBase = type(rank[2]) == "number"
         local dot = {family = family, rank = rankID, applied = GetTime(), interval = interval, ticks = ticks,
-            seen = 0, duration = rank[3], base = rank[2] / ticks, power = power, sum = 0, count = 0}
-        local saved = DyresToolkit.LearnedTicks()[rankID]
-        -- The same rank on the same mob ticks the same: keep what was learned.
-        if old and old.rank == rankID and old.source == "learned" then
+            seen = 0, duration = duration, base = hasBase and rank[2] / ticks or 0, power = power, sum = 0, count = 0,
+            points = points, late = FAMILIES[family].late}
+        local saved = SavedTick(rankID, family, points)
+        -- The same rank on the same mob ticks the same: keep what was learned
+        -- (a finisher only at the same points).
+        if old and old.rank == rankID and old.source == "learned" and old.points == points then
             dot.average, dot.source = old.average, "learned"
         elseif saved then
-            dot.average, dot.source = Rescale(saved, dot.base, power), "saved"
+            -- With no base, the part spell power adds is not known: the tick as saved.
+            dot.average, dot.source = hasBase and Rescale(saved, dot.base, power) or saved.tick, "saved"
         else
-            dot.average, dot.source = GuessTotal(rankID, power) / ticks, "guessed"
+            local total = GuessTotal(rank, duration, power)
+            dot.average, dot.source = total and total / ticks, total and "guessed" or "waiting"
         end
         mob.dots[family] = dot
         Expire(guid, family, dot)
@@ -565,7 +721,7 @@ function DyresToolkit.CreateDotPredictor(spec)
         end
         dot.sum, dot.count = dot.sum + AverageFrom(dot, tick, amount), dot.count + 1
         dot.average, dot.source = dot.sum / dot.count, "learned"
-        DyresToolkit.LearnedTicks()[dot.rank] = {tick = math.floor(dot.average * 10 + 0.5) / 10, power = dot.power}
+        SaveTick(dot, nil)
     end
 
     local function OnCombatLog()
@@ -610,14 +766,42 @@ function DyresToolkit.CreateDotPredictor(spec)
 
     -- The school as UNIT_COMBAT gives it: a mask, 2 ^ (school - 1).
     local function Mask(family)
-        return 2 ^ (FAMILIES[family].school - 1)
+        return FAMILIES[family].mask or 2 ^ (FAMILIES[family].school - 1)
+    end
+
+    -- How much later than its slot a late DoT's tick may come: its flight,
+    -- until its landing or a first tick fixes the rhythm.
+    local function Extra(dot)
+        return (dot.late and not dot.anchored and not dot.landed) and PROJECTILE_TRAVEL or 0
+    end
+
+    -- A cast's outcome comes when it lands: later for a projectile.
+    local function OutcomeWindow(dot)
+        return OUTCOME_WINDOW + (dot.late and PROJECTILE_TRAVEL or 0)
     end
 
     -- "... 10 Shadow damage over 15 sec." (the last such clause: Immolate's
     -- periodic part), or Siphon Life's "... 15 health ... every 3 sec. Lasts
     -- 30 sec.": the base damage and duration, without spell power. English
     -- tooltips only; else nil (ClassData's rank then).
-    local function ReadTooltip(spellID, family)
+    -- A finisher's "1 point: 40 damage over 8 secs ... 5 points: ..." (Does
+    -- It Die's parseFinisher pattern: any words, or none, before "over"):
+    -- the line for these points, else the lowest (errs low).
+    local function ReadFinisher(text, points)
+        local byPoints, lowest = {}, nil
+        for count, amount, seconds in text:gmatch("(%d+) points?%s*:%s*(%d+)%s*[%a ]-over (%d+) sec") do
+            count = tonumber(count)
+            byPoints[count] = {tonumber(amount), tonumber(seconds)}
+            lowest = math.min(lowest or count, count)
+        end
+        if not lowest then
+            return nil
+        end
+        local entry = points and byPoints[points] or byPoints[lowest]
+        return entry[1], entry[2]
+    end
+
+    local function ReadTooltip(spellID, family, points)
         local read = type(C_Spell) == "table" and C_Spell.GetSpellDescription or rawget(_G, "GetSpellDescription")
         if type(read) ~= "function" then
             return nil
@@ -628,8 +812,17 @@ function DyresToolkit.CreateDotPredictor(spec)
         end
         text = text:gsub("(%d),(%d)", "%1%2")
         local total, duration
-        for amount, seconds in text:gmatch("(%d+) %a+ damage over (%d+) sec") do
-            total, duration = tonumber(amount), tonumber(seconds)
+        if FAMILIES[family].finisher then
+            total, duration = ReadFinisher(text, points)
+            -- A finisher's duration comes from its points when the family says how.
+            if total and FAMILIES[family].pointDuration then
+                duration = FAMILIES[family].pointDuration[1] + FAMILIES[family].pointDuration[2] * (points or 1)
+            end
+        else
+            -- A school word, or none ("bleed for 15 damage over 9 sec").
+            for amount, seconds in text:gmatch("(%d+)%s*[%a ]-%s*damage over (%d+) sec") do
+                total, duration = tonumber(amount), tonumber(seconds)
+            end
         end
         if not total then
             local each, every = text:match("(%d+) health.- every (%d+) sec")
@@ -639,7 +832,8 @@ function DyresToolkit.CreateDotPredictor(spec)
                 total, duration = each * math.floor(lasts / every + 0.5), lasts
             end
         end
-        if total and duration and total > 0 and duration > 0 then
+        -- Under one tick is not a DoT's duration (a misread): ClassData then.
+        if total and duration and total > 0 and duration >= FAMILIES[family].interval then
             return {family, total, duration, LOW_LEVEL}
         end
     end
@@ -652,22 +846,24 @@ function DyresToolkit.CreateDotPredictor(spec)
             return nil
         end
         local rank = RANKS[spellID]
-        local family = rank and rank[1] or predict.byName[DyresToolkit.SpellName(spellID) or ""]
-        if not family then
+        local family = FamilyOfSpell(spellID)
+        -- A trap has no mob at the cast: the hidden path never starts one.
+        if not family or FAMILIES[family].ground then
             return nil
         end
-        local read = ReadTooltip(spellID, family)
+        local read = ReadTooltip(spellID, family, SentPoints(family))
         if read then
             -- A ClassData rank keeps its level (the low-level penalty).
             read[4] = rank and rank[4] or read[4]
             predict.spells[spellID] = read
         elseif not rank then
             -- No tooltip and no ClassData rank: the family's highest rank
-            -- for your level.
+            -- for your level (a nil level counts as 0).
             local level, best = UnitLevel("player"), nil
             for id, entry in pairs(RANKS) do
-                if entry[1] == family and (DyresToolkit.IsSecret(level) or entry[4] <= level)
-                        and (not best or entry[4] > RANKS[best][4]) then
+                local need = entry[4] or 0
+                if entry[1] == family and (DyresToolkit.IsSecret(level) or need <= level)
+                        and (not best or need > (RANKS[best][4] or 0)) then
                     best = id
                 end
             end
@@ -701,7 +897,7 @@ function DyresToolkit.CreateDotPredictor(spec)
         local entry = predict.tally[dot.rank]
         if not entry then
             entry = {family = dot.family, count = 0, weights = 0, base = dot.base, power = dot.power, clean = true,
-                guess = dot.average}
+                guess = dot.average or 0}
             predict.tally[dot.rank] = entry
         end
         return entry
@@ -727,10 +923,16 @@ function DyresToolkit.CreateDotPredictor(spec)
             return
         end
         local window = dot.anchored and TICK_WINDOW_ANCHORED or TICK_WINDOW
-        local wait = SlotTime(dot, slot) + window - GetTime()
+        local wait = SlotTime(dot, slot) + window + Extra(dot) - GetTime()
         C_Timer.After(math.max(0, wait), function()
             local mob = predict.mobs[key]
             if not mob or mob.dots[dot.family] ~= dot or dot.seen >= slot then
+                return
+            end
+            -- The rhythm moved later since (a projectile landed): wait again.
+            local close = SlotTime(dot, slot) + (dot.anchored and TICK_WINDOW_ANCHORED or TICK_WINDOW) + Extra(dot)
+            if GetTime() < close - 0.01 then
+                WatchSlot(key, dot)
                 return
             end
             if Observable(key) then
@@ -803,6 +1005,11 @@ function DyresToolkit.CreateDotPredictor(spec)
     end
 
     local function OnSent(targetName, castGUID, spellID)
+        -- A finisher's points first: by SUCCEEDED they are spent.
+        NotePoints(spellID)
+        if not hidden then
+            return
+        end
         if not Resolve(spellID) or DyresToolkit.IsSecret(castGUID) or type(castGUID) ~= "string" then
             return
         end
@@ -840,12 +1047,15 @@ function DyresToolkit.CreateDotPredictor(spec)
 
     local function OnAvoid(key, school, now)
         local cast = predict.cast
-        if not cast or cast.key ~= key or cast.landed or now - cast.at > OUTCOME_WINDOW then
+        if not cast or cast.key ~= key or cast.landed then
             return
         end
         local dot = cast.dot
         local mob = predict.mobs[key]
         if not mob or mob.dots[dot.family] ~= dot then
+            return
+        end
+        if now - cast.at > OutcomeWindow(dot) then
             return
         end
         if DyresToolkit.IsSecret(school) or type(school) ~= "number" then
@@ -866,10 +1076,19 @@ function DyresToolkit.CreateDotPredictor(spec)
     -- A hit in a DoT's school, at an open tick slot: a tick.
     local function OnHit(key, school, amount, now)
         local cast = predict.cast
-        if cast and cast.key == key and now - cast.at <= OUTCOME_WINDOW and school == Mask(cast.dot.family) then
-            cast.landed = true
-        end
         local mob = predict.mobs[key]
+        if cast and cast.key == key and now - cast.at <= OutcomeWindow(cast.dot) and school == Mask(cast.dot.family)
+                and not cast.landed then
+            cast.landed = true
+            local dot = cast.dot
+            -- A projectile with a direct part: its hit is the landing, and the
+            -- DoT's rhythm starts there. Not a tick.
+            if dot.late and FAMILIES[dot.family].direct and not dot.landed and mob and mob.dots[dot.family] == dot then
+                dot.landed, dot.applied = true, now
+                DrawGUID(key)
+                return
+            end
+        end
         if not mob then
             return
         end
@@ -880,8 +1099,11 @@ function DyresToolkit.CreateDotPredictor(spec)
         for family, dot in pairs(mob.dots) do
             if Mask(family) == school and not predict.fed[dot] then
                 local window = dot.anchored and TICK_WINDOW_ANCHORED or TICK_WINDOW
+                local extra = Extra(dot)
                 for slot = dot.seen + 1, math.min(dot.ticks, dot.seen + 2) do
-                    local distance = math.abs(now - SlotTime(dot, slot))
+                    -- Early by the window, late by the window plus a flight.
+                    local due = SlotTime(dot, slot)
+                    local distance = now < due and due - now or math.max(0, now - due - extra)
                     if distance <= window and (not bestDistance or distance < bestDistance) then
                         best, bestSlot, bestDistance = dot, slot, distance
                     end
@@ -907,8 +1129,7 @@ function DyresToolkit.CreateDotPredictor(spec)
         if not DyresToolkit.IsSecret(amount) and type(amount) == "number" and amount > 0 then
             best.sum, best.count = best.sum + AverageFrom(best, bestSlot, amount), best.count + 1
             best.average, best.source = best.sum / best.count, "learned"
-            DyresToolkit.LearnedTicks()[best.rank] = {tick = math.floor(best.average * 10 + 0.5) / 10,
-                power = best.power, family = best.family}
+            SaveTick(best, best.family)
         end
         WatchSlot(key, best)
         DrawGUID(key)
@@ -988,11 +1209,13 @@ function DyresToolkit.CreateDotPredictor(spec)
             local total = totals[rankID]
             -- One rank of the family this fight, every DoT seen whole, 2 ticks
             -- or more, and no direct hit in the total.
+            -- Not a finisher: its casts this fight may differ by points.
             if total and entry.clean and ranksOf[entry.family] == 1 and entry.count >= MIN_METER_TICKS
-                    and not FAMILIES[entry.family].direct then
+                    and not FAMILIES[entry.family].direct and not FAMILIES[entry.family].finisher then
                 -- sum of ticks = base * sum of weights + count * (average - base)
                 local average = (total - entry.base * entry.weights) / entry.count + entry.base
-                local share = entry.guess > 0 and average / entry.guess or 0
+                -- With no guess (no base damage), any tick above 0 is the first word.
+                local share = entry.guess > 0 and average / entry.guess or (average > 0 and 1 or 0)
                 if share >= METER_SHARE_MIN and share <= METER_SHARE_MAX then
                     DyresToolkit.LearnedTicks()[rankID] = {tick = math.floor(average * 10 + 0.5) / 10,
                         power = entry.power, family = entry.family}
@@ -1159,9 +1382,11 @@ function DyresToolkit.CreateDotPredictor(spec)
             for _, family in ipairs(FAMILY_ORDER) do
                 local dot = mob.dots[family]
                 if dot then
-                    lines[#lines + 1] = string.format("  %s (spell %d): tick %d of %d, %s %.1f, %d to come", family,
-                        dot.rank, TicksDone(dot, now), dot.ticks, dot.source, dot.average,
-                        math.floor(DotRemaining(dot, now) + 0.5))
+                    lines[#lines + 1] = string.format("  %s (spell %d): tick %d of %d, %s %s, %d to come%s", family,
+                        dot.rank, TicksDone(dot, now), dot.ticks, dot.source,
+                        dot.average and string.format("%.1f", dot.average) or "-",
+                        math.floor(DotRemaining(dot, now) + 0.5),
+                        FAMILIES[family].finisher and (", points " .. tostring(dot.points or "unknown")) or "")
                 end
             end
         end
@@ -1193,8 +1418,15 @@ function DyresToolkit.CreateDotPredictor(spec)
         events:RegisterEvent(event)
     end
     events:RegisterUnitEvent("UNIT_SPELLCAST_SUCCEEDED", "player")
-    if hidden then
+    local finishers = false
+    for _, family in pairs(FAMILIES) do
+        finishers = finishers or family.finisher == true
+    end
+    -- The send: the mob (hidden path) and a finisher's points (both).
+    if hidden or finishers then
         events:RegisterUnitEvent("UNIT_SPELLCAST_SENT", "player")
+    end
+    if hidden then
         for family in pairs(FAMILIES) do
             SpellPower(family)
         end

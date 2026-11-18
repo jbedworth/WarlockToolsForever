@@ -43,12 +43,37 @@ local BAR_BACKGROUND = {0.1, 0.1, 0.1, 0.6}
 -- John, 2026-11-11, from a player asking to hide it); 0 draws none.
 local OUTLINE_GAP = 2
 DyresToolkit.TRACKER_OUTLINE = {min = 0, max = 20, default = 3}
+-- Grow direction per panel (2.9.2; John, 2026-11-14: "for each frame
+-- (Target, Focus, Other) we need to be able to set whether the DoTs should
+-- grow up or down from the origin ... If I place the Target tracker above the
+-- target frame, I probably want the first dot where I positioned it, the
+-- second to render above it"): store.grow[key], "down" (the default, as
+-- before) or "up". Up puts the first DoT line at the bottom of the bar block
+-- and the next above it (Bars look), and stacks the list's rows upward from
+-- the list's place (both looks). The name keeps its own place setting (John:
+-- "Keep the name above/below setting we already have where it is. The user
+-- can chose."). A change needs Rebuild.
+DyresToolkit.TRACKER_GROW = {"down", "up"}
+-- Hide empty slots (2.10.3; a DDT player, treadpool, 2026-11-17: "only
+-- showed the DoTs that are actively ticking"; John: "Yes, build it"):
+-- store.hideEmpty true draws no dim placeholder, bar line, or label, so a
+-- slot shows only while its aura does (the aura slot shows and hides itself,
+-- also in combat). The slots keep their places: the tracker cannot read which
+-- DoTs are up in combat on Forever, and pinned rows' secure slots move only
+-- out of combat. Pinned slots then take no clicks: an empty slot would be an
+-- unseen click area (family rule). A change needs Rebuild. Owners check this
+-- flag before they offer the setting.
+DyresToolkit.TRACKER_HIDE_EMPTY = true
 local SLOT_GAP = 6
 local PADDING = 6
 -- Seconds a list row stays without a unit to bind, out of combat; in combat
 -- it stays until combat ends (WTF player feedback).
 local UNSEEN_SECONDS = 10
 local MAX_NAMEPLATE_UNITS = 40
+-- How long a cast with two or more mobs of its name waits for an aura on one
+-- of them (the aura confirm, at OnCastSucceeded): DotPredict's
+-- PROJECTILE_TRAVEL. John's probe saw the aura 0.3-0.9 s after success.
+local AURA_CONFIRM_SECONDS = 1.5
 local AURA_FILTER = "HARMFUL|PLAYER"
 local BROWN = {0.28, 0.16, 0.07, 0.85}
 local PLACEHOLDER_ALPHA = 0.3
@@ -157,7 +182,11 @@ end
 --               health, healthText ("none", "number", "percent", "both"),
 --               panelOpacity {target, focus, list}, outlineWidth (the
 --               pinned rows' outline, TRACKER_OUTLINE: 0-20 px, default 3,
---               0 none; a change needs Rebuild), position, sections
+--               0 none; a change needs Rebuild), grow {target, focus,
+--               list} ("down" or "up", TRACKER_GROW; a change needs
+--               Rebuild), hideEmpty (true: no placeholders and no pinned
+--               clicks, TRACKER_HIDE_EMPTY; a change needs Rebuild),
+--               position, sections
 --               {target, focus, list}, and each slot's lastUsed key;
 --               curseMode ("last", the default, or "smart": the slot with
 --               `smart` data casts the smart curse) and curseMarker (false:
@@ -210,6 +239,8 @@ function DyresToolkit.CreateDotTracker(spec)
     local tracker = {rows = {}, pinned = {}, casts = {}, spellSlots = {}, known = {}, slotKnown = {},
         dead = {}, sections = {}, ownerKind = kind}
     local events = CreateFrame("Frame")
+    -- UNIT_AURA, only while an aura confirm is open.
+    local auraEvents = CreateFrame("Frame")
     local Layout, Place, BuildRows, KnownSlotsChanged
 
     local function Locked()
@@ -324,6 +355,11 @@ function DyresToolkit.CreateDotTracker(spec)
         return tracker.theme ~= "bars"
     end
 
+    -- TRACKER_HIDE_EMPTY: only true counts. Read at each row's build.
+    local function HideEmpty()
+        return store.hideEmpty == true
+    end
+
     -- The slots a row shows, as SLOTS indexes in the saved order: one for
     -- each spell family you know, or all of them while you know none.
     local function ShownSlots()
@@ -347,6 +383,12 @@ function DyresToolkit.CreateDotTracker(spec)
             return spec.default
         end
         return math.max(spec.min, math.min(spec.max, math.floor(width + 0.5)))
+    end
+
+    -- A panel's grow direction (TRACKER_GROW): only "up" counts; anything
+    -- else is "down".
+    local function GrowsUp(key)
+        return type(store.grow) == "table" and store.grow[key] == "up"
     end
 
     -- The stacked pinned rows' step keeps the outlines clear of each other.
@@ -443,6 +485,11 @@ function DyresToolkit.CreateDotTracker(spec)
             end
             region:SetSize(size, size)
         else
+            -- Up: the same block of lines, in reverse order, so the first
+            -- DoT is the lowest line.
+            if GrowsUp(row.panelKey) then
+                position = #tracker.shown - position + 1
+            end
             local top = where == "below" and ROW_PADDING or BarHeader()
             region:SetPoint("TOPLEFT", row, "TOPLEFT", PADDING, -(top + (position - 1) * (size + BAR_LINE_GAP)))
             region:SetSize(RowWidth() - PADDING * 2, size)
@@ -741,13 +788,15 @@ function DyresToolkit.CreateDotTracker(spec)
         row.name:SetJustifyH("LEFT")
         CreateHealthText(row, regions)
         row.bars = {}
-        for position, slotIndex in ipairs(tracker.shown) do
+        row.placeholders = {}
+        for position, slotIndex in ipairs(HideEmpty() and {} or tracker.shown) do
             local slot = SLOTS[slotIndex]
             local placeholder = regions:CreateTexture(nil, "BACKGROUND", nil, 1)
             placeholder:SetTexture(SlotIcon(slot))
             placeholder:SetTexCoord(0.07, 0.93, 0.07, 0.93)
             placeholder:SetDesaturated(true)
             placeholder:SetAlpha(PLACEHOLDER_ALPHA)
+            row.placeholders[#row.placeholders + 1] = placeholder
             if IsCompact() then
                 PlaceSlot(placeholder, row, position)
             else
@@ -976,7 +1025,8 @@ function DyresToolkit.CreateDotTracker(spec)
         row:SetPoint("TOPLEFT", section, "TOPLEFT")
         row.unit = pinned.unit
         row.casts = {}
-        for position, slotIndex in ipairs(tracker.shown) do
+        -- Hide empty slots: no secure slots, so no unseen click area.
+        for position, slotIndex in ipairs(HideEmpty() and {} or tracker.shown) do
             local button = CreateFrame("Button", nil, row, "SecureActionButtonTemplate")
             PlaceSlot(button, row, position)
             button:SetFrameLevel(row.container:GetFrameLevel() + 10)
@@ -1100,10 +1150,27 @@ function DyresToolkit.CreateDotTracker(spec)
     -- keyed by it goes now.
     local function DropPlateKey(unit)
         local key = "plate:" .. unit
-        for _, cast in pairs(tracker.casts) do
+        local function Drop(cast)
             if cast.guid == key then
                 cast.guid = nil
             end
+            if cast.twin == key then
+                cast.twin = nil
+            end
+            for _, candidate in ipairs(cast.candidates or {}) do
+                if candidate.key == key then
+                    candidate.gone = true
+                end
+                if candidate.plate == unit then
+                    candidate.plate = nil
+                end
+            end
+        end
+        for _, cast in pairs(tracker.casts) do
+            Drop(cast)
+        end
+        if tracker.confirm then
+            Drop(tracker.confirm.cast)
         end
         for _, row in ipairs(tracker.rows) do
             if row.guid == key then
@@ -1155,6 +1222,16 @@ function DyresToolkit.CreateDotTracker(spec)
         if sections.list then
             return
         end
+        -- A list growing up, not yet dragged, sits above the stack, so its
+        -- rows never cover the pinned rows.
+        if GrowsUp("list") then
+            if tracker.listTop ~= "up" then
+                tracker.listTop = "up"
+                tracker.list:ClearAllPoints()
+                tracker.list:SetPoint("BOTTOMLEFT", tracker.stack, "TOPLEFT", 0, PinnedSpacing())
+            end
+            return
+        end
         local listTop = 0
         if not Locked() then
             listTop = StackOffset("list")
@@ -1202,10 +1279,15 @@ function DyresToolkit.CreateDotTracker(spec)
         end
         local list = tracker.list
         local used = {}
+        local up = GrowsUp("list")
         for index, row in ipairs(listed) do
             used[row] = true
             row:ClearAllPoints()
-            row:SetPoint("TOPLEFT", list, "TOPLEFT", 0, -(index - 1) * RowStep())
+            if up then
+                row:SetPoint("BOTTOMLEFT", list, "BOTTOMLEFT", 0, (index - 1) * RowStep())
+            else
+                row:SetPoint("TOPLEFT", list, "TOPLEFT", 0, -(index - 1) * RowStep())
+            end
             row.name:SetText(row.mobName)
             row:Show()
         end
@@ -1266,6 +1348,8 @@ function DyresToolkit.CreateDotTracker(spec)
         end
     end
 
+    local OpenConfirm -- the aura confirm, below
+
     -- The mob a cast lands on is the one it was aimed at as it started (WTF
     -- player feedback): only this cast's entry goes.
     local function OnCastSucceeded(castGUID)
@@ -1278,17 +1362,231 @@ function DyresToolkit.CreateDotTracker(spec)
             return
         end
         RememberLastUsed(cast.spellID)
+        if #cast.candidates >= 2 then
+            OpenConfirm(cast)
+            return
+        end
+        cast.last.bound = "single"
         if cast.guid then
             Track(cast.guid, cast.target)
         end
     end
 
-    -- The mob and name a cast goes to. A secret name on either side cannot
-    -- decide, so your target it is (a row's text takes a secret name).
-    local function LockMob(target)
-        local guid = DyresToolkit.LockCast(target, spec.lock or DEFAULT_LOCK)
+    -- The mob under the mouse, when it has the name a cast was locked by on
+    -- another unit (John, DDT 1.0.1 on Forever, 2026-11-14: a mouseover
+    -- Serpent Sting at a mob he was not targeting did not show). The cast
+    -- event gives only a name, and the lock stops at the first unit with it,
+    -- your target first, so a mouseover cast at a mob named as your target
+    -- (or its corpse) was put on your target. That mouseover mob is tracked
+    -- too: no DoT is lost. Since the aura confirm (below), only its
+    -- fallback: when no aura names the mob. The cost there: a plain cast at
+    -- your target while the mouse rests on a twin lists the twin, with no
+    -- timers, until it dies or combat ends. Only while the lock's units have
+    -- "mouseover".
+    local function Twin(target, guid, unit)
+        local lock = spec.lock or DEFAULT_LOCK
+        local looks = false
+        for _, step in ipairs(type(lock.units) == "table" and lock.units or {}) do
+            looks = looks or step == "mouseover"
+        end
+        if not looks or unit == "mouseover" or DyresToolkit.IsSecret(target) or not UnitExists("mouseover")
+                or DyresToolkit.ReadName("mouseover") ~= target or DyresToolkit.IsDead("mouseover") then
+            return nil
+        end
+        local canAttack = UnitCanAttack("player", "mouseover")
+        if DyresToolkit.IsSecret(canAttack) and not lock.secretHostile
+                or not DyresToolkit.IsSecret(canAttack) and canAttack ~= true then
+            return nil
+        end
+        local key = DyresToolkit.ReadGUID("mouseover") or (lock.plateKey and DyresToolkit.MobKey("mouseover")) or nil
+        if not key or key == guid then
+            return nil
+        end
+        if unit then
+            local same = UnitIsUnit("mouseover", unit)
+            if not DyresToolkit.IsSecret(same) and same == true then
+                return nil
+            end
+        end
+        return key
+    end
+
+    -- The aura confirm (John, 2026-11-16, after the DoT probe: "Yes, build
+    -- it"). A cast names its mob only by name. When two or more mobs you can
+    -- attack have that name (or the lock found a corpse and a live mob has
+    -- it), the mob is the one that gets an aura added in the next
+    -- AURA_CONFIRM_SECONDS. John's probe (TankProbe.lua; Forever, open world,
+    -- solo, 32 casts, 4 with a same-name mouseover) saw UNIT_AURA for the hit
+    -- mob's plate and/or "target" 0.3-0.9 s after success, and for no other
+    -- mob, also when the mouse had moved on. The added list is secret on
+    -- Forever, so only its presence counts there; where it reads (Era), the
+    -- aura must be one of your DoT IDs with sourceUnit "player". Candidates
+    -- are matched by the key read at UNIT_SPELLCAST_SENT (MobKey) or their
+    -- plate token then, never by what the mouse shows now. No aura added: a
+    -- candidate with a row that had an aura event is a refresh (nothing
+    -- new); else the fallback lists the locked mob and the Twin. Limit: in
+    -- a group, another player's aura on a candidate in the window wins.
+    -- UNIT_AURA is registered only while a confirm is open; one C_Timer.After
+    -- per confirm; a new confirm closes the old one by its fallback.
+
+    -- Each live mob you can attack with the cast's name on your target,
+    -- focus, or mouseover (those of the lock's units), once, plus the lock's
+    -- own mob (it may be a corpse).
+    local function Candidates(target, guid, lockUnit)
+        local list = {}
+        if DyresToolkit.IsSecret(target) or type(target) ~= "string" then
+            return list
+        end
+        local lock = spec.lock or DEFAULT_LOCK
+        local function Add(key, plate)
+            for _, known in ipairs(list) do
+                if known.key == key or (plate and known.plate == plate) then
+                    return
+                end
+            end
+            list[#list + 1] = {key = key, plate = plate}
+        end
         if guid then
-            return guid, target
+            Add(guid, DyresToolkit.KeyPlate(guid) or (lockUnit and DyresToolkit.PlateToken(lockUnit)) or nil)
+        end
+        -- Only the units a cast can go to: target, focus, mouseover. A pack
+        -- of same-named mobs on plates must not make every cast wait (WTF's
+        -- test: a cast at your target with a twin on a plate lists it at once).
+        local units = {}
+        for _, step in ipairs(type(lock.units) == "table" and lock.units or {}) do
+            if step == "target" or step == "focus" or step == "mouseover" then
+                units[#units + 1] = step
+            end
+        end
+        for _, unit in ipairs(units) do
+            if UnitExists(unit) and DyresToolkit.ReadName(unit) == target and not DyresToolkit.IsDead(unit) then
+                local canAttack = UnitCanAttack("player", unit)
+                local hostile
+                if DyresToolkit.IsSecret(canAttack) then
+                    hostile = lock.secretHostile == true
+                else
+                    hostile = canAttack == true
+                end
+                local key = DyresToolkit.ReadGUID(unit) or (lock.plateKey and DyresToolkit.MobKey(unit)) or nil
+                if hostile and key then
+                    Add(key, DyresToolkit.PlateToken(unit))
+                end
+            end
+        end
+        return list
+    end
+
+    -- "added" when this UNIT_AURA adds an aura that may be your DoT, else
+    -- "other". A secret is never indexed or compared: only issecretvalue.
+    local function AuraChange(info)
+        if DyresToolkit.IsSecret(info) or type(info) ~= "table" then
+            return "other"
+        end
+        local added = info.addedAuras
+        if DyresToolkit.IsSecret(added) then
+            return "added"
+        end
+        if type(added) ~= "table" then
+            return "other"
+        end
+        for _, aura in ipairs(added) do
+            if DyresToolkit.IsSecret(aura) then
+                return "added"
+            end
+            if type(aura) == "table" then
+                local id, source = aura.spellId, aura.sourceUnit
+                if DyresToolkit.IsSecret(id) or DyresToolkit.IsSecret(source) then
+                    return "added"
+                end
+                if tracker.spellSlots[id] and source == "player" then
+                    return "added"
+                end
+            end
+        end
+        return "other"
+    end
+
+    local function HasRow(key)
+        for _, row in ipairs(tracker.rows) do
+            if row.guid == key then
+                return true
+            end
+        end
+        return false
+    end
+
+    -- how: "aura" (with the candidate), "fallback" (may become "refresh"),
+    -- or "cancelled" (combat ended: every row goes anyway).
+    local function CloseConfirm(how, candidate)
+        local confirm = tracker.confirm
+        if not confirm then
+            return
+        end
+        tracker.confirm = nil
+        auraEvents:UnregisterEvent("UNIT_AURA")
+        local cast = confirm.cast
+        if how == "fallback" then
+            for _, known in ipairs(cast.candidates) do
+                if known.seen and not known.gone and HasRow(known.key) then
+                    how = "refresh"
+                    break
+                end
+            end
+        end
+        cast.last.bound = how
+        if how == "aura" then
+            Track(candidate.key, cast.target)
+        elseif how == "fallback" then
+            if cast.guid then
+                Track(cast.guid, cast.target)
+            end
+            if cast.twin then
+                Track(cast.twin, cast.target)
+            end
+        end
+    end
+
+    OpenConfirm = function(cast)
+        CloseConfirm("fallback")
+        local confirm = {cast = cast}
+        tracker.confirm = confirm
+        auraEvents:RegisterEvent("UNIT_AURA")
+        C_Timer.After(AURA_CONFIRM_SECONDS, function()
+            if tracker.confirm == confirm then
+                CloseConfirm("fallback")
+            end
+        end)
+    end
+
+    local function OnConfirmAura(unit, info)
+        local confirm = tracker.confirm
+        if not confirm or DyresToolkit.IsSecret(unit) or type(unit) ~= "string"
+                or not (unit == "target" or unit == "focus" or unit == "mouseover" or unit:match("^nameplate%d+$")) then
+            return
+        end
+        local key, plate = DyresToolkit.MobKey(unit), DyresToolkit.PlateToken(unit)
+        for _, candidate in ipairs(confirm.cast.candidates) do
+            if not candidate.gone and ((key and candidate.key == key) or (plate and candidate.plate == plate)) then
+                candidate.seen = true
+                local ok, change = pcall(AuraChange, info)
+                if ok and change == "added" then
+                    CloseConfirm("aura", candidate)
+                end
+                return
+            end
+        end
+    end
+    auraEvents:SetScript("OnEvent", function(_, _, unit, info)
+        OnConfirmAura(unit, info)
+    end)
+
+    -- The mob and name a cast goes to, and the unit it was found on. A
+    -- secret name on either side cannot decide, so your target it is (a
+    -- row's text takes a secret name).
+    local function LockMob(target)
+        local guid, unit = DyresToolkit.LockCast(target, spec.lock or DEFAULT_LOCK)
+        if guid then
+            return guid, target, unit
         end
         local targetName = UnitName("target")
         if DyresToolkit.IsSecret(target) or DyresToolkit.IsSecret(targetName) then
@@ -1303,9 +1601,14 @@ function DyresToolkit.CreateDotTracker(spec)
         end
         tracker.lastCast = {spellID = spellID, slot = tracker.spellSlots[spellID]}
         if tracker.spellSlots[spellID] then
-            local guid, mobName = LockMob(target)
+            local guid, mobName, unit = LockMob(target)
+            local twin = Twin(target, guid, unit)
+            local candidates = Candidates(target, guid, unit)
             tracker.lastCast.key = guid and (DyresToolkit.KeyPlate(guid) and "plate" or "guid") or "none"
-            tracker.casts[castGUID] = {target = mobName, spellID = spellID, guid = guid}
+            tracker.lastCast.twin = twin and (DyresToolkit.KeyPlate(twin) and "plate" or "guid") or nil
+            tracker.lastCast.candidates = #candidates
+            tracker.casts[castGUID] = {target = mobName, spellID = spellID, guid = guid, twin = twin,
+                candidates = candidates, last = tracker.lastCast}
         end
     end
 
@@ -1432,11 +1735,16 @@ function DyresToolkit.CreateDotTracker(spec)
             frame:ClearAllPoints()
             if saved then
                 frame:SetPoint(saved.point, UIParent, saved.relativePoint, saved.x, saved.y)
+            elseif key == "list" and GrowsUp("list") then
+                frame:SetPoint("BOTTOMLEFT", stack, "TOPLEFT", 0, PinnedSpacing())
             else
                 frame:SetPoint("TOPLEFT", stack, "TOPLEFT", 0, -StackOffset(key))
             end
         end
-        tracker.listTop = not sections.list and StackOffset("list") or nil
+        tracker.listTop = nil
+        if not sections.list then
+            tracker.listTop = GrowsUp("list") and "up" or StackOffset("list")
+        end
     end
 
     -- A panel's opacity: the whole section frame, at once, also in combat.
@@ -1460,6 +1768,7 @@ function DyresToolkit.CreateDotTracker(spec)
             end
         elseif event == "PLAYER_REGEN_ENABLED" then
             -- Out of combat no DoT of yours is ticking on a live mob.
+            CloseConfirm("cancelled")
             ClearAll()
             if KnownSlotsChanged() then
                 BuildRows()
@@ -1648,7 +1957,9 @@ function DyresToolkit.CreateDotTracker(spec)
         if last then
             lines[#lines + 1] = string.format("lastCast spell=%d name=%s slot=%s%s", last.spellID,
                 tostring(DyresToolkit.SpellName(last.spellID)), tostring(last.slot),
-                last.key and (" mob=" .. last.key) or "")
+                (last.key and (" mob=" .. last.key) or "") .. (last.twin and (" mouseover=" .. last.twin) or "")
+                .. (last.candidates and (" candidates=" .. last.candidates) or "")
+                .. (last.bound and (" bound=" .. last.bound) or ""))
         end
         local shown, readable, known, targetPlate = 0, 0, 0, "none"
         for index = 1, MAX_NAMEPLATE_UNITS do

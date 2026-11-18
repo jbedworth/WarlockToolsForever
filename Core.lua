@@ -603,6 +603,9 @@ function WTF.SanitizeDB(db)
         -- shows unless false.
         curseMode = tracker.curseMode == "smart" and "smart" or "last",
         curseMarker = tracker.curseMarker ~= false,
+        -- Hide empty DoT slots (John, 2026-11-17, a player's request; Toolkit
+        -- TRACKER_HIDE_EMPTY): off by default.
+        hideEmpty = tracker.hideEmpty == true,
     }
     for _, key in ipairs({"lastBane", "lastCurse", "lastControl"}) do
         db.tracker[key] = type(tracker[key]) == "string" and tracker[key] or nil
@@ -689,6 +692,90 @@ function WTF.SanitizeDB(db)
     db.tracker.placeholders = not db.locked
     db.shards.counterLocked = db.locked
     return db
+end
+
+-- Dyre's Toolkit Profile (Toolkit 2.10.0; John, 2026-11-17: "one place to go
+-- to persist your profile"). WTF keeps its live settings in
+-- WarlockToolsForeverDB; the Toolkit keeps this character's copy, copies from
+-- another character or the Defaults, and exports and imports it. Not in the
+-- profile (characterKeys, top-level keys only): locked, a copy of the
+-- Toolkit's account-wide lock; shield, chimes, alerts, and reminders, old WTF
+-- data that Dyre's Shields Up and Dyre's Buff Reminders copy once per
+-- character. WarlockToolsForeverAccountDB (focusWorks, learned ticks) is
+-- account-wide, so it is not in it. No macro names are saved: they are fixed.
+WTF.PROFILE_CHARACTER_KEYS = {"locked", "shield", "chimes", "alerts", "reminders"}
+
+-- This character's live state inside the settings tables. The engine skips
+-- only top-level keys, so a copy, an import, or the Defaults keep these:
+-- the shards kept since entering an instance, who has your Soulstone and
+-- until when, and the last curse, Bane, and control spell the DoT tracker's
+-- clicks recast.
+local PROFILE_STATE = {
+    {"shards", "instanceKeep"},
+    {"stones", "soulstone"},
+    {"tracker", "lastBane"},
+    {"tracker", "lastCurse"},
+    {"tracker", "lastControl"},
+}
+
+local function CopyValue(value)
+    if type(value) ~= "table" then
+        return value
+    end
+    local copy = {}
+    for key, inner in pairs(value) do
+        copy[key] = CopyValue(inner)
+    end
+    return copy
+end
+
+-- The profile's sanitize: any table (empty, partial, older, newer, another
+-- character's) becomes full, repaired settings, with this character's state.
+function WTF.SanitizeProfile(settings)
+    local clean = WTF.SanitizeDB(type(settings) == "table" and settings or {})
+    local live = WTF.db
+    for _, path in ipairs(PROFILE_STATE) do
+        local section, key = path[1], path[2]
+        local value = type(live) == "table" and type(live[section]) == "table" and live[section][key] or nil
+        clean[section][key] = CopyValue(value)
+    end
+    return clean
+end
+
+-- After a copy or import, out of combat (the Toolkit refuses one in combat):
+-- the engine wrote the new values into WTF.db in place, so the DoT tracker,
+-- the control bar, the predictor, and the nameplate dots hold the same
+-- tables. Each part reads them again; a secure frame waits out combat.
+function WTF.ApplyProfile()
+    WTF.ApplyShardsProfile()
+    WTF.ApplyStonesProfile()
+    if WTF.shared then
+        WTF.RefreshPredict()
+        WTF.ApplyTrackerProfile()
+        WTF.ApplyDotColors()
+        WTF.SetPlateDotsOpacity(WTF.db.tracker.plateDotsOpacity)
+        WTF.RefreshPlateDots()
+        WTF.ApplyControlProfile()
+    end
+    WTF.RefreshGrid()
+end
+
+-- Once, at login, before the modules build their frames, so a part copied
+-- while WTF was not loaded is written first. With a Toolkit older than 2.10.0
+-- (or none) nothing changes.
+local function RegisterProfilePart()
+    local register = WTF.toolkit and WTF.toolkit.RegisterProfilePart
+    if type(register) ~= "function" then
+        return false
+    end
+    return register({
+        addon = addonName,
+        title = DEFAULT_TITLE,
+        current = function() return WTF.db end,
+        sanitize = function(settings) return WTF.SanitizeProfile(settings) end,
+        characterKeys = WTF.PROFILE_CHARACTER_KEYS,
+        refresh = function() WTF.ApplyProfile() end,
+    }) == true
 end
 
 -- Another AddOn can register the same slash command; the last one loaded wins.
@@ -1056,6 +1143,7 @@ events:SetScript("OnEvent", function(self, event, loadedName)
     UseToolkit()
     UseShared()
     InstallInputHooks()
+    WTF.profileRegistered = RegisterProfilePart()
     WTF.InitializeShards()
     WTF.InitializeStones()
     WTF.InitializeAnnounce()

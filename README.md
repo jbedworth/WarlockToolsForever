@@ -61,6 +61,15 @@ still work. Without the toolkit, WTF otherwise works as before, with its own
 top-level settings page, its own unlock, and its own grid, and says once in
 chat to install it.
 
+**Your profile** (Dyre's Toolkit 2.10.0 or later): WTF's settings and frame
+places and sizes are part of your Dyre's Toolkit profile,
+one per character. On the toolkit's settings page, copy them from another
+character or the Defaults, or export and import them as one text line, for
+every Dyre's AddOn at once. They apply at once, with no reload, and never in
+combat. Each character keeps its own Soulstone timer, the last curse, Bane,
+and control spell the DoT tracker recasts, and its shard count from the
+current dungeon. Account-wide data (learned DoT ticks) is not in a profile.
+
 WTF works well with **Weapon Skills Forever**, another of Dyre's AddOns. It
 is optional: WTF does not need it.
 
@@ -237,6 +246,12 @@ spell shows as a dim icon, so you can see what to recast.
   opacity**, and **Other mobs panel opacity** in their sections of the DoT
   Tracker page make each one see-through on its own (100%, fully solid, by
   default).
+- **Hide empty DoT slots** (DoT Tracker page, General; off by default, with a
+  Dyre's Toolkit that has it) shows a DoT only while it is on the mob: no dim
+  icon or empty bar for the others. The empty places stay, so your DoTs do
+  not move. With it on, a click on the target or focus row does not recast a
+  DoT or show the smart curse letter; the smart curse still works from its
+  key binding and the "! Curse" macro.
 - The timers come from Blizzard's own aura display, which reads each mob's
   nameplate. Turn on enemy nameplates so listed mobs keep their timers.
 - In combat the game can hide which nameplate belongs to which mob. WTF then

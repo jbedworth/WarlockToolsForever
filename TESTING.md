@@ -341,6 +341,13 @@ and printing.
       the list. Set a focus: the red-outlined row appears; clear it: a list
       you have not moved goes up under the target row, with no gap; drag the
       list, then clear the focus again: it stays where you put it.
+- [ ] Hide empty DoT slots (with a Toolkit that has it): turn it on, out of
+      combat: the target, focus, and list rows show no dim icon or empty bar;
+      cast Corruption: only its icon or bar shows, in its usual place; let it
+      run out: the place is empty, nothing moves. A click on the target row
+      casts nothing; Smart curse's key binding and "! Curse" still cast.
+      Turn it on in combat: it applies when combat ends. Turn it off: the
+      dim icons and row clicks come back.
 - [ ] Same-named mobs (player report): pull two or three mobs with the same
       name. Target one, start Immolate, and tab to another before it lands:
       the first mob gets a list row with its Immolate; the new target's row
@@ -661,6 +668,15 @@ and printing.
       to it; with Snap to the grid on, it snaps to the grid; Shift-drag moves
       a snapped group across AddOns; `/wtf lock` locks them all; places survive `/reload`;
       frames start locked after `/reload`. No taint in combat.
+- [ ] Profile (Dyre's Toolkit 2.10.0 or later): on character A, change a few
+      WTF settings (shard limit, Stones bar size and place, DoT tracker theme,
+      a Control bar marker). On character B, open the Dyre's Toolkit page and
+      copy A's profile: B's WTF frames and settings change at once, no reload
+      popup, no Lua error; the Stones bar and the Control bar move; an open
+      WTF settings page shows the new values. B's Soulstone timer (`/wtf
+      stones`) and `/wtf debug_shards` `instanceKeep` stay B's. Then export
+      B's profile, change a setting, import the line: the setting comes back.
+      Copy in combat: refused, nothing changes.
 - [ ] Without Dyre's Toolkit (disable it): one chat line at login says to
       install it from CurseForge; WTF's own top-level page, unlock, and grid
       work as before; positions saved with the toolkit are kept.

@@ -629,6 +629,20 @@ local function AddTrackerPage(parent)
     if type(outlineInitializer.AddModifyPredicate) == "function" then
         outlineInitializer:AddModifyPredicate(function() return WTF.TrackerOutlineAvailable() end)
     end
+    -- Hide empty DoT slots (John, 2026-11-17: "Yes, build it"): only with a
+    -- Toolkit that has it.
+    if WTF.TrackerHideEmptyAvailable() then
+        local tooltip = "Show a DoT only while it is on the mob. The empty places stay, so the DoTs do not "
+            .. "move. The target and focus rows then do not recast a DoT or show the smart curse letter when you "
+            .. "click them."
+        if WTF.SmartCurseAvailable() then
+            tooltip = tooltip .. " With Curse slot click set to Smart curse, the smart curse still works from its "
+                .. "key binding and the \"! Curse\" macro."
+        end
+        Flag(page, "WTF_TRACKER_HIDE_EMPTY", "Hide empty DoT slots", "tracker", "hideEmpty", false,
+            tooltip .. " A change in combat applies when combat ends.",
+            function() WTF.SetTrackerHideEmpty(WTF.db.tracker.hideEmpty) end)
+    end
     local dotsInitializer = Flag(page, "WTF_TRACKER_PLATE_DOTS", "Show DoT dots on nameplates", "tracker",
         "plateDots", false,
         "In combat, a bubble above each hostile nameplate with a dot per DoT you know: colored while it is up, "

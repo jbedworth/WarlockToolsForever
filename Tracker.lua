@@ -167,6 +167,18 @@ function WTF.TrackerOutlineAvailable()
     return type(toolkit) == "table" and type(toolkit.TRACKER_OUTLINE) == "table"
 end
 
+-- Whether the Toolkit can hide empty DoT slots (TRACKER_HIDE_EMPTY).
+function WTF.TrackerHideEmptyAvailable()
+    local toolkit = rawget(_G, "DyresToolkit")
+    return type(toolkit) == "table" and toolkit.TRACKER_HIDE_EMPTY == true
+end
+
+-- The rows are rebuilt (out of combat; in combat, when it ends).
+function WTF.SetTrackerHideEmpty(on)
+    WTF.db.tracker.hideEmpty = on == true
+    Rebuild()
+end
+
 -- Out of combat; in combat the engine rebuilds when combat ends.
 function WTF.SetTrackerOutlineWidth(width)
     WTF.db.tracker.outlineWidth = WTF.SanitizeWhole(width, WTF.OUTLINE_WIDTH_MIN, WTF.OUTLINE_WIDTH_MAX,
@@ -180,6 +192,24 @@ function WTF.ResetTrackerPosition()
     if tracker.available then
         tracker.engine:ResetPosition()
     end
+end
+
+-- A profile copy or import (Core's ApplyProfile): the engine reads its store
+-- (WTF.db.tracker, written in place) again: the switch, the sections' saved
+-- places (ResetPosition places them from the store, out of combat), the rows,
+-- the panel colors, the smart curse, and "! Curse".
+function WTF.ApplyTrackerProfile()
+    if not tracker.available then
+        return
+    end
+    tracker.engine:Refresh()
+    tracker.engine:ResetPosition()
+    tracker.engine:Rebuild()
+    tracker.engine:ApplyPanelColors()
+    if WTF.SmartCurseAvailable() then
+        tracker.engine:ApplySmartCurse()
+    end
+    WTF.ApplyCurseMacro()
 end
 
 function WTF.RefreshTracker()

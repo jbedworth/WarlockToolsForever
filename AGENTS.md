@@ -554,6 +554,21 @@ their other classes ("virality"):
   decorate Blizzard's plates, whose click the engine handles. Never promise
   clicking a list row to target or cast.
 
+- Hide empty DoT slots (built, unreleased; treadpool, a Dyre's Debuff Tracker
+  player, 2026-11-17, asked for only the DoTs that are up; John: "Yes, build
+  it"): `tracker.hideEmpty`, boolean, default false, repaired in SanitizeDB,
+  in the profile (a setting, not a characterKey). The checkbox "Hide empty
+  DoT slots" (`WTF_TRACKER_HIDE_EMPTY`, DoT Tracker page, General, after the
+  outline width) shows only when `DyresToolkit.TRACKER_HIDE_EMPTY` is true
+  (`WTF.TrackerHideEmptyAvailable`); the minimum Toolkit stays. A change
+  calls `WTF.SetTrackerHideEmpty`, which rebuilds the tracker (the engine
+  waits out combat); the profile refresh rebuilds too. The engine then draws
+  no placeholder, and the target and focus rows make no secure slots (no
+  recast click and no smart-curse letter there); places stay (Forever cannot
+  read which DoTs are up in combat, and secure slots move only out of
+  combat). The smart curse button and "! Curse" are not changed; the tooltip
+  says so when the Toolkit has the smart curse.
+
 ### Nameplate DoT dots (built, part of the tracker)
 
 - Nameplate dot opacity (author-approved, player request: "Opacity for dot
@@ -945,6 +960,44 @@ tells; the rule learns it, identically in MTF (keep the two the same):
 - Without it (or with an older one), WTF works as before: Layout.lua, WTF's
   grid, its top-level page, and its own lock messages, and it says once at
   login to install (or update) Dyre's Toolkit, naming only CurseForge.
+
+### Dyre's Toolkit Profile (built, unreleased; John, 2026-11-17)
+
+John: "start working on the global "all Dyre addons settings" syncing with
+DT's profile, so there is one place to go to persist your profile." The
+Toolkit owns the profile (docs/PROFILES.md in DyresToolkit, 2.10.0): one per
+character, no switching, copy from another character or the Defaults,
+export and import as text; WTF keeps its live settings in
+WarlockToolsForeverDB, with no per-AddOn Profile section.
+
+- Core registers once at PLAYER_LOGIN, after `UseToolkit` and before the
+  modules build their frames (`RegisterProfilePart`, `WTF.profileRegistered`),
+  only when the toolkit has `RegisterProfilePart`; the minimum toolkit stays.
+  `current` is `WTF.db`; `sanitize` is `WTF.SanitizeProfile` (any table to a
+  full, repaired one through `WTF.SanitizeDB`; never errors).
+- In the profile: every setting in `shards`, `stones`, `tracker` (with the
+  sections' places), `predict`, `announce`, `control`, and `grid`.
+- `characterKeys` (top-level, never copied, exported, or imported):
+  `locked` (a copy of the toolkit's account-wide lock, set at login);
+  `shield`, `chimes`, `alerts`, `reminders` (old WTF data that Dyre's Shields
+  Up and Dyre's Buff Reminders copy once per character). WTF saves no macro
+  names (they are fixed). WarlockToolsForeverAccountDB (focusWorks, learned
+  ticks) is account-wide, so it is not registered.
+- Live state nested in settings tables: the engine skips only top-level keys,
+  so `SanitizeProfile` puts this character's live values back on every copy,
+  import, and Defaults: `shards.instanceKeep`, `stones.soulstone`, and
+  `tracker.lastBane`, `lastCurse`, `lastControl` (the recast choice, written
+  by the toolkit's tracker). They still appear in this character's saved copy
+  and an export line, but never take effect elsewhere.
+- `refresh` is `WTF.ApplyProfile` (no reload): the shard counter's scale,
+  then place (`ApplyShardsProfile`); the Stones bar's scale, then place, out
+  of combat (`ApplyStonesProfile`; in combat, at `PLAYER_REGEN_ENABLED`), and
+  its macros; with the shared engines, the predictor's `Refresh`, the DoT
+  tracker's `Refresh`, `ResetPosition` (places the sections from the store,
+  out of combat), `Rebuild`, panel colors, smart curse, and "! Curse"
+  (`ApplyTrackerProfile`); the dot colors and opacity; the Control bar's place
+  (out of combat), refresh, and macros (`ApplyControlProfile`); the grid. A
+  copy is refused in combat by the toolkit.
 
 ### Macro text (author-approved)
 

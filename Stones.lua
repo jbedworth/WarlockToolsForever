@@ -676,6 +676,30 @@ function WTF.ResetStonesPosition()
     PlaceBar(buttons.bar)
 end
 
+-- A profile copy or import (Core's ApplyProfile): the bar's size and place
+-- from the settings, scale first (the place is in the bar's own scale), out of
+-- combat (secure buttons); in combat, when it ends. Then the macros, and with
+-- them the buttons and the bar's visibility.
+local function ApplyBarProfile()
+    stones.profilePending = false
+    stones.scalePending = false
+    stones.resetPending = false
+    buttons.bar:SetScale(WTF.db.stones.scale / 100)
+    PlaceBar(buttons.bar)
+end
+
+function WTF.ApplyStonesProfile()
+    if buttons.bar then
+        if InCombatLockdown() then
+            stones.profilePending = true
+        else
+            ApplyBarProfile()
+        end
+        WTF.RefreshStonesMover()
+    end
+    WTF.ApplyStoneMacros()
+end
+
 -- Stone status ----------------------------------------------------------------
 -- WTF remembers who has your Soulstone from your own cast (Soulstone
 -- Resurrection), saved per character with the time it ends, and reminds you in
@@ -826,6 +850,9 @@ events:SetScript("OnEvent", function(_, event, ...)
         WTF.OnStoneCast(event, ...)
         return
     elseif event == "PLAYER_REGEN_ENABLED" then
+        if stones.profilePending then
+            ApplyBarProfile()
+        end
         if stones.resetPending then
             stones.resetPending = false
             PlaceBar(buttons.bar)

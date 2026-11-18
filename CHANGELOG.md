@@ -4,6 +4,12 @@ Player-facing changes for each Warlock Tools Forever release, newest first. The
 release builder copies the section for the TOC version into the GitHub release
 notes and the CurseForge changelog, and fails if that section is missing.
 
+## 1.9.0
+
+### Features
+- Your WTF settings and frame places and sizes are now part of your Dyre's Toolkit profile: on the Dyre's Toolkit settings page, copy them from another character (or the Defaults), or export and import them as one text line. They apply at once, with no reload. Each character keeps its own Soulstone timer, the last curse, Bane, and control spell the DoT tracker recasts, and its shard count from the current dungeon. Needs Dyre's Toolkit 2.10.0 or later; with an older Toolkit, WTF works as before.
+- DoT tracker: **Hide empty DoT slots** on the DoT Tracker page (General) shows a DoT only while it is on the mob, with no dim icon or empty bar for the others. The empty places stay, so your DoTs do not move. With it on, a click on the target or focus row does not recast a DoT or show the smart curse letter; the smart curse still works from its key binding and the "! Curse" macro. Off by default. Shows with a Dyre's Toolkit that has it.
+
 ## 1.8.1
 
 ### Fixes

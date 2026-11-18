@@ -1177,6 +1177,18 @@ local function fixture(options)
             setfenv(chunk, env)
             chunk("DyresToolkit", toolkitNS)
         end
+        -- options.profiles: the Toolkit's profile engine (Profiles.lua, 2.10.0)
+        -- on the same table, with this character "Dyre - Forever".
+        if options.profiles then
+            state.units.player = state.units.player or {name = "Dyre"}
+            env.GetRealmName = env.GetRealmName or function() return "Forever" end
+            env.StaticPopupDialogs = env.StaticPopupDialogs or {}
+            local chunk, message = loadfile(TOOLKIT_DIR .. "Profiles.lua")
+            if not chunk then error(message) end
+            setfenv(chunk, env)
+            chunk("DyresToolkit", toolkitNS)
+            state.toolkitNS = toolkitNS
+        end
         -- options.sharedMissing: a function an older Toolkit lacks.
         if options.sharedMissing then shared[options.sharedMissing] = nil end
         -- options.noHiddenTicks: no predictor where the combat log is restricted.
@@ -3967,6 +3979,166 @@ test("a refusal is logged with the AddOn the game named", function()
     contains(text, "ADDON_ACTION_BLOCKED WarlockToolsForever UNKNOWN()")
     contains(text, "place refused retry")
 end)
+-- Dyre's Toolkit Profile (John, 2026-11-17): WTF's part of each character's profile.
+local PROFILE_KEY = "Dyre - Forever"
+local function profileFixture(extra)
+    local options = {toolkit = true, profiles = true}
+    for key, value in pairs(extra or {}) do options[key] = value end
+    return fixture(options)
+end
+local function sameTable(actual, expected, path)
+    path = path or "settings"
+    equal(type(actual), type(expected), path)
+    if type(expected) ~= "table" then
+        equal(actual, expected, path)
+        return
+    end
+    for key, value in pairs(expected) do sameTable(actual[key], value, path .. "." .. tostring(key)) end
+    for key in pairs(actual) do
+        if expected[key] == nil then equal(actual[key], nil, path .. "." .. tostring(key) .. " is extra") end
+    end
+end
+local function otherProfile(state, part)
+    state.toolkitDB.profiles = state.toolkitDB.profiles or {}
+    state.toolkitDB.profiles["Alt - Forever"] = {class = "Warlock", seen = 1, parts = {WarlockToolsForever = part}}
+end
+test("profile: without Toolkit 2.10's RegisterProfilePart, WTF works as before", function()
+    local state = fixture({toolkit = true})
+    equal(state.wtf.profileRegistered, false)
+    equal(state.toolkitDB.profiles, nil, "nothing saved for a profile")
+    equal(state.wtf.db.shards.limit ~= nil, true, "settings load as before")
+end)
+test("profile: WTF registers its part, without its per-character keys", function()
+    local state = profileFixture({db = {chimes = {old = true}}})
+    equal(state.wtf.profileRegistered, true)
+    local parts = state.shared.ProfileParts()
+    equal(parts[#parts], "WarlockToolsForever")
+    local part = state.toolkitDB.profiles[PROFILE_KEY].parts.WarlockToolsForever
+    equal(type(part.shards), "table", "settings are in the profile")
+    for _, key in ipairs({"locked", "shield", "chimes", "alerts", "reminders"}) do
+        equal(part[key], nil, key .. " stays on this character")
+    end
+end)
+test("profile: sanitize turns an empty table into WTF's defaults", function()
+    local state = profileFixture()
+    sameTable(state.wtf.SanitizeProfile({}), state.wtf.SanitizeDB({}))
+    sameTable(state.wtf.SanitizeProfile("junk"), state.wtf.SanitizeDB({}))
+    local partial = state.wtf.SanitizeProfile({shards = {limit = 999}, tracker = "bad", future = {x = 1}})
+    equal(partial.shards.limit, 60, "repaired")
+    equal(partial.tracker.theme, "bars", "a bad section gets its defaults")
+end)
+test("profile: a copy from another character applies live and keeps this character's state", function()
+    local state = profileFixture({db = {chimes = {mine = true}, shards = {instanceKeep = 14}}})
+    local db = state.wtf.db
+    db.stones.soulstone = {name = "Healer", ends = 2000000}
+    db.tracker.lastCurse = "Curse of Agony"
+    local shardsTable, trackerTable = db.shards, db.tracker
+    otherProfile(state, {
+        shards = {limit = 30, autoLimit = false, counterScale = 80, instanceKeep = 3,
+            counterPosition = {point = "CENTER", relativePoint = "CENTER", x = 40, y = -20}},
+        stones = {scale = 120, soulstone = {name = "Someone", ends = 5},
+            position = {point = "TOP", relativePoint = "TOP", x = 10, y = -50}},
+        tracker = {theme = "compact", lastCurse = "Curse of Tongues", outlineWidth = 7},
+        predict = {color = "red"},
+        locked = false, chimes = {theirs = true},
+    })
+    local ok, reload = state.toolkitNS.profile:CopyFrom("Alt - Forever")
+    equal(ok, true)
+    equal(#reload, 0, "no reload: WTF applies live")
+    equal(db.shards.limit, 30)
+    equal(db.shards.autoLimit, false)
+    equal(db.tracker.theme, "compact")
+    equal(db.tracker.outlineWidth, 7)
+    equal(db.predict.color, "red")
+    equal(db.shards, shardsTable, "written in place")
+    equal(db.tracker, trackerTable, "the engine's store is the same table")
+    equal(db.shards.instanceKeep, 14, "this character's instance count stays")
+    equal(db.stones.soulstone.name, "Healer", "this character's Soulstone stays")
+    equal(db.tracker.lastCurse, "Curse of Agony", "this character's last curse stays")
+    equal(db.locked, true, "the lock stays")
+    equal(db.chimes.mine, true, "old data stays")
+    equal(db.chimes.theirs, nil)
+    local counter = state.wtf.shardCounter
+    equal(counter:GetScale(), 0.8, "the counter takes its new size at once")
+    local point, _, _, x = counter:GetPoint()
+    equal(point, "CENTER")
+    equal(x, 40, "and its new place")
+    local bar = state.env.WarlockToolsForeverStones
+    equal(bar:GetScale(), 1.2, "the Stones bar too")
+    point, _, _, x = bar:GetPoint()
+    equal(point, "TOP")
+    equal(x, 10)
+    local saved = state.toolkitDB.profiles[PROFILE_KEY].parts.WarlockToolsForever
+    equal(saved.shards.limit, 30, "this character's copy follows")
+end)
+test("profile: the Defaults reset the settings and keep this character's state", function()
+    local state = profileFixture({db = {shards = {limit = 40, autoLimit = false, instanceKeep = 9},
+        stones = {scale = 70}}})
+    local ok = state.toolkitNS.profile:CopyFrom(state.shared.PROFILE_DEFAULTS)
+    equal(ok, true)
+    equal(state.wtf.db.shards.autoLimit, true)
+    equal(state.wtf.db.stones.scale, 100)
+    equal(state.wtf.db.shards.instanceKeep, 9)
+    equal(state.env.WarlockToolsForeverStones:GetScale(), 1)
+end)
+test("profile: export and import carry WTF's settings", function()
+    local state = profileFixture({db = {shards = {limit = 25, autoLimit = false}}})
+    local line = state.toolkitNS.profile:Export()
+    contains(line, "WarlockToolsForever")
+    state.wtf.db.shards.limit = 12
+    local ok = state.toolkitNS.profile:Import(line)
+    equal(ok, true)
+    equal(state.wtf.db.shards.limit, 25)
+end)
+test("profile: a bad part or a bad line changes nothing", function()
+    local state = profileFixture({db = {shards = {limit = 22, autoLimit = false}}})
+    state.shared.RegisterProfilePart({addon = "BrokenAddOn", current = function() return {} end,
+        sanitize = function() error("broken") end})
+    otherProfile(state, {shards = {limit = 50, autoLimit = false}})
+    state.toolkitDB.profiles["Alt - Forever"].parts.BrokenAddOn = {}
+    local ok = state.toolkitNS.profile:CopyFrom("Alt - Forever")
+    equal(ok, nil, "all or nothing")
+    equal(state.wtf.db.shards.limit, 22)
+    ok = state.toolkitNS.profile:Import("DYRE2:profile:garbage:0")
+    equal(ok, nil)
+    equal(state.wtf.db.shards.limit, 22)
+    state.combat = true
+    otherProfile(state, {shards = {limit = 50, autoLimit = false}})
+    ok = state.toolkitNS.profile:CopyFrom("Alt - Forever")
+    equal(ok, nil, "never in combat")
+    equal(state.wtf.db.shards.limit, 22)
+end)
+-- Hide empty DoT slots (John, 2026-11-17; Toolkit TRACKER_HIDE_EMPTY).
+test("hide empty DoT slots: off by default, repaired, and in the profile", function()
+    equal(fixture().wtf.db.tracker.hideEmpty, false)
+    for saved, expected in pairs({[true] = true, [false] = false, yes = false, [1] = false}) do
+        local state = fixture({db = {tracker = {hideEmpty = saved}}})
+        equal(state.wtf.db.tracker.hideEmpty, expected, tostring(saved))
+    end
+    local state = fixture({toolkit = true, profiles = true, db = {tracker = {hideEmpty = true}}})
+    equal(state.toolkitDB.profiles["Dyre - Forever"].parts.WarlockToolsForever.tracker.hideEmpty, true)
+end)
+test("hide empty DoT slots: the checkbox shows only with a Toolkit that has it", function()
+    local state = fixture()
+    equal(state.settings.WTF_TRACKER_HIDE_EMPTY ~= nil, true)
+    local tooltip = initializerFor(state.categories["DoT Tracker"], "WTF_TRACKER_HIDE_EMPTY").tooltip
+    contains(tooltip, "Show a DoT only while it is on the mob")
+    contains(tooltip, "the smart curse still works from its key binding")
+    local old = fixture({sharedMissing = "TRACKER_HIDE_EMPTY"})
+    equal(old.settings.WTF_TRACKER_HIDE_EMPTY, nil, "no checkbox and no error")
+end)
+test("hide empty DoT slots: a change rebuilds the tracker and reaches the engine's store", function()
+    local state = fixture()
+    local engine = state.wtf.DotTracker()
+    local rebuilds = 0
+    local rebuild = engine.Rebuild
+    engine.Rebuild = function(...) rebuilds = rebuilds + 1; return rebuild(...) end
+    state.settings.WTF_TRACKER_HIDE_EMPTY:SetValue(true)
+    equal(state.wtf.db.tracker.hideEmpty, true)
+    equal(rebuilds, 1)
+    state.settings.WTF_TRACKER_HIDE_EMPTY:SetValue(false)
+    equal(rebuilds, 2)
+end)
 -- Sizes (John, 2026-11-12, from a player comment): percent, 50-150, step 5.
 test("the Stones bar and shard counter sizes are repaired and start at the saved size", function()
     for saved, expected in pairs({[73] = 75, [999] = 150, [10] = 50, [2.5] = 100, junk = 100}) do
@@ -6196,12 +6368,13 @@ test("the dots switch and height setting apply at once", function()
     local page = state.categories["DoT Tracker"]
     equal(page.initializers[1].setting.variable, "WTF_TRACKER_THEME")
     equal(page.initializers[2].setting.variable, "WTF_TRACKER_OUTLINE_WIDTH")
-    equal(page.initializers[3].setting.variable, "WTF_TRACKER_PLATE_DOTS")
-    equal(page.initializers[4].parentInitializer, page.initializers[3])
+    equal(page.initializers[3].setting.variable, "WTF_TRACKER_HIDE_EMPTY")
+    equal(page.initializers[4].setting.variable, "WTF_TRACKER_PLATE_DOTS")
+    equal(page.initializers[5].parentInitializer, page.initializers[4])
 end)
 test("the dot height slider has a gold mark at the default, hidden on reuse", function()
     local state = dotsFixture()
-    local initializer = state.categories["DoT Tracker"].initializers[4]
+    local initializer = state.categories["DoT Tracker"].initializers[5]
     local frame = state.env.CreateFrame("Frame")
     local slider = state.env.CreateFrame("Slider")
     frame.SliderWithSteppers = {Slider = slider}
@@ -6225,7 +6398,7 @@ test("without a known DoT the dots stay off and cannot be turned on", function()
     local state = dotsFixture({spellbook = {{spellID = 686, name = "Shadow Bolt"}}})
     equal(state.wtf.HasTrackableDots(), false)
     equal(bubbleOn(state, "nameplate1"), nil)
-    equal(state.categories["DoT Tracker"].initializers[3].modifyPredicates[1](), false)
+    equal(state.categories["DoT Tracker"].initializers[4].modifyPredicates[1](), false)
 end)
 -- The pinned rows' outline width (John, 2026-11-11; Dyre's Toolkit 2.8.0).
 test("the target and focus outline: saved 0-20 px, default 3, 0 draws none", function()

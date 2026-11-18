@@ -167,6 +167,16 @@ function WTF.RefreshControl()
     end
 end
 
+-- A profile copy or import (Core's ApplyProfile): the bar's place, out of
+-- combat (it holds secure slots), then its scale, rows, markers, and macros.
+function WTF.ApplyControlProfile()
+    if control.available then
+        WTF.shared.OutOfCombat(Place, Place)
+        WTF.RefreshControl()
+        WTF.ApplyControlMacros()
+    end
+end
+
 function WTF.ResetControlPosition()
     WTF.db.control.position = nil
     if control.available then

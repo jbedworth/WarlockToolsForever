@@ -458,6 +458,16 @@ function WTF.SetShardCounterScale(percent)
     end
 end
 
+-- A profile copy or import (Core's ApplyProfile): a plain frame, so its size
+-- and place change at once; scale first, as the place is in its own scale.
+function WTF.ApplyShardsProfile()
+    if counter then
+        counter:SetScale(WTF.db.shards.counterScale / 100)
+        PlaceCounter()
+    end
+    WTF.RefreshShardCounter()
+end
+
 function WTF.ResetShardCounterPosition()
     WTF.db.shards.counterPosition = nil
     if counter then

@@ -113,6 +113,13 @@ end
 --              mob, its name shows the time left as text (MTF's)
 --   clickThrough true: a slot is always there while the bar is, taking the
 --              mouse only with a click to make or while unlocked (MTF's)
+--   fixedClick "polymorph": the slot's click is set once, out of combat,
+--              from when you know that spell, never per cast (MTF 1.3.4;
+--              John, 2026-11-15: a Polymorph first cast in combat had no
+--              click). The slot shows by a state driver while you have a
+--              live hostile focus, and the row then shows, dimmed, with
+--              your focus's name, so no click area is invisible. The click
+--              casts the spell you last cast out of combat, else its first.
 --   announce   {text = function(key) -> text or nil (off), enabled =
 --              function, say = function}: tokens %T mob, %M marker, %Z zone
 --   keeper     {owned = saved name -> true table, warn = function(text)}
@@ -263,6 +270,17 @@ function DyresToolkit.CreateControlTracker(spec)
         return "  |cff999999" .. math.ceil(remaining) .. " s|r"
     end
 
+    -- A fixedClick slot shows while you have a live hostile focus (its state
+    -- driver); the same test here, so its row shows with it. A secret answer
+    -- counts as shown: never a click area that cannot be seen.
+    local function FixedSlotShown(row)
+        if not row.holder.fixedSpell or not Locked() or not UnitExists("focus") or DyresToolkit.IsDead("focus") then
+            return false
+        end
+        local canAttack = UnitCanAttack("player", "focus")
+        return DyresToolkit.IsSecret(canAttack) or canAttack == true
+    end
+
     local function Layout()
         local look = Look()
         local enabled = Enabled()
@@ -276,6 +294,8 @@ function DyresToolkit.CreateControlTracker(spec)
         for index, row in ipairs(tracker.rows) do
             local holder = row.holder
             local spent = not row.guid and holder:IsVisible() and holder.mobName ~= nil
+            local idle = not row.guid and tracker.fixedDef ~= nil and FixedSlotShown(row)
+            spent = spent or idle
             row:SetAlpha((spent and SPENT_ALPHA or 1) * look.alpha)
             if not enabled and not spent then
                 row:Hide()
@@ -285,7 +305,7 @@ function DyresToolkit.CreateControlTracker(spec)
                 row.name:SetText(row.mobName .. (spec.countdown and TimeText(row) or ""))
                 row:Show()
             elseif spent then
-                row.name:SetText(holder.mobName)
+                row.name:SetText(idle and (DyresToolkit.ReadName("focus") or "Focus") or holder.mobName)
                 row:Show()
             elseif sample and spec.samples and spec.samples[index] then
                 row.name:SetText(spec.samples[index])
@@ -297,6 +317,14 @@ function DyresToolkit.CreateControlTracker(spec)
         if spec.onChange then
             spec.onChange()
         end
+    end
+
+    -- A click casts the spell you learned (the def's first ID), never a
+    -- variant from a deciphered scroll (Polymorph: Pig, the watermelon): John,
+    -- 2026-11-15, "the scrolls are in limited supply", and a variant's recast
+    -- has a strong chance of not working.
+    local function ClickSpell(def)
+        return DyresToolkit.SpellName(def.ids[1])
     end
 
     -- Out of combat only: each slot's secure click, whether it is there, and
@@ -330,15 +358,30 @@ function DyresToolkit.CreateControlTracker(spec)
                 local holder = row.holder
                 local name = row.clickName
                 local spell = works and enabled and row.clickSpell or nil
-                holder:SetAttribute("type1", name and spell and "macro" or nil)
-                holder:SetAttribute("macrotext1", name and spell and DyresToolkit.FocusRecastMacro(spell) or nil)
-                holder.mobName, holder.spellName = spell and name or nil, spell
-                if spec.clickThrough then
-                    holder:SetShown(enabled and (known or not locked))
-                    holder:EnableMouse(not locked or spell ~= nil)
+                if tracker.fixedDef then
+                    -- One click for every cast: only the spell, and the
+                    -- slot's visibility follows your focus, also in combat.
+                    local def = tracker.fixedDef
+                    local fixed = works and enabled and DyresToolkit.KnowsAny(tracker.sets[def.key])
+                        and ClickSpell(def) or nil
+                    holder:SetAttribute("type1", fixed and "macro" or nil)
+                    holder:SetAttribute("macrotext1", fixed and DyresToolkit.FocusRecastMacro(fixed) or nil)
+                    holder.mobName, holder.spellName, holder.fixedSpell = nil, fixed, fixed
+                    holder:EnableMouse(true)
+                    UnregisterStateDriver(holder, "visibility")
+                    RegisterStateDriver(holder, "visibility", not enabled and "hide" or not locked and "show"
+                        or fixed and "[@focus,exists,harm,nodead] show; hide" or "hide")
                 else
-                    -- A click area only where there is something to recast, or to drag by.
-                    holder:SetShown(enabled and ((name ~= nil and spell ~= nil) or not locked))
+                    holder:SetAttribute("type1", name and spell and "macro" or nil)
+                    holder:SetAttribute("macrotext1", name and spell and DyresToolkit.FocusRecastMacro(spell) or nil)
+                    holder.mobName, holder.spellName = spell and name or nil, spell
+                    if spec.clickThrough then
+                        holder:SetShown(enabled and (known or not locked))
+                        holder:EnableMouse(not locked or spell ~= nil)
+                    else
+                        -- A click area only where there is something to recast, or to drag by.
+                        holder:SetShown(enabled and ((name ~= nil and spell ~= nil) or not locked))
+                    end
                 end
             end
             Layout()
@@ -454,7 +497,7 @@ function DyresToolkit.CreateControlTracker(spec)
         row.guid, row.mobName, row.key, row.expires = guid, mobName, spell.key, nil
         row.focusOnly = nil
         if spell.click and DyresToolkit.FocusWorks() then
-            row.clickName, row.clickSpell, row.clickKey = mobName, spellName, spell.key
+            row.clickName, row.clickSpell, row.clickKey = mobName, ClickSpell(spell), spell.key
             row.focusOnly = true
         end
         local token = {}
@@ -841,7 +884,7 @@ function DyresToolkit.CreateControlTracker(spec)
                 -- A single spell's new cast replaces the click of the mob up
                 -- there, which a failed cast gives back.
                 tracker.casts[castGUID].before = row.guid and {row.clickName, row.clickSpell} or nil
-                row.clickName, row.clickSpell, row.clickKey = target, DyresToolkit.SpellName(spellID), spell.key
+                row.clickName, row.clickSpell, row.clickKey = target, ClickSpell(spell), spell.key
                 tracker.casts[castGUID].row = row
                 ApplyClicks()
             end
@@ -1007,6 +1050,10 @@ function DyresToolkit.CreateControlTracker(spec)
                     Forget(row)
                 end
             end
+            -- Your focus died: a fixedClick slot hides, and its row with it.
+            if tracker.fixedDef and unit == "focus" then
+                Layout()
+            end
         elseif event == "UNIT_AURA" then
             if not DyresToolkit.IsSecret(unit) then
                 for _, row in ipairs(tracker.rows) do
@@ -1144,6 +1191,9 @@ function DyresToolkit.CreateControlTracker(spec)
         tracker.hasPlateTimers = tracker.hasPlateTimers or def.plateTimer == true
         if spec.focusBox and def.key == spec.focusBox.key then
             tracker.focusDef = def
+        end
+        if spec.fixedClick and def.key == spec.fixedClick and def.click then
+            tracker.fixedDef = def
         end
     end
     DyresToolkit.ClaimOwner(owner.control, spec.addon, spec.priority)
