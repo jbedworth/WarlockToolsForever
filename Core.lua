@@ -185,7 +185,7 @@ local REQUIRED_NAMESPACE = {
     "InitializePredict", "RefreshPredict", "PredictAvailable", "ReportPredictDebug", "DotTracker",
     "SmartCurseAvailable", "ApplyCurseMacro", "SetCurseMode", "SetCurseMarker",
     "SetStonesScale", "SetShardCounterScale",
-    "TrackerOutlineAvailable", "SetTrackerOutlineWidth",
+    "TrackerOutlineAvailable", "SetTrackerOutlineWidth", "TrackerPanelsAvailable", "SetTrackerPanelShown",
     "RefreshTrackerPrediction",
     "ReportRestrictions", "ResetFocusWorks", "InitializeProbe", "InitializeOptions", "OpenSettings",
 }
@@ -606,6 +606,9 @@ function WTF.SanitizeDB(db)
         -- Hide empty DoT slots (John, 2026-11-17, a player's request; Toolkit
         -- TRACKER_HIDE_EMPTY): off by default.
         hideEmpty = tracker.hideEmpty == true,
+        -- Panel switches (John, 2026-11-19, a player's request; Toolkit
+        -- TRACKER_PANELS): each panel shows unless false.
+        show = {},
     }
     for _, key in ipairs({"lastBane", "lastCurse", "lastControl"}) do
         db.tracker[key] = type(tracker[key]) == "string" and tracker[key] or nil
@@ -613,6 +616,10 @@ function WTF.SanitizeDB(db)
     local sizes = type(tracker.sizes) == "table" and tracker.sizes or {}
     for theme in pairs(WTF.TRACKER_SIZE_SPECS) do
         db.tracker.sizes[theme] = WTF.SanitizeTrackerSizes(theme, sizes[theme])
+    end
+    local show = type(tracker.show) == "table" and tracker.show or {}
+    for _, panel in ipairs(WTF.TRACKER_PANELS) do
+        db.tracker.show[panel.key] = show[panel.key] ~= false
     end
     local panelOpacity = type(tracker.panelOpacity) == "table" and tracker.panelOpacity or {}
     for _, panel in ipairs(WTF.TRACKER_PANELS) do

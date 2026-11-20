@@ -341,6 +341,13 @@ and printing.
       the list. Set a focus: the red-outlined row appears; clear it: a list
       you have not moved goes up under the target row, with no gap; drag the
       list, then clear the focus again: it stays where you put it.
+- [ ] Panel switches (with a Toolkit that has them): untick "Show the target
+      panel", out of combat: the target panel goes, the focus and other mobs'
+      panels stay; DoT a mob: no target panel comes back; the other mobs'
+      panel still leaves out your target. Same for focus and others. Untick
+      one in combat: it applies at once or when combat ends, no error. Tick it
+      again: the panel comes back in its place. `/wtf unlock`: a hidden panel
+      stays hidden. Copy a profile with a hidden panel: it hides at once.
 - [ ] Hide empty DoT slots (with a Toolkit that has it): turn it on, out of
       combat: the target, focus, and list rows show no dim icon or empty bar;
       cast Corruption: only its icon or bar shows, in its usual place; let it

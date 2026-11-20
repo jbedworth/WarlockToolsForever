@@ -90,7 +90,9 @@ their other classes ("virality"):
   sound (Alerts.lua), and the Demon Armor reminder (Reminders.lua) are Dyre's
   Buff Reminders' (DBR). WTF ships none of them, and no sounds, so it no
   longer uses Dyre's Sounds. Do not bring any of them back: changes go to DSU
-  or DBR through the coordinator.
+  or DBR through the coordinator. Proc overlays (Nightfall, Decimation) are
+  DSU's too (John, 2026-11-18: "DSU is the right home for our 'spell
+  activation overlays'"); WTF has none.
 - TOC: `## OptionalDeps: DyresToolkit, DyresShieldsUp, DyresBuffReminders`
   (never `## Dependencies`, so WTF loads without them; the toolkit stays
   optional while WTF is not on toolkit widgets). CurseForge lists
@@ -554,6 +556,17 @@ their other classes ("virality"):
   decorate Blizzard's plates, whose click the engine handles. Never promise
   clicking a list row to target or cast.
 
+- Panel switches (built, unreleased; a player, 2026-11-19: "Is there a way to
+  disable the target dot window or hide it?"; John: "let's make a 3 panels
+  toggle show/off, default to show. A checkbox is fine for now."):
+  `tracker.show = {target, focus, list}`, booleans, default true, repaired in
+  SanitizeDB (only false hides), in the profile (part of `tracker`). Each
+  panel's section on the DoT Tracker page starts with "Show the <panel name>"
+  (`WTF_TRACKER_SHOW_TARGET`, `_FOCUS`, `_LIST`), only when
+  `DyresToolkit.TRACKER_PANELS` is a table (`WTF.TrackerPanelsAvailable`); the
+  minimum Toolkit stays. A change calls `WTF.SetTrackerPanelShown`, which
+  calls the engine's `Refresh` (it reads `store.show` live; pinned sections
+  change out of combat). The profile refresh already calls `Refresh`.
 - Hide empty DoT slots (built, unreleased; treadpool, a Dyre's Debuff Tracker
   player, 2026-11-17, asked for only the DoTs that are up; John: "Yes, build
   it"): `tracker.hideEmpty`, boolean, default false, repaired in SanitizeDB,

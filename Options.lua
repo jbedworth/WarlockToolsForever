@@ -442,6 +442,18 @@ end
 -- A panel's own settings (author): its color, then its opacity.
 local function AddPanelSection(page, layout, panel, colors)
     Heading(layout, panel.heading, "Settings for the DoT tracker's " .. panel.name .. " only.")
+    -- Panel switches (John, 2026-11-19: "let's make a 3 panels toggle show/off,
+    -- default to show"): only with a Toolkit that has them.
+    if WTF.TrackerPanelsAvailable() then
+        local shown = Proxy(page, "WTF_TRACKER_SHOW_" .. panel.key:upper(), Settings.VarType.Boolean,
+            "Show the " .. panel.name, true,
+            function() return WTF.db.tracker.show[panel.key] ~= false end,
+            function(value) WTF.SetTrackerPanelShown(panel.key, value == true) end)
+        Settings.CreateCheckbox(page, shown, "Show the DoT tracker's " .. panel.name .. ". Untick it to hide the "
+            .. "panel, for example when " .. (panel.key == "target" and "your target frame already shows your DoTs"
+                or "you do not use it") .. ". The other panels stay. A change in combat may wait until combat "
+            .. "ends.")
+    end
     local color = Proxy(page, "WTF_PANEL_COLOR_" .. panel.key:upper(), Settings.VarType.String, colors.label,
         colors.color,
         function() return WTF.db.tracker.panelColors[panel.key] end,

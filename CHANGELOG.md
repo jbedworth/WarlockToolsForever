@@ -4,6 +4,11 @@ Player-facing changes for each Warlock Tools Forever release, newest first. The
 release builder copies the section for the TOC version into the GitHub release
 notes and the CurseForge changelog, and fails if that section is missing.
 
+## 1.10.0
+
+### Features
+- DoT tracker: **Show the target panel**, **Show the focus panel**, and **Show the other mobs' panel** on the DoT Tracker page (in each panel's section) hide a panel you do not need, for example the target panel when your target frame already shows your DoTs. All on by default. Shows with a Dyre's Toolkit that has it.
+
 ## 1.9.0
 
 ### Features

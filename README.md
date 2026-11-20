@@ -29,6 +29,8 @@ that every class can use:
 - The **cooldown chimes**, the **Nightfall sound**, and the **Demon Armor
   reminder** are in **Dyre's Buff Reminders** (`/dbr`). Its Demon Armor icon
   casts your armor when you click it, as WTF's did.
+- Proc overlays (spell activation overlays, such as Nightfall and
+  Decimation) are in **Dyre's Shields Up**, not in WTF.
 
 The CurseForge app installs both with WTF. They copy your WTF settings for
 these features once, the first time they run on a character. If one is
@@ -246,6 +248,11 @@ spell shows as a dim icon, so you can see what to recast.
   opacity**, and **Other mobs panel opacity** in their sections of the DoT
   Tracker page make each one see-through on its own (100%, fully solid, by
   default).
+- **Show the target panel**, **Show the focus panel**, and **Show the other
+  mobs' panel** (DoT Tracker page, each panel's section; on by default, with a
+  Dyre's Toolkit that has them) hide a panel you do not need, for example the
+  target panel when your target frame already shows your DoTs. The other
+  panels stay where they are.
 - **Hide empty DoT slots** (DoT Tracker page, General; off by default, with a
   Dyre's Toolkit that has it) shows a DoT only while it is on the mob: no dim
   icon or empty bar for the others. The empty places stay, so your DoTs do

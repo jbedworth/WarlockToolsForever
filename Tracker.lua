@@ -179,6 +179,19 @@ function WTF.SetTrackerHideEmpty(on)
     Rebuild()
 end
 
+-- Whether the Toolkit can show or hide each panel (TRACKER_PANELS).
+function WTF.TrackerPanelsAvailable()
+    local toolkit = rawget(_G, "DyresToolkit")
+    return type(toolkit) == "table" and type(toolkit.TRACKER_PANELS) == "table"
+end
+
+-- A panel ("target", "focus", or "list") shown or hidden; the engine reads
+-- the store live, and its pinned sections change out of combat.
+function WTF.SetTrackerPanelShown(key, on)
+    WTF.db.tracker.show[key] = on ~= false
+    WTF.RefreshTracker()
+end
+
 -- Out of combat; in combat the engine rebuilds when combat ends.
 function WTF.SetTrackerOutlineWidth(width)
     WTF.db.tracker.outlineWidth = WTF.SanitizeWhole(width, WTF.OUTLINE_WIDTH_MIN, WTF.OUTLINE_WIDTH_MAX,

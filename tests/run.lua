@@ -5573,8 +5573,13 @@ test("the DoT Tracker page: General, then a section per panel with its color and
     equal(table.concat(names, ","), "General,Target,Focus,Others,Curse slot,DoT damage prediction")
     equal(headings[1].position, 0, "General first")
     equal(page.initializers[1].setting.variable, "WTF_TRACKER_THEME", "the shared settings under General")
+    -- With a Toolkit that has TRACKER_PANELS, each section starts with its show switch.
+    local shift = state.wtf.TrackerPanelsAvailable() and 1 or 0
     for index, case in ipairs({{"TARGET", "ff8787ed"}, {"FOCUS", "ffe61a1a"}, {"LIST", "ff545454"}}) do
-        local at = headings[index + 1].position
+        local at = headings[index + 1].position + shift
+        if shift == 1 then
+            equal(page.initializers[at].setting.variable, "WTF_TRACKER_SHOW_" .. case[1], case[1] .. ": its switch first")
+        end
         local color, opacity = page.initializers[at + 1], page.initializers[at + 2]
         equal(color.setting.variable, "WTF_PANEL_COLOR_" .. case[1], case[1] .. ": its color in its section")
         equal(color.swatch, true)
@@ -5585,6 +5590,63 @@ test("the DoT Tracker page: General, then a section per panel with its color and
     end
     equal(state.categories["DoT Colors"], nil, "no DoT Colors page")
     equal(state.categories["DoT Order"], nil, "no DoT Order page")
+end)
+-- Panel switches (John, 2026-11-19; Toolkit TRACKER_PANELS).
+test("panel switches: each panel shows by default, is repaired, and is in the profile", function()
+    local fresh = fixture()
+    for _, key in ipairs({"target", "focus", "list"}) do
+        equal(fresh.wtf.db.tracker.show[key], true, key .. " shows by default")
+    end
+    local state = fixture({db = {tracker = {show = {target = false, focus = "no", list = 0}}}})
+    equal(state.wtf.db.tracker.show.target, false, "only false hides")
+    equal(state.wtf.db.tracker.show.focus, true)
+    equal(state.wtf.db.tracker.show.list, true)
+    equal(fixture({db = {tracker = {show = "bad"}}}).wtf.db.tracker.show.focus, true, "a damaged table")
+    local profile = fixture({toolkit = true, profiles = true, db = {tracker = {show = {target = false}}}})
+    local part = profile.toolkitDB.profiles["Dyre - Forever"].parts.WarlockToolsForever
+    equal(part.tracker.show.target, false, "in the profile")
+    equal(part.tracker.show.list, true)
+end)
+test("panel switches: the checkboxes show only with a Toolkit that has them", function()
+    local state = fixture()
+    local available = state.wtf.TrackerPanelsAvailable()
+    for _, key in ipairs({"TARGET", "FOCUS", "LIST"}) do
+        equal(state.settings["WTF_TRACKER_SHOW_" .. key] ~= nil, available, key)
+    end
+    local old = fixture({sharedMissing = "TRACKER_PANELS"})
+    equal(old.wtf.TrackerPanelsAvailable(), false)
+    for _, key in ipairs({"TARGET", "FOCUS", "LIST"}) do
+        equal(old.settings["WTF_TRACKER_SHOW_" .. key], nil, key .. ": no checkbox and no error")
+    end
+    if available then
+        equal(state.settings.WTF_TRACKER_SHOW_TARGET.name, "Show the target panel")
+        equal(state.settings.WTF_TRACKER_SHOW_LIST.name, "Show the other mobs' panel")
+        local tooltip = initializerFor(state.categories["DoT Tracker"], "WTF_TRACKER_SHOW_TARGET").tooltip
+        contains(tooltip, "your target frame already shows your DoTs")
+    end
+end)
+test("panel switches: a change saves, refreshes the tracker, and hides only that panel", function()
+    local state = trackerFixture()
+    if not state.wtf.TrackerPanelsAvailable() then
+        state.wtf.SetTrackerPanelShown("target", false)
+        equal(state.wtf.db.tracker.show.target, false, "saved for a Toolkit update")
+        return
+    end
+    local engine = state.wtf.DotTracker()
+    local refreshes = 0
+    local refresh = engine.Refresh
+    engine.Refresh = function(...) refreshes = refreshes + 1; return refresh(...) end
+    dot(state, 6222, "Boar")
+    equal(engine.sections.target.shown, true, "the target panel shows")
+    state.settings.WTF_TRACKER_SHOW_TARGET:SetValue(false)
+    equal(state.wtf.db.tracker.show.target, false)
+    equal(refreshes, 1, "one refresh")
+    equal(engine.sections.target.shown, false, "the target panel hides")
+    equal(state.wtf.db.tracker.show.focus, true, "the others stay")
+    state.settings.WTF_TRACKER_SHOW_TARGET:SetValue(true)
+    equal(state.wtf.db.tracker.show.target, true)
+    equal(refreshes, 2)
+    equal(engine.sections.target.shown, true, "it shows again")
 end)
 test("a panel color recolors its outline, border, and health fill at once, also in combat", function()
     local state = trackerFixture({db = {tracker = {health = true}}})
