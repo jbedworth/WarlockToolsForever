@@ -2531,6 +2531,16 @@ test("a failed stone click is said in chat and in red at the top of the screen",
     equal(state.errors[1].g, 0.1, "red")
 end)
 
+-- The "! Seduction" pet condition: Toolkit 2.11.1 names the pet's family from
+-- UnitCreatureFamily("pet") in the client's language; an older Toolkit (the CI
+-- copy) writes the English "pet:Succubus/Incubus".
+local function seductionPet(state, family)
+    if type(state.env.DyresToolkit.PetFamilyCondition) == "function" then
+        return ",pet:" .. family
+    end
+    return ",pet:Succubus/Incubus"
+end
+
 local function macroBody(state, name)
     for _, macro in ipairs(state.macros) do
         if macro.name == name then return macro.body end
@@ -3118,7 +3128,8 @@ test("the group message names the marker for a Banish at your focus", function()
         .. " - via Warlock Tools Forever (WTF)", "not at your focus: \"! Banish\" did not mark it")
     state.now = state.now + 10
     banishAt(state, "nameplate4")
-    equal(state.sent[2].message, "Banishing >> Imp << {moon} to the Twisting Nether. Hands off until it comes back"
+    equal(state.sent[2].message, "Banishing >> Imp << " .. state.env.DyresToolkit.MarkerCode(5)
+        .. " to the Twisting Nether. Hands off until it comes back"
         .. " - via Warlock Tools Forever (WTF)", "your focus: the mob \"! Banish\" marks")
     state.settings.WTF_CONTROL_MARKER_BANISH:SetValue(0)
     state.now = state.now + 10
@@ -3313,9 +3324,10 @@ test("control macros appear only for the spells you know; Seduction needs your S
     state.emit("SPELLS_CHANGED")
     equal(macroBody(state, "! Seduction"), nil, "Summon Succubus alone is not enough: no Grimoire yet")
     -- The Succubus learns Seduction from its Grimoire.
-    state.petKnown = {[6358] = true}
+    state.petKnown, state.petFamily = {[6358] = true}, "Succubus"
     state.emit("UNIT_PET", "player")
-    contains(macroBody(state, "! Seduction"), "/use [@focus,harm,nodead,pet:Succubus/Incubus] Seduction",
+    contains(macroBody(state, "! Seduction"), "/use [@focus,harm,nodead" .. seductionPet(state, "Succubus")
+        .. "] Seduction",
         "does nothing unless your pet is a Succubus or an Incubus")
     state.combat = true
     state.settings.WTF_CONTROL_MACROS:SetValue(false)
@@ -3358,7 +3370,7 @@ test("an Incubus that knows Seduction by its own ID gets the macro too; one that
     -- Its Grimoire teaches Seduction under another ID: found by name.
     state.petSpellbook[2] = {spellID = 99002, name = "Seduction"}
     state.emit("SPELLS_CHANGED")
-    contains(macroBody(state, "! Seduction"), "pet:Succubus/Incubus")
+    contains(macroBody(state, "! Seduction"), seductionPet(state, "Incubus") .. "]")
     -- Dismissed: the macro stays, and does nothing without the demon.
     state.petSpellbook, state.petFamily = nil, nil
     state.emit("UNIT_PET", "player")
@@ -5294,13 +5306,14 @@ test("on Classic Era a Warlock with a demon out logs in with no IsSpellKnown err
         equal(state.categories["Warlock Tools Forever"] ~= nil, true, label .. ": login completes")
         equal(macroBody(state, "! Fear") ~= nil, true, label .. ": the Fear macro")
         equal(macroBody(state, "! Seduction"), nil, label .. ": an Imp: no Seduction")
-        state.petKnown = {[6358] = true}
+        state.petKnown, state.petFamily = {[6358] = true}, "Succubus"
         state.emit("UNIT_PET", "player")
-        contains(macroBody(state, "! Seduction"), "pet:Succubus/Incubus", label .. ": a Succubus by its ID")
+        contains(macroBody(state, "! Seduction"), seductionPet(state, "Succubus"), label .. ": a Succubus by its ID")
         state.petKnown = nil
         state.petSpellbook = {{spellID = 99002, name = "Seduction"}}
         state.emit("UNIT_PET", "player")
-        contains(macroBody(state, "! Seduction"), "pet:Succubus/Incubus", label .. ": by name in the pet spellbook")
+        contains(macroBody(state, "! Seduction"), seductionPet(state, "Succubus"),
+            label .. ": by name in the pet spellbook")
     end
 end)
 -- Clients without a focus target (John, 1.3.3: "@focus and /focus do not work
@@ -5319,11 +5332,12 @@ test("a client whose focus is not yet seen gets fallback macros, no Focus box, a
     equal(macroBody(state, "! Fear"), CHAIN_FEAR, "focus, else the mob under the mouse, else your target")
     equal(#CHAIN_FEAR <= 255, true, "fits a macro")
     equal(macroBody(state, "! Banish"), CHAIN_BANISH, "the moon goes on the mob it banishes")
-    state.petKnown = {[6358] = true}
+    state.petKnown, state.petFamily = {[6358] = true}, "Succubus"
     state.emit("UNIT_PET", "player")
+    local pet = seductionPet(state, "Succubus")
     equal(macroBody(state, "! Seduction"), "#showtooltip Seduction\n/focus [@mouseover,harm,nodead][@focus,noharm][@focus,dead]"
-        .. "\n/use [@focus,harm,nodead,pet:Succubus/Incubus][@mouseover,harm,nodead,pet:Succubus/Incubus]"
-        .. "[harm,nodead,pet:Succubus/Incubus] Seduction")
+        .. "\n/use [@focus,harm,nodead" .. pet .. "][@mouseover,harm,nodead" .. pet .. "]"
+        .. "[harm,nodead" .. pet .. "] Seduction")
     equal(state.drivers[focusBox(state)], "hide", "no Focus box")
     equal(focusBox(state).attributes.macrotext1, nil)
     state.slash("unlock")
