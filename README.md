@@ -30,7 +30,10 @@ that every class can use:
   reminder** are in **Dyre's Buff Reminders** (`/dbr`). Its Demon Armor icon
   casts your armor when you click it, as WTF's did.
 - Proc overlays (spell activation overlays, such as Nightfall and
-  Decimation) are in **Dyre's Shields Up**, not in WTF.
+  Decimation) are not in WTF: a Dyre's AddOn draws them (Dyre's Toolkit 2.11
+  or later). That AddOn also plays the Nightfall sound with its arcs, and
+  WTF's Alerts page then shows **Nightfall arcs and sound** and opens its
+  settings.
 
 The CurseForge app installs both with WTF. They copy your WTF settings for
 these features once, the first time they run on a character. If one is

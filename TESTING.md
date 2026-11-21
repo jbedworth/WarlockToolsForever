@@ -489,6 +489,13 @@ and printing.
 - [ ] WTF's Shield, Cooldown Chimes, Alerts, and Demon Armor pages each show
       one button; it opens Dyre's Shields Up's or Dyre's Buff Reminders'
       settings out of combat. In combat a click says it opens out of combat.
+- [ ] Nightfall owner (1.10.1): with an AddOn that plays Nightfall with proc
+      arcs (Dyre's Toolkit 2.11 or later), the Alerts page shows one row,
+      "Nightfall arcs and sound"; its tooltip names that AddOn, and its button
+      opens that AddOn's page with its Procs rows (out of combat; in combat it
+      says it opens out of combat). Disable that AddOn (or use one without
+      proc arcs), `/reload`: the row is "Nightfall sound" and opens Dyre's
+      Buff Reminders' Proc Sounds.
 - [ ] Disable Dyre's Shields Up, then Dyre's Buff Reminders, in the AddOn
       list: at login one line each says to enable it, once per session;
       the Shield (or other) page's button is greyed out, and its tooltip

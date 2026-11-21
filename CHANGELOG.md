@@ -4,6 +4,14 @@ Player-facing changes for each Warlock Tools Forever release, newest first. The
 release builder copies the section for the TOC version into the GitHub release
 notes and the CurseForge changelog, and fails if that section is missing.
 
+## 1.10.1
+
+### Fixes
+- The Alerts page now opens the settings of the Dyre's AddOn that plays Nightfall. When an AddOn plays it with proc arcs (Dyre's Toolkit 2.11 or later), the page shows **Nightfall arcs and sound**, names that AddOn, and opens its settings. Before, it always opened Dyre's Buff Reminders' Proc Sounds, which could be greyed out. With no such AddOn, it opens Dyre's Buff Reminders as before.
+
+### Other changes
+- **What moved:** the Nightfall arcs and sound move from Dyre's Shields Up to Dyre's Buff Reminders 1.13. Nothing moves inside Warlock Tools Forever. Its Nightfall button follows the proc to whichever AddOn plays it.
+
 ## 1.10.0
 
 ### Features

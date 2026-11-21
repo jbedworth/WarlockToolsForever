@@ -81,7 +81,7 @@ Per-file changelogs need no manual text: each CI upload uses the version's
 ### Comes with Dyre's Shields Up and Dyre's Buff Reminders
 The CurseForge app installs both with WTF, and they work on every class:
 - **Dyre's Shields Up:** the shield display, a crescent that drains as your Shadow Ward, Sacrifice, or any absorb takes damage.
-- **Dyre's Buff Reminders:** cooldown chimes for Death Coil, Howl of Terror, Shadow Ward, your Soulstone, and more; the Nightfall sound when Shadow Trance procs; and a Demon Armor reminder you can click to cast.
+- **Dyre's Buff Reminders:** cooldown chimes for Death Coil, Howl of Terror, Shadow Ward, your Soulstone, and more; the Nightfall sound when Shadow Trance procs (with Dyre's Toolkit 2.11 or later, with proc arcs); and a Demon Armor reminder you can click to cast.
 
 These lived in WTF until 1.3.0. Your WTF settings for them are copied over the first time each AddOn runs.
 

@@ -92,7 +92,23 @@ their other classes ("virality"):
   longer uses Dyre's Sounds. Do not bring any of them back: changes go to DSU
   or DBR through the coordinator. Proc overlays (Nightfall, Decimation) are
   DSU's too (John, 2026-11-18: "DSU is the right home for our 'spell
-  activation overlays'"); WTF has none.
+  activation overlays'"); WTF has none. John, 2026-11-20: every proc cue
+  moves from DSU to DBR (DBR 1.13.0, Toolkit 2.12.0), so WTF's code names
+  no proc AddOn. The Alerts page follows the owner of the Toolkit kind
+  "proc:nightfall" (1.10.1, John: "Yes, fix it"): `WTF.ProcOwner(key)` is
+  `KindOwner(PROC_KIND_PREFIX .. key)` when the Toolkit has both, else nil
+  (a feature test, as DBR's `ProcOwner`; an AddOn that steps aside for
+  SpellActivationOverlay makes no claim). With no owner, the old row
+  "Nightfall sound" (AddSettingsLink to DBR's Proc Sounds). With an owner,
+  "Nightfall arcs and sound": WTF's own button (`AddSettingsLink` fixes its
+  AddOn when the row is made), whose click asks for the owner again and
+  calls its `openSettings` from `toolkit.AddOns()` (not in combat), and
+  whose tooltip names the owner by the title it joined with
+  (`WTF.ProcOwnerTitle`, as DBR's `ProcOwnerTitle`), renamed through
+  `OnOwnerChanged`. Each row has a shown predicate that asks the owner each
+  time the page draws, because the owner claims at its PLAYER_LOGIN, which
+  can come after WTF builds the page. No polling. Without shown
+  predicates, only the row for the owner at build time.
 - TOC: `## OptionalDeps: DyresToolkit, DyresShieldsUp, DyresBuffReminders`
   (never `## Dependencies`, so WTF loads without them; the toolkit stays
   optional while WTF is not on toolkit widgets). CurseForge lists
