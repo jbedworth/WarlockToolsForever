@@ -246,6 +246,16 @@ and printing.
       presses delete them. Inside a dungeon, and with "Soul Shard
       management" off: the same, and with it off a Drain Soul shard after
       the trim stays. With none above the limit: one line, nothing deleted.
+- [ ] Trim under Map (1.12.2), in a dungeon, out of combat: first run
+      `/wtf debug_restrictions` and note whether Map is active. Move shards
+      above your limit (or keep the ones you brought), then right-click the
+      counter. Either the first shard goes in the click and the rest on your
+      next inputs (`/wtf debug_shards` says `mapResult=allowed`), or one line
+      says the game does not let AddOns delete items in this dungeon, the
+      shard stays, and `mapResult=refused`. With "refused": a second
+      right-click says the same line and raises no new ADDON_ACTION_BLOCKED
+      in BugGrabber; after you leave, the first key presses delete down to
+      the limit. In combat inside: the combat line, nothing picked up.
 - [ ] The shard counter shows your count, red at or below the Low shard warning and
       green at your limit, legible on the icon; it
       updates as shards come and go, also in combat. Drag (unlocked), hide, and

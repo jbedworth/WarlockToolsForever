@@ -136,7 +136,9 @@ game unchanged.
   also ones you brought in yourself, in a dungeon or anywhere else. The first
   goes at once and the rest on your next key presses or clicks, one each.
   In combat or a boss fight, WTF says they go after combat, and they go on
-  your first key presses after it. It works with automatic deletion off too;
+  your first key presses after it. If the game does not let AddOns delete
+  items in a dungeon, WTF says so, and they go when you leave it. It works
+  with automatic deletion off too;
   the shards you get after it then stay. With none above your limit, it says
   so. There is no popup.
 

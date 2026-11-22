@@ -4,6 +4,11 @@ Player-facing changes for each Warlock Tools Forever release, newest first. The
 release builder copies the section for the TOC version into the GitHub release
 notes and the CurseForge changelog, and fails if that section is missing.
 
+## 1.12.2
+
+### Fixes
+- Soul Shards: in a dungeon, out of combat, the right-click on the shard counter said "Soul Shards above your limit go after combat." every time and deleted nothing. Now it tries to delete. If the game allows it, the trim works as everywhere else. If the game does not let AddOns delete items in that dungeon, the shard stays, WTF says so once, and the shards above your limit go when you leave the dungeon. In combat it still waits until the fight is over. (Thanks, Wrathetic.)
+
 ## 1.12.1
 
 ### Fixes

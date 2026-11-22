@@ -243,6 +243,29 @@ announcements go with the Control bar (the 2026-10-30 decision).
   ones go); the trim ends when the count reaches the keep count. Whether a
   right-click on a plain frame allows `DeleteCursorItem` is not confirmed in
   client (TESTING.md); if not, the first shard goes on the next input.
+- Trim under Map (1.12.2; John: "Try delete under Map"; Wrathetic, Shadowfang
+  Keep, out of combat: every right-click said "go after combat"). Core splits
+  `WTF.HardRestricted()` (combat, affecting combat true or secret, Combat,
+  Encounter, ChallengeMode, PvPMatch) from `WTF.MapRestricted()` (Map; a
+  dungeon may set it for the whole visit). `WTF.MoveRestricted()` is both, as
+  before, for the Healthstone trade. `DeletionRestricted`
+  is hard, or Map unless a trim runs and Map has not refused this visit, so
+  automatic deletion waits under Map as before. A right-click under a hard
+  restriction says "go after combat" and picks up nothing. Under Map alone it
+  tries with every check; `state.mapResult` remembers "allowed" (the trim goes
+  on with inputs under Map) or "refused" (the client refused the pickup or the
+  delete: cursor still full, or `ADDON_ACTION_BLOCKED`/`FORBIDDEN` for WTF
+  during either). On a refusal the shard goes back, no permanent stop
+  (`state.blocked` stays false), one line ("The game does not let AddOns delete
+  items in this dungeon. Shards above your limit go when you leave it."), and
+  no more tries this visit: later right-clicks say that line, not the combat
+  line, and pick up nothing. The trim already set the keep count and a saved
+  `instanceKeep` to the limit, and `state.trimming` stays on, so the shards go
+  on the first inputs after leaving, also with deletion off (tested; a
+  `/reload` inside clears the in-memory trim, and then only a saved
+  `instanceKeep`, deletion on, trims on leaving). `state.mapResult` clears on
+  every PLAYER_ENTERING_WORLD. `/wtf debug_shards` shows `hard`, `map`, and
+  `mapResult`. Whether Map blocks `DeleteCursorItem` is not confirmed in client.
 
 ### Stones (built)
 

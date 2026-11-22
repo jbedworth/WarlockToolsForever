@@ -43,9 +43,23 @@ end
 -- answer counts), or under a Combat, Encounter, ChallengeMode, PvPMatch, or
 -- Map AddOn restriction. Shard deletion and the Healthstone trade check it at
 -- each call and wait instead.
-local MOVE_RESTRICTIONS = {"Combat", "Encounter", "ChallengeMode", "PvPMatch", "Map"}
+--
+-- 1.12.2 (John: "Try delete under Map"): the hard part (combat and the first
+-- four) and the Map part are separate, because a dungeon may set Map for the
+-- whole visit and it is not known whether Map blocks DeleteCursorItem. Only the
+-- right-click trim tries under Map alone; everything else waits as before.
+local HARD_RESTRICTIONS = {"Combat", "Encounter", "ChallengeMode", "PvPMatch"}
 
-function WTF.MoveRestricted()
+local function RestrictionActive(name)
+    local kinds = type(Enum) == "table" and Enum.AddOnRestrictionType
+    if type(C_RestrictedActions) ~= "table" or type(C_RestrictedActions.IsAddOnRestrictionActive) ~= "function"
+        or type(kinds) ~= "table" or kinds[name] == nil then
+        return false
+    end
+    return C_RestrictedActions.IsAddOnRestrictionActive(kinds[name]) == true
+end
+
+function WTF.HardRestricted()
     if InCombatLockdown() then
         return true
     end
@@ -55,17 +69,20 @@ function WTF.MoveRestricted()
             return true
         end
     end
-    local kinds = type(Enum) == "table" and Enum.AddOnRestrictionType
-    if type(C_RestrictedActions) ~= "table" or type(C_RestrictedActions.IsAddOnRestrictionActive) ~= "function"
-        or type(kinds) ~= "table" then
-        return false
-    end
-    for _, name in ipairs(MOVE_RESTRICTIONS) do
-        if kinds[name] ~= nil and C_RestrictedActions.IsAddOnRestrictionActive(kinds[name]) == true then
+    for _, name in ipairs(HARD_RESTRICTIONS) do
+        if RestrictionActive(name) then
             return true
         end
     end
     return false
+end
+
+function WTF.MapRestricted()
+    return RestrictionActive("Map")
+end
+
+function WTF.MoveRestricted()
+    return WTF.HardRestricted() or WTF.MapRestricted()
 end
 
 -- Dyre's Toolkit (author-approved, 2026-10-19): one layout mode, grid, and

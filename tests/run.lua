@@ -617,7 +617,9 @@ local function fixture(options)
             return true
         end
         for kind = 0, 4 do
-            if (state.restrictions or {})[kind] == 2 then return true end
+            if (state.restrictions or {})[kind] == 2 and not (kind == 4 and state.mapAllowsDelete) then
+                return true
+            end
         end
         return false
     end
@@ -2790,6 +2792,132 @@ test("trim: debug_shards shows the trim while it runs", function()
     rightClickCounter(state)
     state.slash("debug_shards")
     contains(table.concat(state.messages, "|"), "keep=14 source=soul bag enabled=true trimming=true")
+end)
+
+-- 1.12.2 (John: "Try delete under Map"; Wrathetic: every right-click in
+-- Shadowfang Keep said "go after combat"): under the Map restriction alone the
+-- trim tries once; whether Map blocks DeleteCursorItem is not known in client.
+local MAP_LINE = "WTF: The game does not let AddOns delete items in this dungeon. Shards above your limit go when you "
+    .. "leave it."
+local function inDungeonWithBankShards(allows)
+    local state = fullSoulBagWith({})
+    for slot = 1, 3 do state.arrive(3, slot) end
+    enterInstance(state, true)
+    state.restrictions = {[4] = 2}
+    state.mapAllowsDelete = allows
+    state.clear()
+    return state
+end
+test("map: when Map allows deletion the trim deletes in the click and goes on with inputs", function()
+    local state = inDungeonWithBankShards(true)
+    rightClickCounter(state)
+    equal(state.count(), 16, "the first goes in the click")
+    contains(state.messages[1], "WTF: Deleting 3 Soul Shards above your limit of 14")
+    equal(lineCount(state, "after combat"), 0)
+    state.slash("debug_shards")
+    contains(table.concat(state.messages, "|"), "hard=false map=true mapResult=allowed")
+    state.press()
+    state.click()
+    equal(state.count(), 14, "the rest on the next inputs, under Map")
+    -- Automatic deletion does not change: under Map it still waits.
+    state.channel(8288)
+    state.gain(3, 1)
+    state.stopChannel(8288)
+    state.press()
+    equal(state.count(), 15, "a created shard waits under Map, as before")
+    state.restrictions = nil
+    enterInstance(state, false)
+    state.press()
+    equal(state.count(), 14, "it goes after you leave")
+end)
+test("map: when Map refuses, the shard is put back, one line, no permanent stop, and no second try", function()
+    local state = inDungeonWithBankShards(false)
+    rightClickCounter(state)
+    equal(state.count(), 17, "the shard is back")
+    equal(state.cursor, nil)
+    equal(state.restrictedCalls, 2, "one try: the pickup and the delete")
+    equal(#state.messages, 1, "one line")
+    equal(state.messages[1], MAP_LINE)
+    equal(state.wtf.db.shards.instanceKeep, 14, "the trim lowered the saved instance keep")
+    state.clear()
+    rightClickCounter(state)
+    equal(state.restrictedCalls, 2, "a second right-click does not try again")
+    equal(#state.messages, 1)
+    equal(state.messages[1], MAP_LINE, "the dungeon line, not the combat line")
+    for _ = 1, 3 do state.press() end
+    equal(state.restrictedCalls, 2, "no tries on inputs either")
+    equal(state.count(), 17)
+    state.slash("debug_shards")
+    contains(table.concat(state.messages, "|"), "blocked=false restricted=true hard=false map=true mapResult=refused")
+    -- Leaving: the shards above the limit go on the next inputs.
+    state.restrictions = nil
+    enterInstance(state, false)
+    for _ = 1, 4 do state.press() end
+    equal(state.count(), 14, "they go when you leave")
+    equal(state.wtf.db.shards.enabled, true)
+end)
+test("map: with automatic deletion off, a refused trim still finishes after you leave", function()
+    local state = fullSoulBagWith({db = {shards = {enabled = false}}})
+    for slot = 1, 3 do state.arrive(3, slot) end
+    enterInstance(state, true)
+    state.restrictions = {[4] = 2}
+    rightClickCounter(state)
+    equal(state.count(), 17)
+    state.restrictions = nil
+    enterInstance(state, false)
+    for _ = 1, 4 do state.press() end
+    equal(state.count(), 14, "the trim goes on after you leave")
+end)
+test("map: a hard restriction keeps the combat line and picks nothing up, also with Map", function()
+    local state = inDungeonWithBankShards(true)
+    state.combat = true
+    rightClickCounter(state)
+    equal(state.count(), 17)
+    equal(state.cursor, nil)
+    equal(state.restrictedCalls, nil)
+    equal(state.messages[1], "WTF: Soul Shards above your limit go after combat.")
+    state.slash("debug_shards")
+    contains(table.concat(state.messages, "|"), "hard=true map=true mapResult=nil")
+    -- A remembered refusal: combat still says the combat line.
+    local refused = inDungeonWithBankShards(false)
+    rightClickCounter(refused)
+    refused.clear()
+    refused.combat = true
+    rightClickCounter(refused)
+    equal(refused.messages[1], "WTF: Soul Shards above your limit go after combat.")
+end)
+test("map: a refused pickup under Map counts as a refusal: one line, no second try", function()
+    local state = inDungeonWithBankShards(false)
+    local pickup, split = state.env.C_Container.PickupContainerItem, state.env.C_Container.SplitContainerItem
+    local tries = 0
+    local function refuse()
+        tries = tries + 1
+        state.emit("ADDON_ACTION_BLOCKED", "WarlockToolsForever", "UNKNOWN()")
+    end
+    state.env.C_Container.PickupContainerItem, state.env.C_Container.SplitContainerItem = refuse, refuse
+    rightClickCounter(state)
+    equal(tries, 1)
+    equal(#state.messages, 1)
+    equal(state.messages[1], MAP_LINE)
+    rightClickCounter(state)
+    equal(tries, 1, "no second try")
+    state.env.C_Container.PickupContainerItem, state.env.C_Container.SplitContainerItem = pickup, split
+    state.restrictions = nil
+    enterInstance(state, false)
+    for _ = 1, 4 do state.press() end
+    equal(state.count(), 14, "they go when you leave")
+end)
+test("map: the remembered result is cleared on PLAYER_ENTERING_WORLD", function()
+    local state = inDungeonWithBankShards(false)
+    rightClickCounter(state)
+    equal(state.restrictedCalls, 2, "one try: the pickup and the delete")
+    enterInstance(state, true)
+    rightClickCounter(state)
+    equal(state.restrictedCalls, 4, "a new visit tries again")
+    state.mapAllowsDelete = true
+    enterInstance(state, true)
+    rightClickCounter(state)
+    equal(state.count(), 16, "and deletes when Map allows it")
 end)
 
 -- Status and diagnostics -------------------------------------------------------
