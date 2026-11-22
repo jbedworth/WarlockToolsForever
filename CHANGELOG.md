@@ -4,6 +4,16 @@ Player-facing changes for each Warlock Tools Forever release, newest first. The
 release builder copies the section for the TOC version into the GitHub release
 notes and the CurseForge changelog, and fails if that section is missing.
 
+## 1.11.0
+
+### Other changes
+- **What moved:** the DoT tracker, DoT colors and order, the nameplate DoT dots, DoT damage prediction (the purple block and DIES), the smart curse (its key binding and the "! Curse" macro), and the Control bar with the "! Fear", "! Banish", and "! Seduction" macros and the Fear, Banish, Enslave Demon, and Howl of Terror announcements move to **Dyre's Debuff Tracker**, where they are kept up to date. It takes your WTF settings for them once. WTF keeps Soul Shards, Stones, and the Summon, Soulstone, and Healthstone announcements.
+- The DoT Tracker, DoTs, and Control pages in WTF's settings now each have one button that opens Dyre's Debuff Tracker's settings. Without Dyre's Debuff Tracker, the button is greyed out and says to install it from CurseForge.
+- Dyre's Debuff Tracker says in chat what it copied from WTF; WTF adds no line of its own. Without Dyre's Debuff Tracker, WTF says at login to install it.
+- `/wtf debug_tracker`, `/wtf debug_predict`, `/wtf debug_control`, and `/wtf reset_focus` are gone with the features.
+- Your **Smart curse** key moves to Dyre's Debuff Tracker's own Smart curse binding. Until then, Key Bindings shows WTF's old one as **Smart curse (moved to Dyre's Debuff Tracker)**, which does nothing; a later WTF release removes it.
+- On CurseForge, Dyre's Debuff Tracker is now a required dependency, so the CurseForge app installs it with WTF.
+
 ## 1.10.1
 
 ### Fixes

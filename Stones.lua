@@ -251,7 +251,8 @@ local function WriteMacro(name, body, oldNames)
     end
 end
 
--- For the other modules' macros (Control): the same writer and slot check.
+-- The same writer and slot check for other macros (the Control bar's, before
+-- its macros moved to the Toolkit in 1.5.0 and to Dyre's Debuff Tracker in 1.11.0).
 -- Out of combat only.
 function WTF.CharacterMacrosAvailable()
     return macros.available == true

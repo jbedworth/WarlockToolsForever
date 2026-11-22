@@ -42,16 +42,6 @@ the automated test method, and the in-client checklist.
   `C_Item.GetItemInfo`; without them Stones stays off with one message and the
   rest of WTF runs. Secure attributes and bar visibility change only out of
   combat, else at `PLAYER_REGEN_ENABLED`.
-- Tracker requires `C_XMLUtil.GetTemplateInfo("CustomAuraContainerTemplate")`
-  after loading `Blizzard_AuraContainer`, and `C_Timer.After`; without them the
-  tracker stays off with one message; it also needs `RegisterStateDriver`.
-  Each row's container gets one
-  `AddAuraSlot` per spell; WTF sets only the unit (`SetUnit`, then
-  `UpdateAllAuras`) afterwards, and slot spell sets only out of combat.
-- Dots need the tracker's spell sets and `C_NamePlate.GetNamePlateForUnit`;
-  they attach to plates on `NAME_PLATE_UNIT_ADDED`, detach on
-  `NAME_PLATE_UNIT_REMOVED`, and show only between `PLAYER_REGEN_DISABLED` and
-  `PLAYER_REGEN_ENABLED` on live hostile units.
 - Announce pairs `UNIT_SPELLCAST_SENT` (target name, cast GUID) with
   `UNIT_SPELLCAST_SUCCEEDED` and sends with `C_ChatInfo.SendChatMessage`.
 - Options registers a vertical-layout category with proxy settings, plus a
@@ -116,15 +106,6 @@ the automated test method, and the in-client checklist.
 
 ### Client observations
 
-- DoT damage prediction (1.4.0) on Classic Era, confirmed in client by John:
-  the block, its styles, and the DIES badge work, and he judged it
-  shippable, on Blizzard's target frame and nameplates, Shadowed Unit
-  Frames' and BetterBlizzFrames' target frames, Threat Plates', Plater's, and
-  Platynator's
-  nameplates, and the DoT tracker rows (the block, the DIES badge's place,
-  and the row's health text).
-  `UnitHealth`/`UnitHealthMax` give real mob health on Era (328, 328).
-
 - Out of combat in the open world, every `Enum.AddOnRestrictionType` state is
   inactive, yet `C_CombatLog.IsCombatLogRestricted()` is true and
   `issecretvalue` exists. Registering `COMBAT_LOG_EVENT_UNFILTERED` fails and
@@ -146,14 +127,6 @@ the automated test method, and the in-client checklist.
   same hardware-event rule. Shards now deletes from the same kind of hooks,
   and in client a Drain Soul shard above the limit was deleted on the next
   key press.
-- In client the tracker and nameplate dots showed Corruption, Immolate, and a
-  Bane in combat through engine slots, but not a curse (Curse of the Elements,
-  4 minutes left on the nameplate): its debuff matched no listed spell ID. The
-  Curse slot now matches Curse-type debuffs instead, as EllesmereUI's
-  nameplates match `includeDispelTypes`.
-- In client the nameplate dots lit for Curse (after the switch to debuff-type
-  matching), Bane, and Corruption. With EllesmereUI plates, a dot height of
-  4 covered the name and 40 the debuff icons; 50 cleared both and is the default.
 - Ritual of Summoning's `UNIT_SPELLCAST_SENT`, `START`, `CHANNEL_START`, and
   `SUCCEEDED` events carry no target name; the party line went out from the
   friendly-target fallback.
@@ -163,8 +136,6 @@ the automated test method, and the in-client checklist.
   named ... is currently playing"); a whisper to `First-Last` reached the
   player. A Soulstone on yourself was whispered to you, because the cast
   named you `First-Last`; the self check compares with `UnitFullName("player")`.
-- The Bars theme rendered in client as designed: per-mob blocks with engine
-  bars, spell names, and time left draining like the Cooldown Manager's.
 - `/click WarlockToolsForeverHealthstone` did nothing: the client's `/click`
   (`Blizzard_ChatFrameBase/Shared/SlashCommands.lua`) calls
   `button:Click(mouseButton, false)`, a release only, and
@@ -203,42 +174,21 @@ the automated test method, and the in-client checklist.
 
 ### Open client questions
 
-- Launch check for WTF 1.4.1 on Forever (the switch to Dyre's Toolkit
-  2.4.0's shared Auras, Units, and HealthBars files): with the Toolkit's
-  code creating the engine AuraContainers, check in client on Forever that
-  the DoT tracker, the nameplate dots, the Control bar, and the Focus box
-  raise no "forbidden object ... tainted by an AddOn" error and blame no
-  AddOn in BugSack. Era is checked first; Forever at its Nov 4 launch.
-  John shipped 1.4.1 for both clients on 2026-11-01, since nobody can play
-  Forever before launch: check this first thing at launch, and hotfix if it
-  fails.
-
-- DoT prediction with Plater's "use UIParent" option, and with
-  BetterBlizzFrames' smooth bars: not named in John's tests.
-- EllesmereUI is Forever and Retail only, and John uses it on Forever: its
-  nameplates and target frame (paths from Does It Die only) wait for the
-  Forever check below.
-
 1. Restrictions in instances and during encounters.
-2. Whether the tracker's engine slots show timers in combat with the
-   `HARMFUL|PLAYER` filter (EllesmereUI adds `INCLUDE_NAME_PLATE_ONLY` on
-   nameplates), whether Forever's Bane auras match by name-derived spell IDs
-   (`/wtf debug_tracker`), whether Fear and control show, and whether `UnitIsDead` and
-   `UNIT_HEALTH` stay readable for nameplate units in combat.
-3. Forever's Soulstone duration (30 minutes in Classic) and Shadow Trance spell
+2. Forever's Soulstone duration (30 minutes in Classic) and Shadow Trance spell
     ID (17941 in Classic).
-4. Whether `DeleteCursorItem` from a key press or world click works in combat
+3. Whether `DeleteCursorItem` from a key press or world click works in combat
    (RestedXP's users report deletion in and out of combat).
-5. Whether shards stack.
-6. Whether Shadowburn's shard arrives within its 9-second window, and whether
+4. Whether shards stack.
+5. Whether Shadowburn's shard arrives within its 9-second window, and whether
    any other source creates shards (the gain log). Forever's spell list and
    talents (wowhandbook.com, talentsforever.com) name Shadowburn's shard.
-7. Whether the `INV_Misc_Gem_Amethyst_02` TOC icon and the `INV_Misc_Orb_04`
+6. Whether the `INV_Misc_Gem_Amethyst_02` TOC icon and the `INV_Misc_Orb_04`
    and `INV_Stone_04` fallback stone icons render.
-8. Forever's Create Soulstone and Create Healthstone spell IDs, stone item IDs,
+7. Forever's Create Soulstone and Create Healthstone spell IDs, stone item IDs,
    and Healthstone level requirements (`/wtf debug_stones`); the tables hold
    Classic's IDs.
-9. Whether Say from a cast event is blocked outdoors, and which actions block
+8. Whether Say from a cast event is blocked outdoors, and which actions block
    accepting a summon (flying, trading, combat, death).
 
 ## Automated tests
@@ -247,7 +197,7 @@ From the Git Bash repository root:
 
 ```sh
 .tools/luarocks-3.13.0-win32/win32/lua5.1/bin/lua5.1.exe tests/run.lua
-.tools/luarocks-3.13.0-win32/win32/lua5.1/bin/luac5.1.exe -p Commands.lua Core.lua Layout.lua Shards.lua Stones.lua Announce.lua Tracker.lua Dots.lua Predict.lua Control.lua Probe.lua Options.lua tests/run.lua
+.tools/luarocks-3.13.0-win32/win32/lua5.1/bin/luac5.1.exe -p Commands.lua Core.lua Layout.lua Shards.lua Stones.lua Announce.lua Probe.lua Options.lua tests/run.lua
 .tools/python-3.13.7/python.exe -m unittest discover -s tests -p 'test_*.py'
 ```
 
@@ -282,9 +232,6 @@ and printing.
       one chat line each, down to your limit, and `instanceKeep=nil`. Then
       bring bank shards above your limit into a dungeon, use one, and leave:
       those stay, less the one used.
-- [ ] A Warlock who has not learned Siphon Life (or a curse): learn a new
-      rank of a DoT you know, in and out of combat: no "aura slot ... was not
-      found" error in BugGrabber, and the tracker shows the new rank.
 - [ ] Typing in chat, movement keys, and key bindings all still work with WTF
       loaded (the key hook passes every key on).
 - [ ] The shard counter shows your count, red at or below the Low shard warning and
@@ -334,125 +281,6 @@ and printing.
       within a minute stays quiet. The same for a Soulstone.
 - [ ] The Announce page edits, Enter and Escape, switches, the Say choice, and
       Defaults work and survive `/reload`.
-- [ ] DoT two mobs with Corruption, a Bane, and a Curse: the target's timers
-      show in the purple pinned row, the other mob in the list below, with
-      icons, countdowns, sweeps, and draining bars; an expired spell shows dim.
-- [ ] Tab to the other mob: the pinned row follows and the old target joins
-      the list. Set a focus: the red-outlined row appears; clear it: a list
-      you have not moved goes up under the target row, with no gap; drag the
-      list, then clear the focus again: it stays where you put it.
-- [ ] Panel switches (with a Toolkit that has them): untick "Show the target
-      panel", out of combat: the target panel goes, the focus and other mobs'
-      panels stay; DoT a mob: no target panel comes back; the other mobs'
-      panel still leaves out your target. Same for focus and others. Untick
-      one in combat: it applies at once or when combat ends, no error. Tick it
-      again: the panel comes back in its place. `/wtf unlock`: a hidden panel
-      stays hidden. Copy a profile with a hidden panel: it hides at once.
-- [ ] Hide empty DoT slots (with a Toolkit that has it): turn it on, out of
-      combat: the target, focus, and list rows show no dim icon or empty bar;
-      cast Corruption: only its icon or bar shows, in its usual place; let it
-      run out: the place is empty, nothing moves. A click on the target row
-      casts nothing; Smart curse's key binding and "! Curse" still cast.
-      Turn it on in combat: it applies when combat ends. Turn it off: the
-      dim icons and row clicks come back.
-- [ ] Same-named mobs (player report): pull two or three mobs with the same
-      name. Target one, start Immolate, and tab to another before it lands:
-      the first mob gets a list row with its Immolate; the new target's row
-      shows only its own DoTs. Repeat with Corruption (instant) and with
-      quick tabbing between casts: every dotted mob has its own row.
-- [ ] Nameplates in combat: DoT three mobs, then press V (enemy nameplates
-      off): the list rows stay (names, dim icons) for more than 10 seconds;
-      press V again: each row shows its timers again. Move away until a
-      listed mob's plate goes: its row stays until combat ends. After combat
-      the list clears.
-- [ ] Tracker sections: after the update, with no drag yet, the target row,
-      focus row, and list sit where they were before (also for a tracker you
-      had moved). Unlocked, drag each one by its rows on its own; each snaps
-      to other frames and to the grid (Dyre's Toolkit), and its place
-      survives /reload. Drag one in combat: it moves after combat. `/wtf
-      reset` stacks all three at the default place again.
-- [ ] Panel opacity: move each panel opacity slider (Target, Focus, Other
-      mobs) in Compact and in Bars, out of combat and in combat: each fades
-      only its own panel; out of combat the DoT bars follow at once, in
-      combat when combat ends; BugSack stays empty (no "forbidden object"
-      error); a theme change or /reload keeps them; the nameplate dots do not
-      change.
-- [ ] Click a dim slot in the target and focus rows, also in combat: the
-      spell is cast on that unit; Bane and Curse slots use the last one cast.
-- [ ] A mob that dies leaves the list; the list hides after combat. Kill
-      your target and your focus (also the last mob of a pull): neither shows
-      as an Other row, not even for a moment.
-- [ ] Plates up for two mobs, in combat: DoT one, tab to the other. The
-      first one's Other row shows its timers and health at once. If not,
-      run `/wtf debug_tracker` right then and note the "plates" line
-      (readableGUID, known, targetPlate) and the row's unit= and held=.
-- [ ] Known limit (author-accepted): DoT a mob with a mouseover macro
-      without targeting or focusing it. With plate GUIDs secret in combat,
-      its Other row may stay dim (no timers, no health); target or focus it
-      once and the row shows them. README says so.
-- [ ] With Dyre's Toolkit and frames locked: hold Ctrl and drag the target,
-      focus, and Others panels: each moves freely (no snap) and stays after
-      /reload. Without Ctrl the drag does nothing and clicks pass through the
-      rows to the world; the pinned slots still cast. In combat, Ctrl-drag
-      does nothing; BugSack stays empty.
-- [ ] With "Show DoT dots on nameplates" on, fight two mobs: grey dots turn
-      to their colors as you DoT, back to grey as DoTs expire; no bubbles out
-      of combat or on friendly plates. Check the height setting with your
-      nameplate AddOn, and that `TempPortraitAlphaMask` makes the dots round.
-      The height slider shows a gold mark at 50, and no other slider in the
-      Settings panel shows one.
-- [ ] DoT Tracker page: the sections are General, Target, Focus, and
-      Others, in that order; each panel's section has its color and its
-      opacity, and nothing else.
-- [ ] Panel colors: with no change, the target and focus rows look as
-      before and the other mobs' rows have a dark grey border. Change each of
-      the three, out of combat and in combat: its outline (or row border) and
-      health fill change at once, with BugSack empty; /reload keeps them;
-      the page's Defaults restores them.
-- [ ] DoTs page: each row shows the DoT's icon, name, On nameplates, and its
-      color. Drag a row up or down: a gold line shows where it drops; a drop
-      outside the page changes nothing. The rows (both themes, all three
-      panels) and the nameplate dots follow at once out of combat; a change
-      in combat reaches the rows when combat ends. A swatch click opens the
-      color picker; the bars and dots take the color (Cancel puts it back).
-      On nameplates adds and removes dots; with Show DoT dots on nameplates
-      off it is greyed, and its tooltip says why. Reset order restores the
-      order; Defaults restores the order, colors, and dots; BugSack stays
-      empty; /reload keeps it all.
-- [ ] Spells you have not learned yet (shown greyed in the spellbook) appear
-      in neither theme nor on the nameplate dots.
-- [ ] With the default Bars theme: each mob shows its name and a bar line per
-      spell you know, with icon, spell name, and time left, draining from
-      right to left; missing spells show as dim named lines; clicking a line
-      in the pinned rows recasts it. A switch in combat applies after combat.
-- [ ] Nameplate dot opacity: at 100% the dots look as before; at 50% each
-      bubble above a nameplate (background and dots) is half as solid, also
-      when changed in combat, and new bubbles take it; the DoT tracker rows do
-      not change.
-- [ ] Long names (unlocked samples, and a mob with a long name): every name
-      is one line in its room, cut with "..." only when it does not fit, at
-      text size 50%, 100%, and 200%, in every name position; no row grows,
-      and no text spills out of a row; with health text on, the name is cut
-      before the health text.
-- [ ] Tracker sizes: with no change the tracker looks as before. Compact:
-      icon size, name width, and text size change every row; each name
-      position (left, right, above, below) puts the name there with nothing
-      overlapping. Bars: bar width, line height, text size, name above or
-      below. Only the chosen theme's size settings show, also right after
-      switching the theme. Reset size restores the look. A change in combat
-      applies when combat ends.
-- [ ] Mob health: turn on Show mob health: the line with each mob's name is
-      its health bar, purple on the target row, red on the focus row, dark
-      grey on the others, at least as wide as the row's DoTs (both themes,
-      every name position; with a Compact name left or right of the icons,
-      only behind the name, not the icons); the name, text, and icons stay
-      readable on top;
-      it drains
-      as the mob loses health, also in combat, on the target, focus, and list
-      rows; no Lua error or "secret" error in BugGrabber. Health text Number,
-      Percent, and Number and Percent each show after the name and change in
-      combat (compare with the nameplate). A list mob out of nameplate range
-      shows no health until its plate is back.
 - [ ] Unlocked: the grid covers the screen under every frame, red lines
       cross at the center, clicks pass through it, it rebuilds after a UI
       scale change, and its switch hides it.
@@ -461,23 +289,6 @@ and printing.
       in combat.
 - [ ] A failed stone click shows in red at the top of the screen as well as
       in chat.
-- [ ] Control bar: Fear two mobs and Banish a third: a row each, draining,
-      following the mobs as you tab, empty when one breaks, gone when it
-      dies. "! Banish" and a row click put the moon on the mob; Banish from
-      the spell button and Fear mark nothing. Each feared
-      mob's nameplate shows a draining Fear timer, also after it leaves plate
-      range and comes back. "! Fear" while hovering a mob: it becomes your
-      focus and is feared; with nothing hovered, your target. Shift+press
-      while hovering another mob: that one is feared and your focus stays. "! Banish", and "! Seduction" (only once your Succubus or Incubus has its
-      Seduction Grimoire; check both demons, and `/wtf debug_control` for the
-      pet family and seduction=true)
-      focus the mob under the mouse and cast on it; Seduction does nothing
-      with another pet. A Banish row's click banishes the focus. In a party, each
-      cast starts with its group message (Banish with {moon} as an icon only
-      after a row click). Fear a mob
-      before the pull, then click its row in combat after it breaks: it
-      recasts on that mob and returns to your target; with the mob gone,
-      nothing is cast. `/wtf debug_control` lists the IDs (check Forever's).
 - [ ] Moved features (1.3.0), with Dyre's Shields Up and Dyre's Buff
       Reminders enabled: no "moved there from WTF" line at login. The shield
       display shows once, from Dyre's Shields Up, with the scale, number, and
@@ -503,171 +314,44 @@ and printing.
       to install it from CurseForge. WTF's own modules work in every case.
 - [ ] `/wtf debug_shield`, `/wtf debug_chimes`, and `/wtf debug_reminders`
       show the usage line (they moved with the features).
-- [ ] If a Fear or Banish gets no bar, run `/wtf debug_control` right then
-      and note the `lastSent` and `lastLanded` lines.
-- [ ] Focus box: with a hostile focus, a box in the focus color above the
-      Control bar says "Focus: <name>"; Fear the focus: its timer fills the
-      box, and the focus has no second row below. Click the box: your focus
-      is feared again (also after you change your target). Change your focus
-      in combat: the box shows the new focus, and a click fears only it.
-      Clear the focus: the box hides, and nothing invisible takes clicks
-      there.
-- [ ] Control bar with same-named mobs (two skeletons or wolves): target
-      one, start Fear, and tab to the other before it lands: the bar shows
-      the first. Set one as focus and target the other, press "! Fear": the
-      focus's bar. Without a focus, mouse over one and press "! Fear": that
-      one. Then target another mob: each feared mob's bar keeps its timer
-      on its own nameplate, in combat. "! Banish" on the mob under the
-      mouse: it becomes your focus, and the moon and the Banish go on it;
-      its bar shows. Banish from the plain button at a non-focus target: no
-      bar. Change or clear your focus: the Banish bar goes. Click the Banish
-      row: it banishes your focus, with no marker and no target change;
-      with no focus it does nothing.
-- [ ] Classic Era (and Anniversary): no "stays off" line for the DoT
-      tracker or the Control bar. DoT two mobs (Corruption, Curse of Agony,
-      Immolate) with enemy nameplates on: the target row shows your DoTs
-      with icons, draining bars, and time left; tab to the other mob: the
-      first gets a list row with its timers, the target row shows the new
-      target's. A DoT that ends or is dispelled leaves its slot dim. With
-      "Show DoT dots on nameplates" on, each plate's bubble shows a dot per
-      DoT. Fear one mob: its Control bar row shows the Fear time; with it as
-      your focus, the Focus box shows it, and a click fears it again. Banish
-      a demon or elemental with "! Banish": its row shows the Banish time.
-      BugSack stays empty.
-- [ ] Classic Era, DoT damage prediction: on a mob with full health, cast
-      Corruption, then Curse of Agony, Immolate, and Siphon Life. A purple
-      block grows left from the end of the target frame's health, the mob's
-      nameplate health, and (with Show mob health on) its DoT tracker row's
-      health; it shrinks with each tick and is gone when the DoTs end. Move
-      away until the mob's nameplate goes: its tracker row keeps its health
-      bar and block, and the block still shrinks with each tick. `/wtf debug_predict` shows each DoT as "guessed" before its
-      first tick and "learned" after it, with the tick size the combat log
-      shows; the next cast of that rank, on any mob or another character,
-      shows "saved" before its first tick. With spell power gear, Curse of
-      Agony's first ticks are smaller than its last, and the block after one
-      tick matches the sum of the rest of its ticks in the combat log (the
-      ramp on the base only). On a mob with less health left than the block (a low mob, or
-      DoTs on a nearly dead one), a skull and "DIES" show in red with a
-      black outline: just left of the target frame's bar (clear of SUF's
-      name and health text), just right of the nameplate's bar (not over the
-      name; on Platynator further right, past its target arrows, never
-      under the name), and on the tracker row in place of the health
-      number ("38%" stays, "| 137" hides while DIES shows); the same size on
-      every frame. Nothing on
-      target-of-target. Turn Does It Die off: its skulls look alike. Each switch under DoT
-      damage prediction hides its part; "Show Predictive DoT Damage" hides
-      all of it. On Forever the three switches are greyed and nothing shows,
-      and a tracker row with no unit still hides its health.
-- [ ] Classic Era, block look: by default the block is purple diagonal
-      stripes with a thin lighter outline, the same on the target frame,
-      nameplates (each frame AddOn), and DoT tracker rows, where it stands
-      out from the row's own purple health. Each Block fill, color, opacity,
-      and outline choice changes every block at once, also in combat.
+- [ ] Dyre's Debuff Tracker (1.11.0), on a Warlock that used the DoT tracker
+      (or the Control bar) before: at the first login with 1.11.0, Dyre's
+      Debuff Tracker says what it copied, and WTF says nothing about the
+      move (one line only). WTF shows no DoT tracker, nameplate dots, block,
+      Control bar, or Focus box of its own, and writes no "! Fear",
+      "! Banish", "! Seduction", or "! Curse" (Dyre's Debuff Tracker keeps
+      them). Key Bindings, Warlock Tools Forever: one row, "Smart curse
+      (moved to Dyre's Debuff Tracker)"; a key on it does nothing. With
+      WTF 1.10.x and DDT updated at the same time, a key you had on WTF's
+      Smart curse is on Dyre's Debuff Tracker's after its first login.
+- [ ] WTF's DoT Tracker, DoTs, and Control pages (after Stones) each show one
+      button, "Open Debuff Tracker settings", that opens Dyre's Debuff
+      Tracker's page (not in combat: it says so). Disable Dyre's Debuff
+      Tracker: the button is greyed, its tooltip and a click say to install
+      it from CurseForge, and at login one line says to enable it. The
+      Announce page has no Fear, Banish, Enslave Demon, or Howl of Terror
+      rows. `/wtf debug_tracker`, `/wtf debug_predict`, `/wtf debug_control`,
+      and `/wtf reset_focus` show the usage line.
+- [ ] Saved data (1.11.0): after a login with 1.11.0, WTF's saved
+      `tracker`, `predict`, and `control` tables and the eight crowd-control
+      announce keys in the character's SavedVariables\WarlockToolsForever.lua
+      are the same as before the update;
+      unlocking and locking do not change them.
 - [ ] WTF 1.8.0, sizes (Forever, then Era): "Stones bar size" (Stones page)
       and "Shard counter size" (Soul Shards page) at 50% and 150%: each frame
       keeps its center, and its buttons and drag still work. After /reload
       each keeps its size and place. A Stones bar change in combat applies
       when combat ends, with no blocked-action error; the counter changes at
       once.
-- [ ] WTF 1.7.1 with Dyre's Toolkit 2.8.0, "Target and focus outline" (Forever,
-      then Era): the slider shows "3 px" with the gold mark at 3, and the
-      rows look as before. 0 hides both outlines and the rows close up; 20
-      draws thick outlines with no overlap; a change in combat applies when
-      combat ends. With Dyre's Toolkit 2.7 the slider is greyed and its
-      tooltip names 2.8.
 - [ ] WTF 1.7.1, Healthstone trade (Forever, then Era): with a friend targeted,
       left-click the Healthstone button. The stone goes in, or a key press
       puts it in, or the "drag it in yourself" warning shows; never nothing.
       `/wtf debug_stones` lists a `place <reason>` line for each try and
       `keyHook=true`.
-- [ ] WTF 1.7.0 with Dyre's Toolkit 2.7.0, smart curse (Era, then Forever):
-      the DoT Tracker page's "Curse slot" settings; with Smart curse, the
-      target row's Curse slot casts Tongues on a caster, Elements (or
-      Weakness) on a warrior mob, Shift Weakness, Ctrl Tongues, Alt
-      Recklessness; the T/E/W letter changes in combat as you tab between
-      mobs; the choice of the plain click follows a target change only after
-      combat. "! Curse" appears once Weakness is known and goes with Keep
-      control macros off. Key Bindings shows "Smart curse" under Warlock Tools
-      Forever, and the key casts on key release (runOnUp). With Toolkit 2.6,
-      no Curse slot settings and no "! Curse".
-- [ ] WTF 1.6.0 with Dyre's Toolkit 2.6.0, Forever: the prediction settings
-      are not greyed, and `/wtf debug_predict` says hidden ticks. The block
-      and DIES on your target, focus, nameplates (also EllesmereUI's), and
-      DoT tracker rows, solo and in a group; on a row, DIES at the bar's right
-      end with the health numbers kept. No taint or blocked-action popup.
-      After two fights, ticks learned from the damage meter. With Dyre's
-      Toolkit 2.5, the settings are greyed and their tooltips name 2.6. Era
-      unchanged.
-- [ ] WTF 1.5.0 with Dyre's Toolkit 2.5.0 (the engines), Classic Era first,
-      then Forever (the launch taint check above, now for the Toolkit's
-      engine frames): everything as in 1.4.1. Frames stay where they were;
-      the DoT tracker, the nameplate dots, the prediction with
-      `/wtf debug_predict` showing saved ticks after a reload (copied from
-      WTF once), the Control bar's rows, Focus box (its size now matches the
-      bar's), row clicks (only with a working focus), Fear plate timers, the
-      three macros, and the cast announcements with %M and %Z. With Dyre's
-      Debuff Tracker also on, WTF's bar, macros, announcements, and DoTs win.
-      With Dyre's Toolkit 2.4, one chat line says the four features need 2.5.
-- [ ] WTF 1.4.1 with Dyre's Toolkit 2.4.0, Classic Era first (then Forever,
-      the launch check above): everything as in 1.4.0. The DoT tracker
-      rows bind and time their DoTs (also a mob DoTed by mouseover once
-      targeted); the nameplate dots; the Control bar's Fear and Banish rows
-      and their marker; `/wtf debug_control` and `/wtf debug_tracker` as
-      before. The prediction block and DIES on Blizzard, SUF,
-      BetterBlizzFrames, Threat Plates, Plater, and Platynator; with Threat
-      Plates' target-of-target text showing ("[ name ]" right of the bar),
-      DIES moves to the other side. `/wtf reset_focus` says it resets every
-      Dyre's AddOn. With Dyre's Toolkit 2.3 (or the 2.4 files removed), one
-      chat line says the four features need 2.4, and Soul Shards, Stones,
-      and announcements still work.
-- [ ] Classic Era, Platynator: the block and the DIES badge (right of the
-      bar) on Platynator's health bars; `/wtf debug_predict` says
-      `nameplateN=Platynator`. Plates that come and go, and a style change
-      in Platynator's settings, keep each block on its own mob.
-- [ ] Classic Era, BetterBlizzFrames: the block lines up with the target
-      frame's green fill after BBF's size, texture, and class-color changes,
-      and with "smooth bars" on it follows the eased fill
-      (`target=BetterBlizzFrames`).
-- [ ] Classic Era, frame AddOns (one at a time, the others off): with
-      Threat Plates, then Plater (also with its "use UIParent" option), the
-      block and "DIES" show on that AddOn's nameplate health bars, and
-      `/wtf debug_predict` says `nameplateN=Threat Plates` or `=Plater`.
-      Change the AddOn's bar texture and size: the block follows. With
-      Shadowed Unit Frames, the block shows on SUF's target frame
-      (`target=Shadowed Unit Frames`), also with its health bar set to
-      reverse fill. EllesmereUI (nameplates and target frame) is not
-      installed yet: test it when it is. No Lua errors with any of them on
-      or off.
-- [ ] Classic Era, no focus target: `/wtf debug_control` says
-      `focusWorks=false`. "! Fear" on the mob under the mouse, then on your
-      target, fears each; "! Banish" marks and banishes the mob under the
-      mouse (else your target). Each gets a Control bar row with its time
-      left; the rows take no clicks; there is no Focus box, also unlocked.
-      On Forever, the first focus you set makes `focusWorks=true`, and after
-      combat the macros, the Focus box, and the Banish row click are as
-      before; log in to another character on the same client: it says
-      `focusWorks=true` at once (one account-wide value per client).
-      `/wtf reset_focus` sets it back to false for every character.
-- [ ] Every WTF macro and row click works with `/use`: "! Healthstone" and
-      "! Soulstone" (left-click uses, right-click creates the rank), "! Fear",
-      "! Banish", "! Seduction", a pinned DoT slot click on the target and on
-      the focus, and a Banish row click. With no focus, the focus row stays
-      hidden and "! Banish" does nothing.
-- [ ] Banish a mob from the plain spell button, in and out of combat: no
-      "blocked from an action" popup, no ADDON_ACTION_FORBIDDEN in BugGrabber
-      or the taint log, no marker, and the group message has no {moon}.
-- [ ] In combat, "! Banish" on a mob under the mouse: the moon appears, no
-      popup; press it again: the moon stays. Click a Banish row in combat:
-      the mob it recasts on gets the moon, and the group message has {moon}.
-      Out of combat the same. Set the Banish marker to Skull out
-      of combat: "! Banish" says `!8`; set it to None: the macro has no `/tm`
-      line.
-- [ ] Banish a mob, then kill it in combat: its row stays, dimmed, while its
-      click slot is there, and both go when combat ends. Locked, click on the
-      world through the DoT tracker rows and the Control bar's empty area:
-      the clicks reach the world.
+- [ ] Every WTF macro works with `/use`: "! Healthstone" and
+      "! Soulstone" (left-click uses, right-click creates the rank).
 - [ ] "Unlock frames to move them" and `/wtf unlock` outline the Stones bar and
-      the shard counter and show sample tracker rows; all three drag; unticking
+      the shard counter; both drag; unticking
       or `/wtf lock` locks them, and the switch and commands stay in step;
       `/wtf reset` puts them back; their places survive `/reload`.
 - [ ] With Dyre's Toolkit enabled: no "Install Dyre's Toolkit" line at
@@ -683,10 +367,10 @@ and printing.
       a snapped group across AddOns; `/wtf lock` locks them all; places survive `/reload`;
       frames start locked after `/reload`. No taint in combat.
 - [ ] Profile (Dyre's Toolkit 2.10.0 or later): on character A, change a few
-      WTF settings (shard limit, Stones bar size and place, DoT tracker theme,
-      a Control bar marker). On character B, open the Dyre's Toolkit page and
+      WTF settings (shard limit, Stones bar size and place, an announce
+      text). On character B, open the Dyre's Toolkit page and
       copy A's profile: B's WTF frames and settings change at once, no reload
-      popup, no Lua error; the Stones bar and the Control bar move; an open
+      popup, no Lua error; the Stones bar moves; an open
       WTF settings page shows the new values. B's Soulstone timer (`/wtf
       stones`) and `/wtf debug_shards` `instanceKeep` stay B's. Then export
       B's profile, change a setting, import the line: the setting comes back.

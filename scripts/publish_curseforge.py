@@ -30,13 +30,16 @@ CLASSIC_TYPE_ID = 67408
 TIMEOUT = 30
 MAX_RESPONSE_BYTES = 2 * 1024 * 1024
 RECEIPT_NAME = "curseforge-upload.json"
-# Dyre's Sounds and Dyre's Toolkit are required on CurseForge, so the app
-# installs them with WTF; the TOC lists them as OptionalDeps, so WTF still
-# loads without them. Weapon Skills Forever is an optional companion (as set on
-# the project); WTF does not use it, so the TOC does not name it.
+# Dyre's Toolkit and the AddOns WTF's features moved to (Dyre's Shields Up,
+# Dyre's Buff Reminders, and since 1.11.0 Dyre's Debuff Tracker, project
+# 1777574) are required on CurseForge, so the app installs them with WTF; the
+# TOC lists them as OptionalDeps, so WTF still loads without them. Weapon
+# Skills Forever is an optional companion (as set on the project); WTF does
+# not use it, so the TOC does not name it.
 RELATIONS = {"projects": [{"slug": "dyres-toolkit", "type": "requiredDependency"},
                           {"slug": "dyres-shields-up", "type": "requiredDependency"},
                           {"slug": "dyres-buff-reminders", "type": "requiredDependency"},
+                          {"slug": "dyres-debuff-tracker", "type": "requiredDependency"},
                           {"slug": "weapon-skills-forever", "type": "optionalDependency"}]}
 
 

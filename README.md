@@ -3,8 +3,9 @@
 Quality-of-life tools for Warlocks in World of Warcraft: Forever. Warlock Tools
 Forever (WTF) is a suite of small modules, each with its own switch and
 settings page: Soul Shard management, Soulstone and Healthstone buttons with
-trading and reminders, summon and Soulstone announcements, a DoT tracker for
-several mobs, and a Fear and Banish control bar.
+trading and reminders, and summon and Soulstone announcements. The DoT
+tracker and the Fear and Banish control bar are in **Dyre's Debuff Tracker**
+(see below).
 
 ## Compatibility
 
@@ -13,11 +14,6 @@ Interface `16001`, Lua `5.1`. It does not check the client version or build,
 because builds change often. At login it checks for the APIs it needs and
 disables itself with one message if any are missing. It runs on Warlocks only;
 on other classes it prints one message and stays off.
-
-On WoW Classic Era and Anniversary, the DoT tracker, the nameplate DoT dots,
-and the Fear and Banish bar read your auras themselves (those clients have no
-aura engine for AddOns), with the same look and settings. As on Forever, a
-mob shows its timers while a nameplate, your target, or your focus shows it.
 
 ## Dyre's Shields Up and Dyre's Buff Reminders
 
@@ -43,6 +39,28 @@ Chimes, Alerts, and Demon Armor settings pages now have a button that opens
 that AddOn's settings. WTF no longer plays any sound, so it no longer needs
 Dyre's Sounds.
 
+## Dyre's Debuff Tracker
+
+In version 1.11.0, WTF's DoT and crowd-control features moved to **Dyre's
+Debuff Tracker** (`/ddt`), where they are kept up to date:
+
+- the **DoT tracker** (target, focus, and other mobs' panels), the DoT colors
+  and order, and the **DoT dots on nameplates**;
+- **Predictive DoT damage** (the block on the health bar, and **DIES**);
+- the **smart curse**, with its key binding and the "! Curse" macro;
+- the **Control bar** for Fear and Banish, with the Focus box, the Fear
+  timers under nameplates, the "! Fear", "! Banish", and "! Seduction"
+  macros, and the Fear, Banish, Enslave Demon, and Howl of Terror
+  announcements.
+
+The CurseForge app installs Dyre's Debuff Tracker with WTF. It takes your WTF
+settings for these features once. WTF keeps them as they were and never
+changes them, and says in chat what it copied. If Dyre's Debuff Tracker is missing,
+WTF still works and says once at login to install it from CurseForge (or to
+enable it in the AddOn list). WTF's **DoT Tracker**, **DoTs**, and
+**Control** settings pages now have a button that opens Dyre's Debuff
+Tracker's settings.
+
 ## Dyre's Toolkit
 
 **Dyre's Toolkit** gives all of Dyre's AddOns one layout mode and one
@@ -57,23 +75,17 @@ settings home. The CurseForge app installs it with WTF. With it:
   grid** on its settings page).
 - In the game's AddOn list, WTF is in the Dyre's AddOns group.
 
-Since WTF 1.5.0 the DoT tracker, the nameplate DoT dots, the Control bar
-(with its macros and announcements), and the DoT damage prediction run on
-**Dyre's Toolkit 2.5**'s shared engines; WTF keeps their settings and pages.
-Without it (or with an older version), those four stay
-off and WTF says so once in chat; Soul Shards, Stones, and announcements
-still work. Without the toolkit, WTF otherwise works as before, with its own
-top-level settings page, its own unlock, and its own grid, and says once in
-chat to install it.
+Without the toolkit, WTF works as before, with its own top-level settings
+page, its own unlock, and its own grid, and says once in chat to install it.
 
 **Your profile** (Dyre's Toolkit 2.10.0 or later): WTF's settings and frame
 places and sizes are part of your Dyre's Toolkit profile,
 one per character. On the toolkit's settings page, copy them from another
 character or the Defaults, or export and import them as one text line, for
 every Dyre's AddOn at once. They apply at once, with no reload, and never in
-combat. Each character keeps its own Soulstone timer, the last curse, Bane,
-and control spell the DoT tracker recasts, and its shard count from the
-current dungeon. Account-wide data (learned DoT ticks) is not in a profile.
+combat. Each character keeps its own Soulstone timer and its shard count
+from the current dungeon. The old DoT tracker and Control bar settings, kept
+for Dyre's Debuff Tracker, are not in a profile.
 
 WTF works well with **Weapon Skills Forever**, another of Dyre's AddOns. It
 is optional: WTF does not need it.
@@ -184,255 +196,6 @@ your zone.
   whisper says: "Here, have a Healthstone. Some poor creature's essence gives
   you more health!" Edit a text to say anything you like.
 
-## DoT tracker
-
-Timers for several mobs at once, by default in this order: your Curse
-(whichever one is up), your Bane (Agony, Doom, or Havoc), Corruption,
-Immolate, Siphon Life, and Fear and control (Fear, Howl of Terror, Death Coil,
-Banish). Put them in your own order on the **DoTs** settings page: drag a
-row up or down, and **Reset order** puts back the default. The nameplate dots
-use the same order. Each live slot shows the spell's icon, a countdown,
-a sweep, and a bar that drains as the spell runs out; a missing or expired
-spell shows as a dim icon, so you can see what to recast.
-
-- **Top row: your target**, with a warlock-purple outline. It follows your
-  target as you tab or click, and hides when you have no hostile target.
-- **Second row: your focus**, with a matching red outline, shown while you have
-  a hostile focus.
-- **Target and focus outline** (DoT Tracker page, General; needs Dyre's
-  Toolkit 2.8 or later) sets how thick these two outlines are, 0 to 20 px
-  (default 3). Set it to 0 to hide them.
-- **Click a slot in either row** to cast that spell on your target or focus.
-  The Bane and Curse slots recast the last Bane or Curse you used, or, for
-  the Curse slot, the smart curse (below).
-- **Below: every other mob you DoTed**, up to eight. Your target and focus are
-  not listed twice. A mob leaves the list when it dies, when combat ends, or,
-  out of combat, when it is out of sight for 10 seconds. In combat, a mob
-  whose nameplate goes away (out of range, or nameplates off) keeps its row,
-  and its timers come back with its nameplate. In dungeons and raids the game
-  hides mob IDs, so WTF follows each mob by its nameplate: the list needs enemy
-  nameplates on there, and a row goes when its nameplate goes. These rows show
-  timers only; the game does not let AddOns target or cast on a mob picked from
-  a list.
-- **Two themes** on the DoT Tracker settings page. Both show only spells you
-  know, as do the nameplate dots.
-  - **Bars** (the default): see below.
-  - **Compact:** a row per mob, its name and an icon per spell, with a
-    countdown, a sweep, and a thin bar.
-  - **Bars:** a block per mob, its name above one bar line per spell you know,
-    with the spell's icon, name, and time left, draining from right to left
-    like the Cooldown Manager's bars. A missing spell shows as a dim line with
-    its name. In the pinned rows, click a line to recast it.
-- **Sizes**, also on the DoT Tracker page, for the theme you chose: Compact
-  has icon size, name width, text size, and where the name sits (left, right,
-  above, or below the icons); Bars has bar width, line height, text size, and
-  the name above or below the bars. **Reset size** puts the theme back as it
-  was. A change in combat applies when combat ends.
-- **Mob health** (off by default): **Show mob health** turns the line with each
-  mob's name into its health bar, in the panel's color (purple for your
-  target, red for your focus, dark grey for the others, by default), also in
-  combat, and **Health text** adds its number, its percent, or both after the
-  name. With a Compact name left or right of the icons, the fill is only
-  behind the name.
-- **Colors:** each slot's bar has its own color, the same as its nameplate
-  dot: Curse purple, Bane red, Corruption white, Immolate orange, Siphon Life
-  green, Fear and control yellow. Change them with the swatches on the
-  **DoTs** settings page.
-- **Settings sections:** the DoT Tracker page starts with **General** (what
-  every panel shares), then **Target**, **Focus**, and **Others**, each with
-  its panel's color (the outline of your target's and focus's rows, the other
-  mobs' row border, and their health fill) and its opacity.
-- To place the tracker, unlock your frames (see
-  [Moving frames](#moving-frames)): it shows sample rows to drag it by. Your
-  target's row, your focus's row, and the list of other mobs each move on
-  their own: drag each by its rows. They start stacked as before, and
-  `/wtf reset` stacks them again. Until you move it, the list hangs under the
-  target and focus rows that show, with no gap for a hidden one. **Target panel opacity**, **Focus panel
-  opacity**, and **Other mobs panel opacity** in their sections of the DoT
-  Tracker page make each one see-through on its own (100%, fully solid, by
-  default).
-- **Show the target panel**, **Show the focus panel**, and **Show the other
-  mobs' panel** (DoT Tracker page, each panel's section; on by default, with a
-  Dyre's Toolkit that has them) hide a panel you do not need, for example the
-  target panel when your target frame already shows your DoTs. The other
-  panels stay where they are.
-- **Hide empty DoT slots** (DoT Tracker page, General; off by default, with a
-  Dyre's Toolkit that has it) shows a DoT only while it is on the mob: no dim
-  icon or empty bar for the others. The empty places stay, so your DoTs do
-  not move. With it on, a click on the target or focus row does not recast a
-  DoT or show the smart curse letter; the smart curse still works from its
-  key binding and the "! Curse" macro.
-- The timers come from Blizzard's own aura display, which reads each mob's
-  nameplate. Turn on enemy nameplates so listed mobs keep their timers.
-- In combat the game can hide which nameplate belongs to which mob. WTF then
-  learns a mob's nameplate while that mob is your target or focus, and keeps
-  it while the nameplate stays up. A mob you DoT without targeting or
-  focusing it (for example with a mouseover macro) can show in the list
-  without its timers or health. Target or focus it once to fix that row; at
-  the end of combat the list clears. A mouseover cast on a mob with the same
-  name as your target can also count for your target.
-
-### Smart curse
-
-With **Dyre's Toolkit 2.7** or later, set **Curse slot click** to **Smart
-curse** (DoT Tracker settings page, **Curse slot**). A click on the target or
-focus row's Curse slot then casts:
-
-- **No modifier:** Curse of Tongues on a mob with mana, else Curse of the
-  Elements, else Curse of Weakness (each once you know it). The choice is made
-  out of combat as your target changes: in combat the game lets no click read
-  the mob.
-- **Shift:** Curse of Weakness. **Ctrl:** Curse of Tongues (Weakness if you do
-  not know it). **Alt:** Curse of Recklessness.
-
-A letter on the Curse slot's icon (T, E, or W) shows the best curse for that
-mob, also in combat; **Show the smart curse letter** turns it off. The
-**"! Curse"** macro and the **Smart curse** key binding (Key Bindings, under
-Warlock Tools Forever) cast the same curse at your target, in either mode, once
-you know Curse of Weakness. **Last used** (the default) keeps the recast of the
-curse you cast last.
-
-### DoT dots on nameplates
-
-An optional, quick-glance view, off by default: turn on **Show DoT dots on
-nameplates** on the DoT Tracker settings page. In combat, a small bubble above
-each hostile nameplate holds one dot per DoT you know, in the slot colors and
-the DoT order. A
-dot is grey while that DoT is missing. **On nameplates** on the **DoTs** page
-chooses which slots appear as dots (all of them by default); it is greyed out
-while the dots are off. Raise the bubble with **Dot height
-above nameplates** if it overlaps your nameplate AddOn, and make it see-through
-with **Nameplate dot opacity** (100%, fully solid, by default).
-
-### Predictive DoT damage
-
-A purple block on your target's health bar (the game's target
-frame), on each hostile nameplate's health bar, and on each DoT tracker row's
-health bar (with **Show mob health** on) shows the damage your
-Corruption, Curse of Agony, Immolate (its damage over time), and Siphon Life
-still have to deal to that mob. The block ends where the mob's health ends and
-grows to the left. A red skull and **DIES** show when your DoTs will deal
-at least the health the mob has left: just left of the target frame's bar,
-just right of a nameplate's bar (past the target arrows on Platynator), and
-on a DoT tracker row in place of the health number (the percent stays), at
-the same size on every frame.
-
-- **On Classic Era, exact after the first tick:** WTF reads each tick of your DoTs from the
-  combat log, so talents, spell power, and resists count; a resisted tick
-  counts as a tick. WTF remembers each rank's tick for all your characters,
-  so the next cast starts from it, scaled to your spell power then. Before
-  any tick of a rank it guesses from the rank and your spell power. Curse of
-  Agony's ticks grow as it runs, and the block knows that.
-- **Every mob you DoT counts,** also one no nameplate shows yet: its block
-  shows as soon as its nameplate or your target frame does. A DoT tracker
-  row whose mob has no nameplate now keeps the mob's last health and its
-  block, which still shrinks with each tick.
-- **Your DoTs only:** on Classic Era, another Warlock's DoTs do not count.
-- **Settings:** under **DoT damage prediction** on the DoT Tracker page,
-  **Show Predictive DoT Damage**, **Also on nameplates**, and **Show DIES**
-  (all on by default). DoT tracker rows show the block when both **Show
-  Predictive DoT Damage** and **Show mob health** are on. **Block fill**
-  (Stripes, Solid, or the bar's own texture), **Block color** (purple, red,
-  orange, white, or green), **Block opacity** (70% by default), and **Block
-  outline** set one look for every bar; on a bar of the same color the block
-  is drawn lighter, so it stands out. **DIES place** (Auto, left of,
-  right of, centered on, above, or below the bar, or inside its right end)
-  and **DIES left/right** and **DIES down/up** (up to 100 pixels each way)
-  set where DIES shows, once for your target and focus frames and once for
-  nameplates. Auto, the default, puts it beside the bar on a side nothing
-  else uses. `/wtf debug_predict` lists each mob's DoTs, their ticks, and
-  the damage to come.
-- **WoW: Forever** (needs Dyre's Toolkit 2.6 or later; not tested in game
-  yet): the game keeps the combat log from AddOns and hides damage numbers in
-  combat, so WTF follows your casts and the timing of each tick. The block
-  starts from the rank and your spell power, and tick sizes are learned from
-  the damage meter after combat (Immolate's is not, as the meter includes its
-  direct hit). In a group, another player's DoT of the same school and timing
-  can count as yours, so the block can show too much. A mob you tab away from,
-  with no nameplate, runs on time. On a DoT tracker row, **DIES** shows just
-  left of the health numbers, which stay (with no health text, at the right
-  end of the health bar).
-- **Other frame AddOns:** the block also goes on the health bars of
-  **Threat Plates**, **Plater**, and **Platynator** nameplates, **Shadowed
-  Unit Frames'** target frame, **BetterBlizzFrames'** target frame (also
-  with its smooth bars), and **EllesmereUI's** nameplates and target frame
-  (Plater, Platynator, BetterBlizzFrames, and EllesmereUI are not tested in
-  game yet). Without them, it goes on the game's own bars. A
-  vertical health bar gets no block. `/wtf debug_predict` says which AddOn's
-  bar each one is on.
-
-## Control bar
-
-A bar for each mob you **Fear** or **Banish**, with the mob's name and the time
-left, in the same style as the DoT tracker's Bars theme. Several mobs at once
-are fine. It follows each mob as you change target, empties when the spell
-breaks early, and goes when the mob dies. A cast counts on the mob it starts
-on, also when you tab or move the mouse before it lands.
-
-- **Banish follows your focus**, as Mage Tools Forever's Polymorph bar does:
-  "! Banish" makes the mob under your mouse your focus, marks it, and
-  banishes it. Its bar shows only for a Banish at your focus, and goes when
-  your focus becomes another mob or none. A Banish at a mob that is not your
-  focus (the plain spell button on your target, for example) shows no bar.
-- **Fear rows** follow every mob you Fear. With several mobs of the same
-  name, WTF counts a Fear on the one its own casts aim at: your focus, else
-  the mob under the mouse, else your target. So a Fear from the plain spell
-  button at your target, while your focus has the same name, shows on the
-  focus's row; "! Fear" avoids that.
-- **Focus box:** above the rows, a box in the focus panel's color shows
-  "Focus: <name>" while you have a hostile focus, with your Fear's timer on
-  it while it is feared. Click it to Fear your focus again. It aims only at
-  your focus, so it never fears another mob, also when your focus changes
-  in combat; with no focus it is hidden. Your focus's Fear shows there, not
-  again in the rows. On the Control settings page, **How Fear and your focus
-  work** says all this in chat.
-- **Without a focus target** (WoW Classic Era has none): the macros fear,
-  banish, or seduce the mob under your mouse, else your target, and "! Banish"
-  marks that mob. Every Fear and Banish gets a row with its time left, but the
-  rows take no clicks and there is no Focus box. WTF learns that your focus
-  works the first time you set one (once per game client, for all your
-  characters), and then switches to the focus macros and
-  clicks above (out of combat). The check is one for every Dyre's AddOn
-  (from Dyre's Toolkit), so `/wtf reset_focus` makes all of them check
-  again.
-
-- **Raid marker:** the "! Banish" macro puts the moon on your focus, in and
-  out of combat, so your group knows it is out of the fight (change the
-  marker on the Control settings page). The Banish row click and the plain
-  spell button do not mark. For a Banish at your focus, the group message
-  names the marker.
-  Fear marks nothing, so WTF uses only one marker slot in a group. If you mark
-  with your own `/tm` macro, set Banish's marker to None: the game toggles a
-  marker that is set twice.
-- **Group messages:** Fear, Banish, Enslave Demon, and Howl of Terror can tell
-  your party or raid as you start casting, with the mob's name and marker
-  (Announce page).
-- **Click a Banish row** to banish your focus again, with the same spell. The
-  click does not mark or change your target; with no focus it does nothing.
-  The game lets the click
-  change only out of combat: a Banish that starts before the pull is
-  clickable all fight; one started in combat becomes clickable when combat
-  ends.
-- **Fear rows** show each feared mob and its time left; they take no clicks,
-  since the game gives AddOns no way to aim at one of several same-named
-  mobs (the Focus box is the one Fear click). A **Fear timer under each
-  feared mob's nameplate** shows which one is about to break: hover its
-  nameplate and press "! Fear", or click it to target it.
-- **Macros:** WTF keeps "! Fear", "! Banish", "! Seduction", and "! Curse" (the
-  smart curse, above) in your
-  character macros, each once you know its spell ("! Seduction" once your
-  Succubus or Incubus has learned Seduction from its Grimoire). "! Fear" makes
-  the mob under your mouse (else your target) your focus and fears it. Hold
-  Shift as you press it to Fear the mob under your mouse (else your target)
-  and keep your focus, for juggling a second mob.
-  "! Banish" and "! Seduction" focus the hostile mob under your mouse; with
-  none, a live hostile focus stays your focus, else your target becomes it,
-  also in combat. Hold Shift as you press one, or right-click it on your
-  action bar, to clear your focus first, so your target (or the mob under
-  your mouse) becomes it. Then they cast on
-  your focus; "! Seduction" does nothing
-  unless your pet is a Succubus or an Incubus. Turn them off on the Control settings page.
-
 ## Settings
 
 **Options → AddOns → Warlock Tools Forever** (or `/wtf`) has one switch per
@@ -443,8 +206,7 @@ Toolkit, the page is under **Dyre's AddOns**.
 
 All WTF frames move together. Tick **Unlock frames to move them** on the
 main WTF settings page, or type `/wtf unlock`: every WTF frame gets a gold
-outline, and the DoT tracker and control bar show sample rows, so you can drag
-them. Frames are magnetic: drop one near another and it snaps beside it, 20
+outline, so you can drag them. Frames are magnetic: drop one near another and it snaps beside it, 20
 pixels apart and lined up. Hold **Shift** while dragging to move a whole
 snapped group. Untick it, or type `/wtf lock`, to lock them again.
 `/wtf reset` puts them back in their default places. Everything starts locked.
@@ -457,8 +219,8 @@ With Dyre's Toolkit, unlocking unlocks every Dyre's AddOn's frames, WTF's
 frames also snap to theirs, and the unlock switch and the grid are the
 toolkit's: they are on the **Dyre's AddOns** page, and WTF's page has none of
 its own. `/wtf unlock` and `/wtf lock` still work.
-While frames are locked, hold **Ctrl** and drag a frame (also a DoT tracker
-panel) to move just that one, freely; not in combat.
+While frames are locked, hold **Ctrl** and drag a frame to move just that
+one, freely; not in combat.
 
 ## Commands
 
@@ -476,9 +238,6 @@ panel) to move just that one, freely; not in combat.
 | `/wtf debug_stones` | Diagnostics: known stone ranks, carried stones, and level requirements |
 | `/wtf debug_announce` | Diagnostics: the latest summon and Soulstone cast events |
 | `/wtf debug_emote` | Diagnostics: two test emotes from a timer, one per chat function, and which the game blocks |
-| `/wtf debug_tracker` | Diagnostics: the spell IDs each tracker slot accepts, and tracked mobs |
-| `/wtf debug_predict` | Diagnostics: each mob's DoTs, ticks, and damage to come |
-| `/wtf debug_control` | Diagnostics: the control bar's spell IDs, rows, and clicks |
 
 `/warlocktools` works the same as `/wtf`, in case another AddOn uses `/wtf`.
 

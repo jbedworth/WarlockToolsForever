@@ -271,12 +271,20 @@ class ReleaseTests(unittest.TestCase):
         self.assertFalse((ROOT / "Textures").exists())
         self.assertFalse((ROOT / "Sounds").exists())
 
-    def test_package_ships_the_key_bindings_outside_the_toc(self):
-        # 1.7.0: the smart curse's key binding. The game loads Bindings.xml by
-        # itself; listed in the TOC it would load as a UI file.
+    def test_package_ships_no_engines_and_the_binding_shim_outside_the_toc(self):
+        # 1.11.0: the DoT tracker, the nameplate dots, the prediction, and the
+        # Control bar moved to Dyre's Debuff Tracker. Bindings.xml stays one
+        # release as a shim (the old smart curse command, nothing behind it);
+        # the game loads it by itself, so the TOC does not list it.
+        toc = (ROOT / "WarlockToolsForever.toc").read_text(encoding="utf-8")
+        for name in ("Tracker.lua", "Dots.lua", "Predict.lua", "Control.lua"):
+            self.assertNotIn(name, builder.PACKAGE_FILES)
+            self.assertFalse((ROOT / name).exists(), name)
+            self.assertNotIn(name, toc)
         self.assertIn("Bindings.xml", builder.PACKAGE_FILES)
-        self.assertNotIn("Bindings.xml", (ROOT / "WarlockToolsForever.toc").read_text(encoding="utf-8"))
+        self.assertNotIn("Bindings.xml", toc)
         text = (ROOT / "Bindings.xml").read_text(encoding="utf-8")
+        self.assertEqual(text.count("<Binding "), 1)
         self.assertIn('name="CLICK WarlockToolsForeverSmartCurse:LeftButton"', text)
         path, _ = self.build()
         with zipfile.ZipFile(path) as archive:
@@ -288,7 +296,8 @@ class ReleaseTests(unittest.TestCase):
         toc = (ROOT / "WarlockToolsForever.toc").read_text(encoding="utf-8")
         listed = [line for line in toc.splitlines() if line and not line.startswith("#")]
         self.assertEqual(tuple(listed), builder.RUNTIME_FILES)
-        self.assertIn("## OptionalDeps: DyresToolkit, DyresShieldsUp, DyresBuffReminders", toc.splitlines())
+        self.assertIn("## OptionalDeps: DyresToolkit, DyresShieldsUp, DyresBuffReminders, DyresDebuffTracker",
+                      toc.splitlines())
         self.assertNotIn("DyresSounds", toc)
 
     def test_release_notes_start_with_the_versions_changelog_section(self):

@@ -1,4 +1,9 @@
 <Bindings>
+    <!-- A shim for one release (WTF 1.11.0): the smart curse moved to Dyre's Debuff Tracker, and
+         WTF makes no WarlockToolsForeverSmartCurse button any more, so this binding does nothing.
+         It only keeps the old command defined, so the game keeps a player's key on it until Dyre's
+         Debuff Tracker moves that key to its own command (also when both AddOns update at once).
+         A later WTF release removes this file (docs/RELEASE_PLAN.md). -->
     <Binding name="CLICK WarlockToolsForeverSmartCurse:LeftButton" runOnUp="true" header="WARLOCKTOOLSFOREVER"
         category="ADDONS"/>
 </Bindings>

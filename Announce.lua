@@ -51,9 +51,9 @@ local function GroupChannel()
 end
 
 -- %T the name, %Z your zone. Since 1.5.0 Dyre's Toolkit's (Announce.lua,
--- 2.5.0), which also drops an empty %T with the space before it; the
--- crowd-control announcements are its control engine's (Control.lua). Without
--- the Toolkit, WTF's own fill.
+-- 2.5.0), which also drops an empty %T with the space before it. The
+-- crowd-control announcements moved to Dyre's Debuff Tracker in 1.11.0.
+-- Without the Toolkit, WTF's own fill.
 function WTF.FormatAnnouncement(text, target)
     if WTF.shared then
         return WTF.shared.FormatAnnouncement(text, {T = target, Z = GetZoneText() or ""})

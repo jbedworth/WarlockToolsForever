@@ -18,11 +18,11 @@ tested.
 | Source | https://github.com/jbedworth/WarlockToolsForever |
 | Issues | https://github.com/jbedworth/WarlockToolsForever/issues |
 | Donation | Ko-fi, https://ko-fi.com/dyre_janelle (the project's Donation field) |
-| Relations | Dyre's Toolkit (`dyres-toolkit`), Dyre's Shields Up (`dyres-shields-up`), and Dyre's Buff Reminders (`dyres-buff-reminders`), Required Dependency (1.3.0: the shield display, cooldown chimes, Nightfall sound, and Demon Armor reminder moved there; Dyre's Sounds is no longer needed); Weapon Skills Forever (`weapon-skills-forever`), Optional Dependency. Each CI upload sends them (`RELATIONS` in scripts/publish_curseforge.py); set them on the project too if the form asks. |
+| Relations | Dyre's Toolkit (`dyres-toolkit`), Dyre's Shields Up (`dyres-shields-up`), Dyre's Buff Reminders (`dyres-buff-reminders`), and Dyre's Debuff Tracker (`dyres-debuff-tracker`, project 1777574), Required Dependency (1.3.0: the shield display, cooldown chimes, Nightfall sound, and Demon Armor reminder moved to the first two; 1.11.0: the DoT tracker, DoT damage prediction, the smart curse, and the Control bar moved to Dyre's Debuff Tracker; Dyre's Sounds is no longer needed); Weapon Skills Forever (`weapon-skills-forever`), Optional Dependency. Each CI upload sends them (`RELATIONS` in scripts/publish_curseforge.py); set them on the project too if the form asks. |
 
 ## Summary
 
-Quality-of-life tools for Warlocks in World of Warcraft: Forever: Soul Shard management, Soulstone and Healthstone buttons, a multi-mob DoT tracker, a Fear and Banish bar, and customizable announcements with flavor.
+Quality-of-life tools for Warlocks in World of Warcraft: Forever: Soul Shard management, Soulstone and Healthstone buttons, and customizable announcements with flavor. Comes with Dyre's Debuff Tracker for your DoTs, Fears, and Banishes.
 
 ## Description
 
@@ -33,21 +33,7 @@ Per-file changelogs need no manual text: each CI upload uses the version's
 `CHANGELOG.md` section, through `release-notes.md`.
 
 ```markdown
-**Warlock Tools Forever (WTF)** is the toolkit a Warlock actually wants: track every DoT on every mob, keep your bags free of shard clutter, and hand out Healthstones in one click. Every tool has its own switch. Turn on what you use, ignore the rest.
-
-### Track DoTs across the whole pull
-- **Your target, your focus, and up to eight more mobs**, all at once. Each row shows your Curse, Bane, Corruption, Immolate, Siphon Life, and Fear or Banish, with a live countdown.
-- **Missing DoTs stay visible** as dim icons, so you see what to recast at a glance.
-- **Click a slot** on your target or focus row to recast that spell.
-- Two looks: **Bars** that drain like the Cooldown Manager's, or **Compact** icons.
-- Optional **DoT dots above enemy nameplates**: grey means missing. Choose which DoTs get a dot.
-- **Move the target, focus, and other-mobs panels separately**: each snaps to your other Dyre's frames and to the grid.
-- **Mob health on each row**: the name line becomes a health bar in the panel's color, with the number, the percent, or both.
-- **Sizes for each look**: icon size, name width, text size, and name position; bar width and line height for Bars.
-- **Opacity for each panel**, and for the nameplate DoT dots.
-- **The DoTs page**: drag your DoTs into the order you cast them, on the rows and on the nameplate dots, and pick each DoT's color.
-- **Panel colors**: the target, focus, and other-mobs panels each have their own section, with their color (outline and health bar) and opacity.
-- In combat the game can hide which nameplate belongs to which mob. A mob you DoT without ever targeting or focusing it (for example with a mouseover macro) can show without its timers until you target or focus it.
+**Warlock Tools Forever (WTF)** is the toolkit a Warlock actually wants: keep your bags free of shard clutter, hand out Healthstones in one click, and let your group know what you are doing. Every tool has its own switch. Turn on what you use, ignore the rest.
 
 ### Soul Shards, handled
 - Set a shard limit (it matches your soul bags by default). **Extra shards from Drain Soul and Shadowburn are deleted for you.**
@@ -60,30 +46,21 @@ Per-file changelogs need no manual text: each CI upload uses the version's
 - **! Healthstone** and **! Soulstone** macros for your action bars, kept up to date for you.
 - Reminders when your Soulstone runs out, or when you carry no Healthstone.
 
-### Fear and Banish control
-- A countdown bar for **every mob you Fear** and for your **banished focus**, plus a Fear timer under each feared nameplate, so you know which one breaks next.
-- **! Fear**, **! Banish**, and **! Seduction** macros for your action bars: aim with your mouse, no retargeting.
-
-### Fear and your focus
-- **! Fear** makes the mob under your mouse (else your target) your focus and fears it. **Shift-press** it to fear another mob and keep your focus.
-- The **Focus box** above the Fear bars shows your focus's Fear. **Click it to fear your focus again**; with no focus it does nothing.
-- Every other mob you fear gets its own row, and a Fear timer under its nameplate.
-- **! Banish** works the same way: it makes the mob your focus, marks it with the moon so your group leaves it alone, and banishes it. Click its row to banish your focus again.
-
 ### Stays out of your way
 - Small frames you place yourself: `/wtf unlock` shows a grid, frames snap together, `/wtf lock` when you're done.
-- While frames are locked, hold **Ctrl** and drag to move one frame, a DoT tracker panel too (not in combat).
+- While frames are locked, hold **Ctrl** and drag to move one frame (not in combat).
 - No popups, no forced layouts. Everything has an off switch.
 
 ### Also included
 - **Announcements with flavor:** summons, Soulstones, and Healthstone trades tell your group or whisper the target. Every message can be edited or turned off.
 
-### Comes with Dyre's Shields Up and Dyre's Buff Reminders
-The CurseForge app installs both with WTF, and they work on every class:
+### Comes with Dyre's Debuff Tracker, Dyre's Shields Up, and Dyre's Buff Reminders
+The CurseForge app installs them with WTF:
+- **Dyre's Debuff Tracker:** WTF's DoT tracker (target, focus, and every other mob you DoT), DoT colors and nameplate DoT dots, predictive DoT damage with DIES, the smart curse, and the Fear and Banish bar with the **! Fear**, **! Banish**, and **! Seduction** macros. These moved there in WTF 1.11.0, where they are kept up to date, and it takes your WTF settings for them once.
 - **Dyre's Shields Up:** the shield display, a crescent that drains as your Shadow Ward, Sacrifice, or any absorb takes damage.
 - **Dyre's Buff Reminders:** cooldown chimes for Death Coil, Howl of Terror, Shadow Ward, your Soulstone, and more; the Nightfall sound when Shadow Trance procs (with Dyre's Toolkit 2.11 or later, with proc arcs); and a Demon Armor reminder you can click to cast.
 
-These lived in WTF until 1.3.0. Your WTF settings for them are copied over the first time each AddOn runs.
+The shield display, chimes, and reminders lived in WTF until 1.3.0. Your WTF settings for them are copied over the first time each AddOn runs.
 
 ### Commands
 - `/wtf` opens the settings. `/wtf shards` shows your shards and limit, `/wtf stones` your stones.

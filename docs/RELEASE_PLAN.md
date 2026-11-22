@@ -41,10 +41,6 @@ WarlockToolsForever/
     Shards.lua
     Stones.lua
     Announce.lua
-    Tracker.lua
-    Dots.lua
-    Predict.lua
-    Control.lua
     Probe.lua
     Options.lua
     Bindings.xml
@@ -53,11 +49,17 @@ WarlockToolsForever/
 
 No textures and no sound files: since 1.3.0 the shield display is Dyre's
 Shields Up's, and the chimes, the Nightfall sound, and the Demon Armor
-reminder are Dyre's Buff Reminders'. The TOC lists `## OptionalDeps:
-DyresToolkit, DyresShieldsUp, DyresBuffReminders` (WTF loads without them),
-and the CurseForge upload names all three required dependencies (`RELATIONS`
-in `scripts/publish_curseforge.py`: slugs `dyres-toolkit`, `dyres-shields-up`,
-`dyres-buff-reminders`), so the CurseForge app installs them with WTF.
+reminder are Dyre's Buff Reminders'. Since 1.11.0 the DoT tracker, the
+nameplate dots, the prediction, the smart curse, and the Control bar are
+Dyre's Debuff Tracker's; Bindings.xml stays for one release as a shim (see
+below). The TOC lists
+`## OptionalDeps: DyresToolkit, DyresShieldsUp, DyresBuffReminders,
+DyresDebuffTracker` (WTF loads without them), and the CurseForge upload names
+all four required dependencies (`RELATIONS` in
+`scripts/publish_curseforge.py`: slugs `dyres-toolkit`, `dyres-shields-up`,
+`dyres-buff-reminders`, `dyres-debuff-tracker`), so the CurseForge app
+installs them with WTF. Release Dyre's Debuff Tracker first: WTF 1.11.0 ships
+24 hours after the DDT release that has the smart curse.
 `## Group: DyresToolkit` nests WTF under the toolkit in the AddOn list.
 Weapon Skills Forever (`weapon-skills-forever`) stays an optional
 dependency.
@@ -70,6 +72,18 @@ agent guidance, generated logs, and all credentials/player data.
 Use an explicit file allowlist. Do not ZIP the checkout and maintain a growing
 list of exclusions. Keep `LICENSE` and `Bindings.xml` in the package, but do not list them in the
 TOC (the game loads Bindings.xml from the AddOn folder by itself).
+
+**Bindings.xml shim (1.11.0; remove in a later release).** It defines only
+`CLICK WarlockToolsForeverSmartCurse:LeftButton` (Core.lua sets its header
+and the label "Smart curse (moved to Dyre's Debuff Tracker)"); WTF makes no
+button for it, so a press does nothing. It keeps the old command defined, so
+the game keeps a player's key on it until Dyre's Debuff Tracker moves the key
+to its own command at its first login, also when a player updates WTF and
+DDT at once. Remove it in the first WTF release after the lead confirms that
+DDT's key move has had time to run (a release or two after 1.11.0): delete
+Bindings.xml, the two `BINDING_` lines in Core.lua, its entry in
+`scripts/build_release.py` and these docs, and change its tests to check it
+is gone.
 There are no media since 1.3.0, when the shield display and its crescent
 textures moved to Dyre's Shields Up. A texture added later must pass the
 builder's check (uncompressed 32-bit, square, power-of-two TGA).
@@ -78,7 +92,7 @@ Validate the actual archive, not only the staging folder:
 
 1. Check CRC/integrity, non-empty files, and the exact file list.
 2. Reject absolute paths, traversal paths, symlinks, and extra root folders.
-3. Verify the TOC name, Interface `16001`, and Commands/Core/Layout/AuraEngine/Shards/Stones/Announce/Tracker/Dots/Control/Probe/Options
+3. Verify the TOC name, Interface `16001`, and Commands/Core/Layout/Shards/Stones/Announce/Probe/Options
    load order. Every listed runtime file must exist inside the archive.
 4. Verify the packaged version matches the selected tag, with one leading `v`
    removed. Verify the packaged MIT copyright/permission notice is intact.

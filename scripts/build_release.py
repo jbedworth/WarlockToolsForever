@@ -20,9 +20,11 @@ from pathlib import Path
 
 
 ADDON = "WarlockToolsForever"
-RUNTIME_FILES = ("Commands.lua", "Core.lua", "Layout.lua", "Shards.lua", "Stones.lua", "Announce.lua", "Tracker.lua",
-                 "Dots.lua", "Predict.lua", "Control.lua", "Probe.lua", "Options.lua")
-# Bindings.xml: the game loads it from the AddOn folder by itself (not in the TOC).
+RUNTIME_FILES = ("Commands.lua", "Core.lua", "Layout.lua", "Shards.lua", "Stones.lua", "Announce.lua", "Probe.lua",
+                 "Options.lua")
+# Bindings.xml: the game loads it from the AddOn folder by itself (not in the
+# TOC). Since 1.11.0 a shim for one release: it only keeps the old smart curse
+# binding defined until Dyre's Debuff Tracker moves the player's key.
 TEXT_FILES = (ADDON + ".toc",) + RUNTIME_FILES + ("Bindings.xml", "LICENSE")
 # Runtime textures shipped in the package: none since 1.4.1 (the DoT
 # prediction block's stripes went to Dyre's Toolkit 2.4.0 with its drawing;

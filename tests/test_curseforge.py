@@ -164,6 +164,8 @@ class CurseForgeTests(unittest.TestCase):
                                                                "type": "requiredDependency"},
                                                               {"slug": "dyres-buff-reminders",
                                                                "type": "requiredDependency"},
+                                                              {"slug": "dyres-debuff-tracker",
+                                                               "type": "requiredDependency"},
                                                               {"slug": "weapon-skills-forever",
                                                                "type": "optionalDependency"}]}})
         self.assertEqual(parts[1].get_filename(), self.archive.name)
@@ -200,12 +202,14 @@ class CurseForgeTests(unittest.TestCase):
                 self.assert_no_network()
 
     def test_relations_match_the_project(self):
-        # Required, so the CurseForge app installs the sounds and the toolkit with
-        # WTF; Weapon Skills Forever is optional.
+        # Required, so the CurseForge app installs the toolkit and the AddOns
+        # WTF's features moved to (1.11.0: Dyre's Debuff Tracker, the DoT
+        # tracker and Control bar) with WTF; Weapon Skills Forever is optional.
         types = {p["slug"]: p["type"] for p in publisher.RELATIONS["projects"]}
         self.assertEqual(types, {"dyres-toolkit": "requiredDependency",
                                  "dyres-shields-up": "requiredDependency",
                                  "dyres-buff-reminders": "requiredDependency",
+                                 "dyres-debuff-tracker": "requiredDependency",
                                  "weapon-skills-forever": "optionalDependency"})
 
     def test_strict_tag(self):
