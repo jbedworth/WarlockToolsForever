@@ -94,6 +94,15 @@ local function SliderOptions(minValue, maxValue, step, format)
     return options
 end
 
+-- The Toolkit's gold mark at the slider's default (public since Toolkit
+-- 2.2.0). Without the Toolkit, or an older one, no mark.
+local function DefaultTick(initializer, minValue, maxValue, default)
+    local toolkit = WTF.toolkit
+    if toolkit and type(toolkit.AddDefaultTick) == "function" then
+        toolkit.AddDefaultTick(initializer, {min = minValue, max = maxValue, default = default})
+    end
+end
+
 -- A greyed-out checkbox that only says something; never saved.
 local function Notice(page, variable, name, tooltip)
     local setting = Proxy(page, variable, Settings.VarType.Boolean, name, true,
@@ -312,6 +321,7 @@ local function AddShardPage(parent)
     end
     local limitInitializer = Settings.CreateSlider(page, limit, options,
         "How many Soul Shards to keep in your bags. Turn off Match soul bag size to change it.")
+    DefaultTick(limitInitializer, WTF.SHARD_LIMIT_MIN, WTF.SHARD_LIMIT_MAX, WTF.DEFAULT_SHARD_LIMIT)
     limitInitializer:SetParentInitializer(autoInitializer, function()
         return not WTF.db.shards.autoLimit
     end)
@@ -334,6 +344,7 @@ local function AddShardPage(parent)
     end
     local lowInitializer = Settings.CreateSlider(page, low, lowOptions,
         "The counter turns red at this many Soul Shards or fewer.")
+    DefaultTick(lowInitializer, WTF.SHARD_LOW_MIN, WTF.SHARD_LOW_MAX, WTF.DEFAULT_SHARD_LOW)
     lowInitializer:SetParentInitializer(counterInitializer, function() return WTF.db.shards.counter end)
     local counterScale = Proxy(page, "WTF_SHARDS_COUNTER_SCALE", Settings.VarType.Number, "Shard counter size",
         WTF.DEFAULT_FRAME_SCALE,
@@ -342,6 +353,7 @@ local function AddShardPage(parent)
     local counterScaleInitializer = Settings.CreateSlider(page, counterScale,
         SliderOptions(WTF.FRAME_SCALE_MIN, WTF.FRAME_SCALE_MAX, WTF.FRAME_SCALE_STEP, true),
         "How big the shard counter is, in percent. It keeps its center, and changes at once, also in combat.")
+    DefaultTick(counterScaleInitializer, WTF.FRAME_SCALE_MIN, WTF.FRAME_SCALE_MAX, WTF.DEFAULT_FRAME_SCALE)
     counterScaleInitializer:SetParentInitializer(counterInitializer, function() return WTF.db.shards.counter end)
 end
 
@@ -357,6 +369,7 @@ local function AddStonesPage(parent)
     local scaleInitializer = Settings.CreateSlider(page, scale,
         SliderOptions(WTF.FRAME_SCALE_MIN, WTF.FRAME_SCALE_MAX, WTF.FRAME_SCALE_STEP, true),
         "How big the Stones bar is, in percent. It keeps its center. A change in combat applies when combat ends.")
+    DefaultTick(scaleInitializer, WTF.FRAME_SCALE_MIN, WTF.FRAME_SCALE_MAX, WTF.DEFAULT_FRAME_SCALE)
     scaleInitializer:SetParentInitializer(shownInitializer, function() return WTF.db.stones.shown end)
     Flag(page, "WTF_STONES_MACROS", "Keep stone macros", "stones", "macros", true,
         "Keep \"! Healthstone\" and \"! Soulstone\" in your character macros for your action bars: "

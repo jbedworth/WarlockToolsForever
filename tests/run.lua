@@ -513,6 +513,11 @@ local function fixture(options)
             for _, member in ipairs(options.members or {}) do list[#list + 1] = member end
             return list
         end
+        -- Toolkit 2.2.0: the gold mark at a slider's default.
+        toolkit.ticks = {}
+        function toolkit.AddDefaultTick(initializer, range)
+            toolkit.ticks[#toolkit.ticks + 1] = {initializer = initializer, range = range}
+        end
         if options.toolkitMissing then toolkit[options.toolkitMissing] = nil end
         env.DyresToolkit = toolkit
         state.toolkit = toolkit
@@ -2690,16 +2695,18 @@ test("trim: the tooltip says how many go; with none above the limit the click sa
     local state = fullSoulBagWith({})
     local counter = state.wtf.shardCounter
     counter.scripts.OnEnter(counter)
-    contains(table.concat(state.tooltip, "|"), "Right-click: delete shards above your limit (0)")
+    contains(table.concat(state.tooltip, "|"), "Right-click: delete shards above your limit (none now)")
     state.clear()
     rightClickCounter(state)
     equal(state.count(), 14)
     equal(state.messages[#state.messages], "WTF: No Soul Shards above your limit of 14.")
     equal(#state.messages, 1, "one line")
     state.arrive(3, 1)
+    counter.scripts.OnEnter(counter)
+    contains(table.concat(state.tooltip, "|"), "Right-click: delete 1 shard above your limit")
     state.arrive(3, 2)
     counter.scripts.OnEnter(counter)
-    contains(table.concat(state.tooltip, "|"), "Right-click: delete shards above your limit (2)")
+    contains(table.concat(state.tooltip, "|"), "Right-click: delete 2 shards above your limit")
 end)
 test("trim: in combat the click is taken, nothing is picked up, and the shards go on the first inputs after", function()
     local state = fullSoulBagWith({})
@@ -4302,6 +4309,33 @@ test("the settings page has a module switch and a Soul Shards subpage", function
     equal(slider.maxValue, 60)
     equal(slider.step, 1)
     equal(slider.label, "right")
+end)
+test("every slider gets the Toolkit's gold mark at its real default; without AddDefaultTick, none and no error", function()
+    local state = fixture({toolkit = true})
+    local marked = {}
+    for _, tick in ipairs(state.toolkit.ticks) do
+        marked[tick.initializer.setting.variable] = tick.range
+    end
+    local expected = {
+        WTF_SHARDS_LIMIT = {state.wtf.SHARD_LIMIT_MIN, state.wtf.SHARD_LIMIT_MAX, state.wtf.DEFAULT_SHARD_LIMIT},
+        WTF_SHARDS_COUNTER_LOW = {state.wtf.SHARD_LOW_MIN, state.wtf.SHARD_LOW_MAX, state.wtf.DEFAULT_SHARD_LOW},
+        WTF_SHARDS_COUNTER_SCALE = {50, 150, 100},
+        WTF_STONES_SCALE = {50, 150, 100},
+    }
+    equal(#state.toolkit.ticks, 4, "the four sliders, each once")
+    for variable, range in pairs(expected) do
+        local tick = marked[variable]
+        equal(tick ~= nil, true, variable .. " has a mark")
+        equal(tick.min, range[1], variable .. " min")
+        equal(tick.max, range[2], variable .. " max")
+        equal(tick.default, range[3], variable .. " default")
+        equal(tick.default, state.settings[variable].default, variable .. ": the setting's own default")
+    end
+    local old = fixture({toolkit = true, toolkitMissing = "AddDefaultTick"})
+    equal(old.settings.WTF_SHARDS_LIMIT ~= nil, true, "the page is built without the mark")
+    equal(#old.toolkit.ticks, 0)
+    local none = fixture()
+    equal(none.settings.WTF_STONES_SCALE ~= nil, true, "no Toolkit: the page is built, no error")
 end)
 test("settings read and write the saved shard settings", function()
     local state = fixture()

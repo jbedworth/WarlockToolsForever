@@ -4,6 +4,12 @@ Player-facing changes for each Warlock Tools Forever release, newest first. The
 release builder copies the section for the TOC version into the GitHub release
 notes and the CurseForge changelog, and fails if that section is missing.
 
+## 1.12.1
+
+### Fixes
+- Soul Shards: the shard counter's tooltip now puts the number next to the shards it deletes ("Right-click: delete 2 shards above your limit"), or says "(none now)". Before, "(0)" came after "limit" and looked like the limit.
+- Settings: every slider (Shard limit, Low shard warning, Shard counter size, Stones bar size) shows a gold mark at its default value, as in the other Dyre's AddOns. It needs Dyre's Toolkit 2.2.0 or later.
+
 ## 1.12.0
 
 ### Features

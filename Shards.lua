@@ -417,8 +417,16 @@ local function ShowCounterTooltip(frame)
     GameTooltip:SetOwner(frame, "ANCHOR_RIGHT")
     GameTooltip:SetText("Soul Shards")
     GameTooltip:AddLine(string.format("%d of %d (%s limit)", WTF.CountShards(), limit, source), 1, 1, 1)
-    GameTooltip:AddLine(string.format("Right-click: delete shards above your limit (%d)",
-        math.max(0, WTF.CountShards() - limit)), 0.7, 0.7, 0.7, true)
+    local above = math.max(0, WTF.CountShards() - limit)
+    local trimLine
+    if above == 0 then
+        trimLine = "Right-click: delete shards above your limit (none now)"
+    elseif above == 1 then
+        trimLine = "Right-click: delete 1 shard above your limit"
+    else
+        trimLine = string.format("Right-click: delete %d shards above your limit", above)
+    end
+    GameTooltip:AddLine(trimLine, 0.7, 0.7, 0.7, true)
     if not WTF.db.shards.counterLocked then
         GameTooltip:AddLine("Drag to move. /wtf reset moves it back.", 0.7, 0.7, 0.7, true)
     end
