@@ -19,6 +19,15 @@ local addonName, WTF = ...
 -- each drop inside. As you leave, the keep count goes down to it, so shards
 -- gained inside and kept for any reason go on the next key presses, down to
 -- the limit; shards you brought in (from the bank, for a raid) stay.
+--
+-- Trim on request (1.12.0; John, 2026-11-21: "Yes, build it", from a player
+-- asking to free bag space in dungeons): a right-click on the shard counter
+-- lowers the keep count to the limit (and a saved instance keep too), so
+-- every shard above the limit goes, also ones you brought in, in or out of an
+-- instance, and also with automatic deletion off (state.trimming). The first
+-- goes in the click itself (a hardware event), the rest on the next inputs, as
+-- always. While the trim runs, a new shard raises the keep count by its own
+-- amount, so the trim still ends at the limit and new shards stay.
 local SOUL_SHARD_ITEM_ID = 6265
 -- Bit in GetContainerNumFreeSlots' bagFamily that marks a soul bag.
 local SOUL_BAG_FAMILY = 4
@@ -82,6 +91,7 @@ local state = {
     heldAt = nil,
     deleting = false,
     refused = false,
+    trimming = false,
     processing = false,
     secretCasts = false,
     gains = {},
@@ -319,7 +329,7 @@ end
 -- takes nothing waits for the next input. Cursor events fire while a deletion
 -- is under way, so calls never nest.
 local function ProcessDeletions()
-    if state.processing or state.blocked or not WTF.db.shards.enabled or Settling() then
+    if state.processing or state.blocked or not (WTF.db.shards.enabled or state.trimming) or Settling() then
         return
     end
     if DeletionRestricted() then
@@ -327,7 +337,11 @@ local function ProcessDeletions()
         return
     end
     local count, keep = WTF.CountShards(), KeepNow()
-    if count <= keep or not CursorEmpty() then
+    if count <= keep then
+        state.trimming = false
+        return
+    end
+    if not CursorEmpty() then
         return
     end
     local target = DeletionSlot()
@@ -403,10 +417,46 @@ local function ShowCounterTooltip(frame)
     GameTooltip:SetOwner(frame, "ANCHOR_RIGHT")
     GameTooltip:SetText("Soul Shards")
     GameTooltip:AddLine(string.format("%d of %d (%s limit)", WTF.CountShards(), limit, source), 1, 1, 1)
+    GameTooltip:AddLine(string.format("Right-click: delete shards above your limit (%d)",
+        math.max(0, WTF.CountShards() - limit)), 0.7, 0.7, 0.7, true)
     if not WTF.db.shards.counterLocked then
         GameTooltip:AddLine("Drag to move. /wtf reset moves it back.", 0.7, 0.7, 0.7, true)
     end
     GameTooltip:Show()
+end
+
+local function Plural(count, word)
+    return count .. " " .. word .. (count == 1 and "" or "s")
+end
+
+-- The right-click (1.12.0): every shard above the limit goes, the first now.
+-- No popup and no question: the click is the request.
+function WTF.TrimShards()
+    if state.blocked then
+        WTF.Report("Soul Shard deletion stopped: " .. tostring(state.stopReason)
+            .. ". It stays off until you /reload.")
+        return
+    end
+    local limit = WTF.GetShardLimit()
+    local above = WTF.CountShards() - limit
+    if above <= 0 then
+        WTF.Report(string.format("No Soul Shards above your limit of %d.", limit))
+        return
+    end
+    state.keep = limit
+    state.trimming = true
+    local instanceKeep = WTF.db.shards.instanceKeep
+    if instanceKeep ~= nil then
+        WTF.db.shards.instanceKeep = math.min(instanceKeep, limit)
+    end
+    if DeletionRestricted() then
+        state.heldAt = GetTime()
+        WTF.Report("Soul Shards above your limit go after combat.")
+        return
+    end
+    WTF.Report(string.format("Deleting %s above your limit of %d, one per key press or click.",
+        Plural(above, "Soul Shard"), limit))
+    ProcessDeletions()
 end
 
 -- A plain frame, not a secure one, so it moves and updates in combat too.
@@ -442,6 +492,13 @@ local function CreateCounter()
     counter:SetScript("OnDragStart", WTF.BeginDrag)
     counter:SetScript("OnDragStop", WTF.EndDrag)
     WTF.RegisterMovable(counter, function(position) WTF.db.shards.counterPosition = position end)
+    -- The left button drags; a right-click trims (a hardware event, so the
+    -- first deletion may happen in it).
+    counter:SetScript("OnMouseUp", function(_, button)
+        if button == "RightButton" then
+            WTF.TrimShards()
+        end
+    end)
     counter:SetScript("OnEnter", ShowCounterTooltip)
     counter:SetScript("OnLeave", function() GameTooltip:Hide() end)
     counter.mover = WTF.CreateMover(counter)
@@ -490,11 +547,18 @@ local function OnBagsChanged()
         local created = InCreationWindow()
         if created and WTF.db.shards.enabled and not state.blocked then
             state.keep = math.max(state.keep, math.min(count, (WTF.GetShardLimit())))
+        elseif state.trimming then
+            -- A new shard while a trim runs stays: the trim still ends at the limit.
+            state.keep = state.keep + change
         else
             state.keep = math.max(state.keep, count)
         end
         LogGain(change, count, created)
-    elseif change < 0 then
+    end
+    if state.trimming and count <= KeepNow() then
+        state.trimming = false
+    end
+    if change < 0 then
         state.keep = math.min(state.keep, count)
         local instanceKeep = WTF.db.shards.instanceKeep
         if instanceKeep ~= nil then
@@ -688,8 +752,9 @@ function WTF.ReportShardDebug()
     end
     local limit, source = WTF.GetShardLimit()
     WTF.Report(string.format(
-        "debug_shards count=%d limit=%d keep=%d source=%s enabled=%s blocked=%s restricted=%s held=%s channeling=%s secretCasts=%s settling=%s inInstance=%s instanceKeep=%s",
+        "debug_shards count=%d limit=%d keep=%d source=%s enabled=%s trimming=%s blocked=%s restricted=%s held=%s channeling=%s secretCasts=%s settling=%s inInstance=%s instanceKeep=%s",
         WTF.CountShards(), limit, state.keep, source, tostring(WTF.db and WTF.db.shards.enabled),
+        tostring(state.trimming),
         tostring(state.blocked), tostring(DeletionRestricted()),
         state.heldAt and string.format("%.1fs ago", GetTime() - state.heldAt) or "never", tostring(state.channeling),
         tostring(state.secretCasts), tostring(Settling()), tostring(InInstance()),

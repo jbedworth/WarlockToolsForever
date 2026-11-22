@@ -234,6 +234,18 @@ and printing.
       those stay, less the one used.
 - [ ] Typing in chat, movement keys, and key bindings all still work with WTF
       loaded (the key hook passes every key on).
+- [ ] Right-click trim (1.12.0), out of combat: move 3 shards in from the bank
+      above your limit; the counter's tooltip says "Right-click: delete shards
+      above your limit (3)". Right-click the counter: one chat line, and one
+      shard goes in the click itself (this checks that a right-click on a
+      plain frame lets `DeleteCursorItem` run; if not, no
+      ADDON_ACTION_BLOCKED and the first goes on the next key press). The
+      other two go on your next key presses or clicks, down to the limit. A
+      left-drag still moves the counter. In combat: the click says they go
+      after combat and nothing is picked up; after combat, the first key
+      presses delete them. Inside a dungeon, and with "Soul Shard
+      management" off: the same, and with it off a Drain Soul shard after
+      the trim stays. With none above the limit: one line, nothing deleted.
 - [ ] The shard counter shows your count, red at or below the Low shard warning and
       green at your limit, legible on the icon; it
       updates as shards come and go, also in combat. Drag (unlocked), hide, and

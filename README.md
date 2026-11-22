@@ -128,9 +128,17 @@ game unchanged.
 - Each deletion prints one chat line; you can turn that off.
 - **Shard counter:** a Soul Shard icon on screen with your shard count: red
   when low (2 or fewer by default; **Low shard warning** sets it), green at
-  your limit. Hover it for the count and the limit. Hide it on the Soul
-  Shards settings page, and change its size there (**Shard counter size**,
-  50-150%); see [Moving frames](#moving-frames) to place it.
+  your limit. Hover it for the count, the limit, and how many are above it.
+  Hide it on the Soul Shards settings page, and change its size there
+  (**Shard counter size**, 50-150%); see [Moving frames](#moving-frames) to
+  place it.
+- **Right-click the shard counter** to delete every shard above your limit,
+  also ones you brought in yourself, in a dungeon or anywhere else. The first
+  goes at once and the rest on your next key presses or clicks, one each.
+  In combat or a boss fight, WTF says they go after combat, and they go on
+  your first key presses after it. It works with automatic deletion off too;
+  the shards you get after it then stay. With none above your limit, it says
+  so. There is no popup.
 
 ## Stones
 

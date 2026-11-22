@@ -4,6 +4,11 @@ Player-facing changes for each Warlock Tools Forever release, newest first. The
 release builder copies the section for the TOC version into the GitHub release
 notes and the CurseForge changelog, and fails if that section is missing.
 
+## 1.12.0
+
+### Features
+- Soul Shards: **right-click the shard counter** to delete every Soul Shard above your limit, also the ones you brought in from the bank, mail, or trade, to free bag space in a dungeon or anywhere else. The first goes at once and the rest on your next key presses or clicks, one each. In combat (or during a boss fight) WTF says they go after combat, and they go on your first key presses after it. It works with automatic deletion off too; shards you get after it stay then. The counter's tooltip shows how many are above your limit. The left button still drags the counter. (Thanks, Wrathetic.)
+
 ## 1.11.0
 
 ### Other changes

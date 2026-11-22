@@ -221,6 +221,28 @@ announcements go with the Control bar (the 2026-10-30 decision).
   is saved and the value is cleared, so turning it on deletes nothing.
   Repaired on load (`WTF.SanitizeInstanceKeep`: a whole number 0-1000, else
   nil).
+- Trim on request (1.12.0; John, 2026-11-21: "Yes, build it"; Wrathetic on
+  CurseForge asked to free bag space in dungeons): a right-click on the shard
+  counter (`OnMouseUp` with "RightButton" on the plain frame; the left button
+  still drags) calls `WTF.TrimShards`. With none above the limit, one line and
+  nothing else; with deletion stopped (`state.blocked`), one line that says so
+  and nothing else. Otherwise the keep count becomes the limit (so `KeepNow()`
+  is the limit; also shards brought in, because the player asked), a saved
+  `shards.instanceKeep` goes down to the limit (leaving the instance raises
+  nothing), and `state.trimming` lets `ProcessDeletions` run with
+  `shards.enabled` off. Out of a restriction, one line ("Deleting N Soul
+  Shards above your limit of L, one per key press or click.") and the first
+  deletion in the click itself (a hardware event; `DeleteOne` and
+  `DeletionSlot` with every check); the rest on the next inputs through the
+  input hooks, one per input, with the settle wait. While `WTF.MoveRestricted()`
+  is true, one line ("Soul Shards above your limit go after combat.") and no
+  pickup; the shards go on the first inputs after it. No event-driven delete,
+  no polling, no popup. While trimming, a rise raises the keep count by its own
+  amount (not to the count), so the trim still ends at the limit and new
+  shards stay (deletion off) or follow the usual rule (deletion on, created
+  ones go); the trim ends when the count reaches the keep count. Whether a
+  right-click on a plain frame allows `DeleteCursorItem` is not confirmed in
+  client (TESTING.md); if not, the first shard goes on the next input.
 
 ### Stones (built)
 

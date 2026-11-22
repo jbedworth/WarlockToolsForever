@@ -2638,6 +2638,153 @@ test("deletion reports can be turned off", function()
     equal(#state.messages, 0)
 end)
 
+-- Trim on request (1.12.0; John: "Yes, build it"): a right-click on the
+-- shard counter deletes every shard above the limit, the first in the click.
+local function rightClickCounter(state, button)
+    local counter = state.wtf.shardCounter
+    state.hardware = true
+    counter.scripts.OnMouseUp(counter, button or "RightButton")
+    state.hardware = false
+end
+local function lineCount(state, text)
+    local found = 0
+    for _, message in ipairs(state.messages) do
+        if message:find(text, 1, true) then found = found + 1 end
+    end
+    return found
+end
+test("trim: a right-click on the counter deletes one shard now and the rest on the next inputs, bank shards too", function()
+    local state = fullSoulBagWith({})
+    for slot = 1, 3 do state.arrive(3, slot) end
+    state.press()
+    equal(state.count(), 17, "brought in from the bank: kept, as always")
+    rightClickCounter(state)
+    equal(state.count(), 16, "the first goes in the click itself")
+    contains(state.messages[#state.messages - 1], "WTF: Deleting 3 Soul Shards above your limit of 14, one per key "
+        .. "press or click.")
+    state.press()
+    state.click()
+    equal(state.count(), 14, "one per input, down to the limit")
+    for _ = 1, 3 do state.press() end
+    equal(state.count(), 14, "never below the limit")
+    state.channel(8288)
+    state.gain(3, 1)
+    state.stopChannel(8288)
+    equal(state.count(), 14, "automatic deletion goes on as before")
+    state.now = state.now + 10
+    state.arrive(3, 2)
+    state.press()
+    equal(state.count(), 15, "a shard moved in after the trim is kept again")
+end)
+test("trim: the left button does not trim; the plain counter still drags with it", function()
+    local state = fullSoulBagWith({})
+    state.arrive(3, 1)
+    rightClickCounter(state, "LeftButton")
+    equal(state.count(), 15, "a left click deletes nothing")
+    local counter = state.wtf.shardCounter
+    equal(type(counter.scripts.OnDragStart), "function", "dragging is still wired")
+    equal(type(counter.scripts.OnDragStop), "function")
+    equal(counter.template, nil, "a plain frame, not a secure one")
+end)
+test("trim: the tooltip says how many go; with none above the limit the click says so and does nothing", function()
+    local state = fullSoulBagWith({})
+    local counter = state.wtf.shardCounter
+    counter.scripts.OnEnter(counter)
+    contains(table.concat(state.tooltip, "|"), "Right-click: delete shards above your limit (0)")
+    state.clear()
+    rightClickCounter(state)
+    equal(state.count(), 14)
+    equal(state.messages[#state.messages], "WTF: No Soul Shards above your limit of 14.")
+    equal(#state.messages, 1, "one line")
+    state.arrive(3, 1)
+    state.arrive(3, 2)
+    counter.scripts.OnEnter(counter)
+    contains(table.concat(state.tooltip, "|"), "Right-click: delete shards above your limit (2)")
+end)
+test("trim: in combat the click is taken, nothing is picked up, and the shards go on the first inputs after", function()
+    local state = fullSoulBagWith({})
+    for slot = 1, 3 do state.arrive(3, slot) end
+    state.combat = true
+    state.clear()
+    rightClickCounter(state)
+    equal(state.count(), 17, "nothing deleted in combat")
+    equal(state.cursor, nil, "nothing picked up")
+    equal(state.restrictedCalls, nil, "no restricted call")
+    equal(#state.messages, 1)
+    equal(state.messages[1], "WTF: Soul Shards above your limit go after combat.")
+    state.press()
+    equal(state.count(), 17, "not on inputs in combat either")
+    state.combat = false
+    state.emit("PLAYER_REGEN_ENABLED")
+    equal(state.count(), 17, "no event-driven deletion")
+    for _ = 1, 3 do state.press() end
+    equal(state.count(), 14, "one per input after combat")
+    -- Another restriction (an encounter) holds it the same way.
+    state.arrive(3, 1)
+    state.encounter = true
+    rightClickCounter(state)
+    equal(state.count(), 15)
+    state.encounter = false
+    state.press()
+    equal(state.count(), 14)
+end)
+test("trim: with automatic deletion off the trim still finishes, and new shards after it stay", function()
+    local state = fullSoulBagWith({db = {shards = {enabled = false}}})
+    for slot = 1, 3 do state.arrive(3, slot) end
+    rightClickCounter(state)
+    equal(state.count(), 16)
+    -- A shard Drain Soul creates while the trim runs stays: the trim ends at the limit plus it.
+    state.channel(8288)
+    state.gain(3, 4)
+    state.stopChannel(8288)
+    equal(state.count(), 16, "the key press goes on with the trim; the new shard raised the keep count")
+    for _ = 1, 5 do state.press() end
+    equal(state.count(), 15, "the trim ends at the limit plus the new shard")
+    state.channel(8288)
+    state.gain(3, 5)
+    state.stopChannel(8288)
+    for _ = 1, 3 do state.press() end
+    equal(state.count(), 16, "after the trim, new shards stay while deletion is off")
+    equal(state.wtf.db.shards.enabled, false, "the switch is not changed")
+end)
+test("trim: inside an instance it trims too, and leaving deletes nothing more", function()
+    local state = fullSoulBagWith({})
+    for slot = 1, 3 do state.arrive(3, slot) end
+    enterInstance(state, true)
+    equal(state.wtf.db.shards.instanceKeep, 17, "brought in for a raid")
+    rightClickCounter(state)
+    equal(state.wtf.db.shards.instanceKeep, 14, "the saved instance keep goes down to the limit")
+    for _ = 1, 3 do state.press() end
+    equal(state.count(), 14)
+    enterInstance(state, false)
+    equal(state.wtf.db.shards.instanceKeep, nil)
+    for _ = 1, 3 do state.press() end
+    equal(state.count(), 14, "leaving neither raises nor deletes anything more")
+end)
+test("trim: after deletion stopped, the click says so and does nothing", function()
+    local state = fullSoulBagWith({})
+    state.arrive(3, 1)
+    state.arrive(3, 2)
+    state.deleteBlocked = true
+    rightClickCounter(state)
+    equal(state.count(), 16, "the client refused: the shard is back")
+    contains(table.concat(state.messages, "|"), "Soul Shard deletion stopped")
+    state.deleteBlocked = false
+    state.clear()
+    rightClickCounter(state)
+    equal(state.count(), 16)
+    equal(#state.messages, 1)
+    contains(state.messages[1], "WTF: Soul Shard deletion stopped: the client blocked it. It stays off until you /reload.")
+end)
+test("trim: debug_shards shows the trim while it runs", function()
+    local state = fullSoulBagWith({noBagUpdateOnDelete = true})
+    state.arrive(3, 1)
+    state.arrive(3, 2)
+    rightClickCounter(state)
+    state.slash("debug_shards")
+    contains(table.concat(state.messages, "|"), "keep=14 source=soul bag enabled=true trimming=true")
+end)
+
 -- Status and diagnostics -------------------------------------------------------
 
 test("/wtf shards reports the count, limit, source, and deletion state", function()
