@@ -519,6 +519,10 @@ local function fixture(options)
             toolkit.ticks[#toolkit.ticks + 1] = {initializer = initializer, range = range}
         end
         if options.toolkitMissing then toolkit[options.toolkitMissing] = nil end
+        -- Toolkit 2.14.0: options.showWelcome sets ShowWelcome's answer.
+        if options.showWelcome ~= nil then
+            function toolkit.ShowWelcome() return options.showWelcome end
+        end
         env.DyresToolkit = toolkit
         state.toolkit = toolkit
     end
@@ -1194,6 +1198,9 @@ local function fixture(options)
         local shared = env.DyresToolkit or {}
         env.DyresToolkit = shared
         state.shared = shared
+        if options.showWelcome ~= nil and shared.ShowWelcome == nil then
+            function shared.ShowWelcome() return options.showWelcome end
+        end
         -- One namespace for every file, as the client gives an AddOn's files.
         local toolkitNS = {toolkit = shared, db = state.toolkitDB, Report = function(message)
             state.messages[#state.messages + 1] = "Dyre: " .. tostring(message)
@@ -1400,6 +1407,33 @@ test("login prints the banner from the TOC and the ready hint", function()
     equal(state.messages[1], "WTF: Warlock Tools Forever " .. state.toc.Version .. " by Dyre")
     contains(state.messages[2], "Type /wtf to open the settings.")
     equal(state.wtf.available, true)
+end)
+test("the banner follows the Toolkit's welcome switch; errors still show", function()
+    local banner = "WTF: Warlock Tools Forever "
+    local function hasBanner(state)
+        for _, message in ipairs(state.messages) do
+            if message:find(banner .. state.toc.Version, 1, true)
+                or message:find("Type /wtf to open the settings.", 1, true) then
+                return true
+            end
+        end
+        return false
+    end
+    equal(hasBanner(fixture({noSharedToolkit = true})), true, "no Toolkit at all")
+    equal(hasBanner(fixture({toolkit = true})), true, "a Toolkit without ShowWelcome")
+    equal(hasBanner(fixture({toolkit = true, showWelcome = true})), true, "ShowWelcome true")
+    local hidden = fixture({toolkit = true, showWelcome = false})
+    equal(hasBanner(hidden), false, "ShowWelcome false: no banner, no ready line")
+    equal(hidden.wtf.available, true)
+    -- Only the shared files' table (no contract): still read.
+    equal(hasBanner(fixture({showWelcome = false})), false)
+    -- Problems still show with it off.
+    local mage = fixture({class = "MAGE", toolkit = true, showWelcome = false})
+    equal(hasBanner(mage), false)
+    contains(mage.last(), "is for Warlocks")
+    local old = fixture({toolkit = "old", showWelcome = false})
+    equal(hasBanner(old), false)
+    contains(table.concat(old.messages, "|"), "Update Dyre's Toolkit from CurseForge")
 end)
 test("other classes get one message and commands are refused", function()
     local state = fixture({class = "MAGE"})

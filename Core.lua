@@ -174,7 +174,19 @@ local function Metadata(field)
     end
 end
 
+-- Dyre's Toolkit 2.14.0's "Welcome messages at login" (John, 2026-11-23: "A:
+-- one Toolkit switch"): false hides the banner and the ready line only; errors
+-- and problems always show. Without the function (an older Toolkit, or none),
+-- the banner shows as before.
+local function WelcomeHidden()
+    local toolkit = rawget(_G, "DyresToolkit")
+    return type(toolkit) == "table" and type(toolkit.ShowWelcome) == "function" and toolkit.ShowWelcome() == false
+end
+
 local function ReportLoaded(available)
+    if WelcomeHidden() then
+        return
+    end
     local banner = Metadata("Title") or DEFAULT_TITLE
     local version, author = Metadata("Version"), Metadata("Author")
     if version then

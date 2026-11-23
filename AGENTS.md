@@ -511,8 +511,10 @@ WarlockToolsForeverDB, with no per-AddOn Profile section.
   (every key press and world click) that item deletion and trade placement
   wait for.
   Commands parses `/wtf`; Core owns saved settings and their defaults, the
-  login banner, class and install checks, slash conflict reporting, and
-  startup, and the moved-feature lines; Layout owns snapping; Shards, Stones,
+  login banner (hidden, with its ready line, when Dyre's Toolkit 2.14.0's
+  `ShowWelcome()` returns false; John, 2026-11-23: "A: one Toolkit switch";
+  errors and problems always show; no WTF switch), class and install checks,
+  slash conflict reporting, and startup, and the moved-feature lines; Layout owns snapping; Shards, Stones,
   and Announce own their modules; Probe owns
   `/wtf debug_restrictions`; Options owns the settings pages.
 - tests/run.lua loads Dyre's Toolkit's shared files and engines (TOOLKIT_FILES,
