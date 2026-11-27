@@ -1278,6 +1278,21 @@ local function fixture(options)
             setfenv(chunk, env)
             chunk("DyresToolkit", toolkitNS)
         end
+        -- options.widgets: the Toolkit's real layout and widgets (Layout.lua,
+        -- Widgets.lua; 2.18.0's button bars) on the fake toolkit, so the Stones
+        -- bar becomes its widget. options.noBarLayout: a toolkit before 2.18.0.
+        if options.widgets then
+            if state.toolkitDB.locked == nil then state.toolkitDB.locked = true end
+            toolkitNS.ShortName = toolkitNS.ShortName or function(name) return name end
+            for _, name in ipairs({"Layout.lua", "Widgets.lua"}) do
+                local chunk, message = loadfile(TOOLKIT_DIR .. name)
+                if not chunk then error(message) end
+                setfenv(chunk, env)
+                chunk("DyresToolkit", toolkitNS)
+            end
+            if options.noBarLayout then shared.BAR_LAYOUT_VERSION = nil end
+            state.toolkitNS = toolkitNS
+        end
         -- options.profiles: the Toolkit's profile engine (Profiles.lua, 2.10.0)
         -- on the same table, with this character "Dyre - Forever".
         if options.profiles then
@@ -4529,6 +4544,170 @@ test("profile: a bad part or a bad line changes nothing", function()
     ok = state.toolkitNS.profile:CopyFrom("Alt - Forever")
     equal(ok, nil, "never in combat")
     equal(state.wtf.db.shards.limit, 22)
+end)
+-- The Stones bar as a Dyre's Toolkit widget (1.14.0; John, 2026-11-27: button
+-- bars horizontal or vertical, a Toolkit feature, Toolkit 2.18.0).
+local ORIENTATION = "DYRE_WARLOCKTOOLSFOREVER_STONES_ORIENTATION"
+local function widgetFixture(extra)
+    local options = {toolkit = true, widgets = true}
+    for key, value in pairs(extra or {}) do options[key] = value end
+    return stonesFixture(options)
+end
+local function lastPoint(frame)
+    local point = frame.points[#frame.points]
+    return point[1], point[2], point[3], point[4], point[5]
+end
+local function samePlace(a, b, context)
+    local ax, ay = a.state.absCenter(a.bar)
+    local bx, by = b.state.absCenter(b.bar)
+    equal(math.abs(ax - bx) < 0.01 and math.abs(ay - by) < 0.01, true, context .. ": the same center")
+    equal(a.bar:GetScale(), b.bar:GetScale(), context .. ": the same scale")
+    local a1, _, a3, a4, a5 = lastPoint(a.bar)
+    local b1, _, b3, b4, b5 = lastPoint(b.bar)
+    equal(a1, b1, context); equal(a3, b3, context); equal(a4, b4, context); equal(a5, b5, context)
+end
+test("widget: an old Stones save loads in the same place and size as before, read in place", function()
+    local saves = {
+        {position = {point = "CENTER", relativePoint = "BOTTOMLEFT", x = 312.5, y = 207}, scale = 80},
+        {position = {point = "TOP", relativePoint = "TOP", x = 1, y = -2}, scale = 120},
+        {scale = 100},
+    }
+    for index, save in ipairs(saves) do
+        local function copy()
+            local stones = {scale = save.scale}
+            if save.position then
+                stones.position = {}
+                for key, value in pairs(save.position) do stones.position[key] = value end
+            end
+            return {stones = stones}
+        end
+        local old = stonesFixture({toolkit = true, db = copy()})
+        local new = widgetFixture({db = copy()})
+        local context = "save " .. index
+        equal(old.wtf.StonesWidget(), nil, context .. ": an older toolkit keeps WTF's own bar")
+        local widget = new.wtf.StonesWidget()
+        equal(widget, new.env.WarlockToolsForeverStones, context .. ": the bar is the widget")
+        equal(widget.dyre.store, new.wtf.db.stones, context .. ": WTF's own saved table")
+        samePlace({state = old, bar = old.env.WarlockToolsForeverStones},
+            {state = new, bar = widget}, context)
+        if save.position then
+            for key, value in pairs(save.position) do
+                equal(new.wtf.db.stones.position[key], value, context .. ": the save is not moved or changed")
+            end
+        else
+            equal(new.wtf.db.stones.position, nil, context .. ": no place saved")
+            local point, relative, relativePoint, x, y = lastPoint(widget)
+            equal(point, "CENTER"); equal(relativePoint, "CENTER"); equal(x, 260); equal(y, -140)
+            equal(relative, new.env.UIParent, context .. ": the default place")
+        end
+        equal(new.wtf.db.stones.scale, save.scale)
+        equal(widget.mouseDisabled, false, context .. ": a bar of buttons takes clicks while locked")
+        equal(widget.dyre.mover.shown, false, context .. ": the toolkit's outline, hidden while locked")
+        equal(widget.mover, nil, context .. ": no second outline of WTF's own")
+    end
+end)
+test("widget: the Layout row lays the Stones buttons out in a row or a column, keeping the center", function()
+    local state = widgetFixture()
+    local bar, soul, health = state.env.WarlockToolsForeverStones, state.env[SOUL], state.env[HEALTH]
+    equal(bar.width, 90); equal(bar.height, 48)
+    local _, _, _, x, y = lastPoint(soul)
+    equal(x, 6); equal(y, -6)
+    _, _, _, x, y = lastPoint(health)
+    equal(x, 48, "a row: the gap is 6, as before"); equal(y, -6)
+    local page = state.categories.Stones
+    local row
+    for _, initializer in ipairs(page.initializers) do
+        if initializer.setting and initializer.setting.variable == ORIENTATION then row = initializer end
+    end
+    equal(row.setting.name, "Layout")
+    equal(row.tooltip, "Lay the Stones buttons out in a row or a column.")
+    equal(row.parentInitializer.setting.variable, "WTF_STONES_SHOWN", "under Show the Stones bar")
+    equal(#row.modifyPredicates, 1)
+    equal(row.modifyPredicates[1](), true)
+    state.wtf.db.stones.enabled = false
+    equal(row.modifyPredicates[1](), false, "greyed while Stones is off")
+    state.wtf.db.stones.enabled = true
+    local cx, cy = state.absCenter(bar)
+    state.settings[ORIENTATION]:SetValue("vertical")
+    equal(state.wtf.db.stones.orientation, "vertical", "saved in WTF's settings")
+    equal(state.settings[ORIENTATION]:GetValue(), "vertical")
+    equal(bar.width, 48); equal(bar.height, 90)
+    _, _, _, x, y = lastPoint(health)
+    equal(x, 6); equal(y, -48, "a column")
+    local nx, ny = state.absCenter(bar)
+    equal(math.abs(nx - cx) < 0.01 and math.abs(ny - cy) < 0.01, true, "the bar keeps its center")
+    state.settings[ORIENTATION]:SetValue("horizontal")
+    equal(state.wtf.db.stones.orientation, nil)
+    equal(bar.width, 90); equal(bar.height, 48)
+end)
+test("widget: a saved column loads as a column; a bad saved layout is a row", function()
+    local column = widgetFixture({db = {stones = {orientation = "vertical"}}})
+    equal(column.env.WarlockToolsForeverStones.height, 90)
+    local _, _, _, x, y = lastPoint(column.env[HEALTH])
+    equal(x, 6); equal(y, -48)
+    local junk = widgetFixture({db = {stones = {orientation = "diagonal"}}})
+    equal(junk.wtf.db.stones.orientation, nil, "repaired on load")
+    equal(junk.env.WarlockToolsForeverStones.width, 90)
+end)
+test("widget: a layout or size change in combat waits for combat to end", function()
+    local state = widgetFixture()
+    local bar, health = state.env.WarlockToolsForeverStones, state.env[HEALTH]
+    equal(bar.protected, true, "its secure buttons make it protected")
+    state.combat = true
+    state.settings[ORIENTATION]:SetValue("vertical")
+    state.settings.WTF_STONES_SCALE:SetValue(70)
+    equal(state.wtf.db.stones.orientation, "vertical", "saved at once")
+    equal(state.wtf.db.stones.scale, 70, "saved at once")
+    local _, _, _, x, y = lastPoint(health)
+    equal(x, 48, "no button moves in combat"); equal(y, -6)
+    equal(bar:GetScale(), 1, "no size change in combat")
+    state.combat = false
+    state.emit("PLAYER_REGEN_ENABLED")
+    _, _, _, x, y = lastPoint(health)
+    equal(x, 6); equal(y, -48, "a column when combat ends")
+    equal(bar:GetScale(), 0.7, "the size when combat ends")
+    equal(bar.height, 90)
+end)
+test("widget: /wtf reset puts the Stones bar back through the toolkit, after combat if needed", function()
+    local state = widgetFixture({db = {stones = {position = {point = "TOP", relativePoint = "TOP", x = 1, y = 2}}}})
+    local bar = state.env.WarlockToolsForeverStones
+    equal(lastPoint(bar), "TOP")
+    state.combat = true
+    state.slash("reset")
+    equal(state.wtf.db.stones.position, nil)
+    equal(lastPoint(bar), "TOP", "not moved in combat")
+    state.combat = false
+    state.emit("PLAYER_REGEN_ENABLED")
+    local point, _, relativePoint, x, y = lastPoint(bar)
+    equal(point, "CENTER"); equal(relativePoint, "CENTER"); equal(x, 260); equal(y, -140)
+end)
+test("widget: a profile copy places the Stones bar and lays it out from the profile", function()
+    local state = widgetFixture({profiles = true})
+    otherProfile(state, {stones = {orientation = "vertical", scale = 80,
+        position = {point = "CENTER", relativePoint = "BOTTOMLEFT", x = 400, y = 300}}})
+    local stones = state.wtf.db.stones
+    local ok = state.toolkitNS.profile:CopyFrom("Alt - Forever")
+    equal(ok, true)
+    equal(state.wtf.db.stones, stones, "the same saved table, which the widget reads")
+    local bar = state.env.WarlockToolsForeverStones
+    equal(state.wtf.db.stones.orientation, "vertical")
+    equal(bar.height, 90, "a column")
+    equal(bar:GetScale(), 0.8)
+    local x, y = state.absCenter(bar)
+    equal(math.abs(x - 400 * 0.8) < 0.01 and math.abs(y - 300 * 0.8) < 0.01, true, "the profile's place")
+end)
+test("widget: without Toolkit 2.18.0's button bars, the Stones bar is WTF's own, with no Layout row", function()
+    for _, options in ipairs({{toolkit = true, widgets = true, noBarLayout = true}, {toolkit = true}, {}}) do
+        local state = stonesFixture(options)
+        local bar = state.env.WarlockToolsForeverStones
+        equal(state.wtf.StonesWidget(), nil)
+        equal(bar.dyre, nil, "not a widget")
+        equal(type(bar.mover), "table", "WTF's own outline")
+        local point = lastPoint(state.env[HEALTH])
+        equal(point, "LEFT", "a row, as before")
+        equal(state.settings[ORIENTATION], nil, "no Layout row")
+        equal(bar.width, 90)
+    end
 end)
 -- Hide empty DoT slots (John, 2026-11-17; Toolkit TRACKER_HIDE_EMPTY).
 -- Sizes (John, 2026-11-12, from a player comment): percent, 50-150, step 5.

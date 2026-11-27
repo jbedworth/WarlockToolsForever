@@ -558,6 +558,16 @@ local function AddStonesPage(parent)
     DefaultTick(scaleInitializer, WTF.FRAME_SCALE_MIN, WTF.FRAME_SCALE_MAX, WTF.DEFAULT_FRAME_SCALE)
     scaleInitializer:SetParentInitializer(shownInitializer, function() return WTF.db.stones.shown end)
     GreyUnless(scaleInitializer, StonesOn)
+    -- Horizontal or vertical (1.14.0, Dyre's Toolkit 2.18.0): the toolkit's
+    -- row, only when the bar is its widget; greyed as the size.
+    local widget = WTF.StonesWidget and WTF.StonesWidget()
+    if widget then
+        local layoutInitializer = WTF.toolkit.AddBarLayoutSetting(page, nil, widget, {modify = StonesOn,
+            tooltip = "Lay the Stones buttons out in a row or a column."})
+        if type(layoutInitializer) == "table" and type(layoutInitializer.SetParentInitializer) == "function" then
+            layoutInitializer:SetParentInitializer(shownInitializer, function() return WTF.db.stones.shown end)
+        end
+    end
     Flag(page, "WTF_STONES_MACROS", "Keep stone macros", "stones", "macros", true,
         "Keep the \"! Healthstone\" and \"! Soulstone\" macros for your action bars: left-click uses your "
             .. "best stone, right-click creates one. Turning this off deletes them.",

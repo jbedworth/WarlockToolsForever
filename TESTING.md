@@ -370,6 +370,28 @@ and printing.
       each keeps its size and place. A Stones bar change in combat applies
       when combat ends, with no blocked-action error; the counter changes at
       once.
+- [ ] WTF 1.14.0, the Stones bar as a Dyre's Toolkit widget (Forever, then
+      Era, with Toolkit 2.18.0):
+      - Saved place after the update: before updating, note where the Stones
+        bar is and its size (try a size other than 100%). After the update
+        and a /reload, it is in the same place at the same size.
+      - Layout (Stones page): Vertical makes a column, Horizontal a row; the
+        bar keeps its center; both buttons click and their tooltips show. The
+        row is greyed while Stones is off. After /reload the layout stays.
+        A change in combat applies when combat ends, with no blocked-action
+        error.
+      - Drag and snap: `/dyre unlock` (or WTF's "Unlock frames to move
+        them") outlines the bar with the Toolkit's outline and a hint that
+        names WTF and Stones, and only one outline; a drag on the bar or a
+        button moves it; it snaps to another Dyre's frame; Ctrl-drag places it
+        exactly; Shift-drag moves a snapped group. Locked, a click still uses
+        the stone.
+      - Reset: `/wtf reset` puts the bar at its default place (after combat
+        if in combat); the "Stones bar size" default mark gives 100%.
+      - With Toolkit 2.17.0 or older: no Layout row; the bar is a row and
+        drags, snaps, and saves its place as in 1.13.0.
+      - Profile: copy a profile whose Stones bar is a column at another place:
+        the bar becomes a column at that place.
 - [ ] WTF 1.7.1, Healthstone trade (Forever, then Era): with a friend targeted,
       left-click the Healthstone button. The stone goes in, or a key press
       puts it in, or the "drag it in yourself" warning shows; never nothing.

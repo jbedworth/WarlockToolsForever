@@ -152,7 +152,9 @@ game unchanged.
 
 A small bar with a Soulstone and a Healthstone button; see
 [Moving frames](#moving-frames) to place it. **Stones bar size** on the
-Stones settings page makes it smaller or bigger (50-150%).
+Stones settings page makes it smaller or bigger (50-150%). **Layout**
+(Horizontal or Vertical) makes it a row or a column; it needs Dyre's
+Toolkit 2.18.0 or later, and without it the bar is a row.
 
 - **Left-click** uses the best stone you carry. A Soulstone goes on your
   friendly target, grouped or not, or on you without one; Soulstones cannot

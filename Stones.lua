@@ -147,6 +147,35 @@ end
 
 local buttons = {}
 
+-- The Stones bar as a Dyre's Toolkit widget (1.14.0; John, 2026-11-27: button
+-- bars horizontal or vertical, a Toolkit feature; the family plan, 2026-10-20:
+-- "all the widget layout, snapping, modifier key move rules, etc., centralized
+-- in Dyre's Tools"). Needs Toolkit 2.18.0 (BAR_LAYOUT_VERSION 1): the toolkit
+-- places, drags, snaps, scales, and outlines the bar, and lays its buttons out
+-- in a row or a column. It reads WTF's saved db.stones.position and
+-- db.stones.scale in place: the same {point, relativePoint, x, y} from
+-- UIParent, scale first, so the bar loads where it was. Without it (no
+-- toolkit, or an older one), the bar is WTF's own frame, as before.
+local function BarToolkit()
+    local toolkit = WTF.toolkit
+    if type(toolkit) == "table" and type(toolkit.CreateWidget) == "function"
+            and type(toolkit.AddBarLayoutSetting) == "function"
+            and (tonumber(toolkit.BAR_LAYOUT_VERSION) or 0) >= 1 then
+        return toolkit
+    end
+    return nil
+end
+
+-- The widget, or nil on the old path (Options adds the Layout row with it).
+function WTF.StonesWidget()
+    return buttons.widget
+end
+
+local function LayoutStoneButtons()
+    buttons.widget:LayoutButtons({buttons.soulstone, buttons.healthstone},
+        {size = BUTTON_SIZE, gap = BUTTON_GAP, padding = PADDING})
+end
+
 -- Character macros "WTF Healthstone" and "WTF Soulstone". On Forever, /click
 -- does not press AddOn buttons (verified in client), and AddOn code cannot use
 -- items, but a macro you own is secure. So WTF writes these macros, as
@@ -640,7 +669,7 @@ local function CreateStoneButton(bar, name, kind, index)
 end
 
 function WTF.RefreshStonesMover()
-    if buttons.bar then
+    if buttons.bar and buttons.bar.mover then
         buttons.bar.mover:SetShown(not WTF.db.locked)
     end
 end
@@ -660,11 +689,20 @@ local function ApplyBarScale()
 end
 
 function WTF.SetStonesScale(percent)
+    if buttons.widget then
+        -- Clamped, saved, and applied from the center; out of combat.
+        buttons.widget:SetSetting("scale", WTF.SanitizeFrameScale(percent))
+        return
+    end
     WTF.db.stones.scale = WTF.SanitizeFrameScale(percent)
     ApplyBarScale()
 end
 
 function WTF.ResetStonesPosition()
+    if buttons.widget then
+        buttons.widget:ResetPosition()
+        return
+    end
     WTF.db.stones.position = nil
     if InCombatLockdown() then
         stones.resetPending = true
@@ -686,7 +724,12 @@ local function ApplyBarProfile()
 end
 
 function WTF.ApplyStonesProfile()
-    if buttons.bar then
+    if buttons.widget then
+        -- The place and scale first (the saved center), then the buttons in
+        -- the profile's orientation, resized from that center.
+        WTF.toolkit.ReapplyWidgets(addonName)
+        LayoutStoneButtons()
+    elseif buttons.bar then
         if InCombatLockdown() then
             stones.profilePending = true
         else
@@ -895,27 +938,42 @@ function WTF.InitializeStones()
     if not macros.available and WTF.db.stones.macros then
         WTF.Report("Stone macros stay off: this client lacks " .. macros.missing .. ".")
     end
+    local width, height = PADDING * 2 + BUTTON_SIZE * 2 + BUTTON_GAP, PADDING * 2 + BUTTON_SIZE
     local bar = CreateFrame("Frame", "WarlockToolsForeverStones", UIParent, "BackdropTemplate")
-    bar:SetSize(PADDING * 2 + BUTTON_SIZE * 2 + BUTTON_GAP, PADDING * 2 + BUTTON_SIZE)
+    bar:SetSize(width, height)
     bar:SetBackdrop({bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
         edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border", edgeSize = 12,
         insets = {left = 3, right = 3, top = 3, bottom = 3}})
     bar:SetBackdropColor(BROWN[1], BROWN[2], BROWN[3], BROWN[4])
     bar:SetBackdropBorderColor(GOLD[1], GOLD[2], GOLD[3])
-    bar:SetMovable(true)
-    bar:SetClampedToScreen(true)
-    bar:EnableMouse(true)
-    bar:RegisterForDrag("LeftButton")
-    bar:SetScript("OnDragStart", StartDrag)
-    bar:SetScript("OnDragStop", StopDrag)
-    bar.mover = WTF.CreateMover(bar)
-    WTF.RegisterMovable(bar, function(position) WTF.db.stones.position = position end)
     buttons.bar = bar
     buttons.soulstone = CreateStoneButton(bar, "WarlockToolsForeverSoulstone", "soulstone", 1)
     buttons.healthstone = CreateStoneButton(bar, "WarlockToolsForeverHealthstone", "healthstone", 2)
-    -- The saved place is in the bar's own scale, so the scale comes first.
-    bar:SetScale(WTF.db.stones.scale / 100)
-    PlaceBar(bar)
+    local toolkit = BarToolkit()
+    if toolkit then
+        -- A visible bar of buttons: it takes clicks also while locked. Its
+        -- buttons start a drag through WTF.BeginDrag, the toolkit's.
+        buttons.widget = toolkit.CreateWidget({
+            addon = addonName, key = "stones", title = "Stones", frame = bar, store = WTF.db.stones,
+            width = width, height = height, point = DEFAULT_POINT, mouse = "always",
+            keys = {position = "position", scale = "scale"},
+            sizes = {scale = {min = WTF.FRAME_SCALE_MIN, max = WTF.FRAME_SCALE_MAX, step = WTF.FRAME_SCALE_STEP,
+                default = WTF.DEFAULT_FRAME_SCALE}},
+        })
+        LayoutStoneButtons()
+    else
+        bar:SetMovable(true)
+        bar:SetClampedToScreen(true)
+        bar:EnableMouse(true)
+        bar:RegisterForDrag("LeftButton")
+        bar:SetScript("OnDragStart", StartDrag)
+        bar:SetScript("OnDragStop", StopDrag)
+        bar.mover = WTF.CreateMover(bar)
+        WTF.RegisterMovable(bar, function(position) WTF.db.stones.position = position end)
+        -- The saved place is in the bar's own scale, so the scale comes first.
+        bar:SetScale(WTF.db.stones.scale / 100)
+        PlaceBar(bar)
+    end
     -- Level requirements need item data, which arrives later on first use.
     if type(C_Item.RequestLoadItemDataByID) == "function" then
         for _, rank in ipairs(HEALTHSTONES) do

@@ -381,6 +381,9 @@ function WTF.SanitizeDB(db)
         shown = stones.shown ~= false,
         position = SanitizePosition(stones.position),
         scale = WTF.SanitizeFrameScale(stones.scale),
+        -- The bar's layout (1.14.0, Dyre's Toolkit 2.18.0's form): "vertical",
+        -- else nil (a row).
+        orientation = stones.orientation == "vertical" and "vertical" or nil,
         macros = stones.macros ~= false,
         remindSoulstone = stones.remindSoulstone ~= false,
         remindHealthstone = stones.remindHealthstone ~= false,

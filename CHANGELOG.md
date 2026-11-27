@@ -4,6 +4,12 @@ Player-facing changes for each Warlock Tools Forever release, newest first. The
 release builder copies the section for the TOC version into the GitHub release
 notes and the CurseForge changelog, and fails if that section is missing.
 
+## 1.14.0
+
+### Features
+- The Stones bar can be a row or a column: **Layout** on the Stones page (Horizontal or Vertical), greyed while Stones is off. It needs Dyre's Toolkit 2.18.0; with an older Toolkit, the bar stays a row.
+- With Dyre's Toolkit 2.18.0, the Stones bar is a Toolkit frame, as the other Dyre's AddOns' frames are: the Toolkit places it, drags and snaps it, outlines it while unlocked, and sizes it. Your saved place and size stay as they are.
+
 ## 1.13.0
 
 ### Features

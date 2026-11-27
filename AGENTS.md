@@ -349,6 +349,7 @@ announcements go with the Control bar (the 2026-10-30 decision).
   buttons make it protected; a change in combat waits for
   `PLAYER_REGEN_ENABLED`; the scale is set before the saved place)
   with two `SecureActionButtonTemplate` buttons, `WarlockToolsForeverSoulstone`
+  (a Dyre's Toolkit widget with Toolkit 2.18.0, see below)
   and `WarlockToolsForeverHealthstone`. Left-click uses the best stone carried (Soulstone:
   `/use [@target,help,nodead][@player] item:ID`; Healthstone: `/use item:ID`).
   Right-click casts the highest known create rank; for a Healthstone with a
@@ -532,6 +533,42 @@ WarlockToolsForeverDB, with no per-AddOn Profile section.
   then place (`ApplyShardsProfile`); the Stones bar's scale, then place, out
   of combat (`ApplyStonesProfile`; in combat, at `PLAYER_REGEN_ENABLED`), and
   its macros; the grid. A copy is refused in combat by the toolkit.
+
+### Stones bar as a Toolkit widget (1.14.0; John, 2026-11-27; lead-approved B)
+
+A CurseForge player on MTF asked for vertical bars; John made horizontal and
+vertical button bars a Toolkit feature (Toolkit 2.18.0, `BAR_LAYOUT_VERSION`
+1), and the family plan (2026-10-20: "all the widget layout, snapping,
+modifier key move rules, etc., centralized in Dyre's Tools") makes every
+Dyre's frame a Toolkit widget.
+
+- With the feature (`CreateWidget`, `AddBarLayoutSetting`, and
+  `BAR_LAYOUT_VERSION` >= 1), `InitializeStones` makes the bar a widget:
+  `CreateWidget{addon, key = "stones", title = "Stones", frame = bar, store =
+  db.stones, width = 90, height = 48, point = DEFAULT_POINT, mouse =
+  "always", keys = {position = "position", scale = "scale"}, sizes = {scale =
+  50-150 step 5, default 100}}`, then `widget:LayoutButtons({soulstone,
+  healthstone}, {size = 36, gap = 6, padding = 6})`. The saved place is the
+  same shape the toolkit reads ({point, relativePoint, x, y} from UIParent,
+  the center from BOTTOMLEFT after a drag), and the toolkit sets the scale
+  before the place, as WTF did: an old save loads in the same place with no
+  conversion and no move of saved data (tested against WTF's own path).
+- `stones.orientation`: "vertical", else nil (the toolkit's form), repaired
+  in SanitizeDB, in the profile part. The Stones page's "Layout" row is
+  `AddBarLayoutSetting(page, nil, widget, {modify = StonesOn})`, under "Show
+  the Stones bar" as the size is; only on the widget path.
+- On the widget path: "Stones bar size" calls `widget:SetSetting("scale")`,
+  `/wtf reset` `widget:ResetPosition()`, the profile refresh
+  `ReapplyWidgets(addonName)` then the layout again (the saved center first,
+  then the size from that center). The toolkit owns the outline, mouse,
+  drag, snap, Ctrl and Shift rules, and the combat wait; `RefreshStonesMover`
+  does nothing (no WTF outline). WTF has no "Reset size" button; the size's
+  default mark gives 100%.
+- Without it (no toolkit, or one before 2.18.0): WTF's own frame exactly as
+  before (Layout.lua or the toolkit's RegisterMovable, `WTF.CreateMover`),
+  no Layout row.
+- Tests load the toolkit's real Layout.lua and Widgets.lua (`options.widgets`;
+  tests/toolkit holds copies for CI).
 
 ### Macro text (author-approved)
 
