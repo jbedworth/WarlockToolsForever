@@ -831,7 +831,11 @@ function DyresToolkit.CreateControlTracker(spec)
     -- At the start of a cast (author-approved), as the other group messages
     -- go; %M is the marker's code for a cast at the mob the macro marks.
     local function AnnounceCast(spell, targetName, atFocus)
-        if not Owns("announce") or not announce.text then
+        -- 2.17.0 (John, 2026-11-27: "if the polymorph bar/macro master switch
+        -- is off, disable all the functionality, not just the bar"): the
+        -- master off stops the announcements too. The claim stays (off means
+        -- off, not "let another AddOn do it").
+        if store.enabled == false or not Owns("announce") or not announce.text then
             return
         end
         local text = announce.text(spell.key)
@@ -965,12 +969,18 @@ function DyresToolkit.CreateControlTracker(spec)
                 control = each
             end
         end
+        local condition = def.condition
+        if def.petFamily then
+            condition = (condition or "") .. DyresToolkit.PetFamilyCondition()
+        end
         return DyresToolkit.FocusCastMacro({spell = def.spell, marker = def.marker and Marker(def.marker) or nil,
-            condition = def.condition, shift = def.shift, untargeted = control and control.untargeted})
+            condition = condition, shift = def.shift, untargeted = control and control.untargeted})
     end
 
     -- Out of combat only, and only while this AddOn owns the class's macros
-    -- (another owner keeps them: nothing is deleted). Off deletes ours.
+    -- (another owner keeps them: nothing is deleted). Off deletes ours, and so
+    -- does the master switch off (2.17.0, John: "disable all the
+    -- functionality"); turned on again, they are written again.
     function tracker:ApplyMacros()
         if not macroDefs or not Owns("macros") then
             return
@@ -980,7 +990,7 @@ function DyresToolkit.CreateControlTracker(spec)
                 return
             end
             for _, def in ipairs(macroDefs) do
-                if store.macros == false then
+                if store.macros == false or store.enabled == false then
                     keeper:Delete(def.name)
                 else
                     local body = tracker:MacroBody(def)

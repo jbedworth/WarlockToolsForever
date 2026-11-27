@@ -205,6 +205,26 @@ local SHIFT_CAST = "[mod:shift,@mouseover,harm,nodead][mod:shift,harm,nodead]"
 -- focus that teaches FocusWorks; on Era it does nothing).
 local FALLBACK = "[@mouseover,harm,nodead%s][harm,nodead%s]"
 
+-- ",pet:<family>" for your pet's family in the client's language (2.11.1: the
+-- English "pet:Succubus/Incubus" matched nothing on other clients; [pet:x]
+-- tests the pet's name or family as the client names it). The macro is
+-- written while the pet knows the spell, and again on UNIT_PET, so it names
+-- the pet out then. "" with no pet, a secret or empty family, or one with a
+-- character a macro condition cannot hold.
+function DyresToolkit.PetFamilyCondition()
+    local family = type(UnitCreatureFamily) == "function" and UnitCreatureFamily("pet")
+    if DyresToolkit.IsSecret(family) or type(family) ~= "string" or family == ""
+            or family:find("[%[%],;/:]") then
+        return ""
+    end
+    return ",pet:" .. family
+end
+
+-- A macro body holds at most 255 bytes (the game cuts a longer one). A spell
+-- name in Cyrillic takes 2 bytes a letter, in Chinese 3, so a long one can
+-- pass it (a localization audit, 2026-11-20: Shackle Undead in Russian, 268).
+DyresToolkit.MACRO_MAX_BYTES = 255
+
 -- A control spell's macro: keep a live enemy focus (Shift clears it), else
 -- make the mob under the mouse, else your target, your focus, mark it, and cast on it. options:
 --   spell      the spell ID or name (an ID with no name here gives nil)
@@ -224,30 +244,45 @@ function DyresToolkit.FocusCastMacro(options)
     if type(spell) ~= "string" or spell == "" then
         return nil
     end
-    local show = "#showtooltip " .. spell
-    if options.untargeted then
-        return show .. "\n/use " .. spell
-    end
     local chain = options.chain
     if chain == nil then
         chain = not DyresToolkit.FocusWorks()
     end
     local condition = options.condition or ""
     local fallback = chain and FALLBACK:format(condition, condition) or ""
-    if options.shift then
-        return show .. "\n" .. SHIFT_FOCUS_LINE .. "\n/use " .. SHIFT_CAST
-            .. "[@focus,harm,nodead" .. condition .. "]" .. fallback .. " " .. spell
+    -- Too long for a macro: each step gives up the least: 1 the tooltip's
+    -- name ("#showtooltip" alone takes the first cast line's spell), 2 the
+    -- marker's fallback to mouseover and target, 3 the marker line, 4 the
+    -- Shift and right-click clear. The cast line always stays whole.
+    local function Build(step)
+        local show = step >= 1 and "#showtooltip" or "#showtooltip " .. spell
+        if options.untargeted then
+            return show .. "\n/use " .. spell
+        end
+        if options.shift then
+            return show .. "\n" .. SHIFT_FOCUS_LINE .. "\n/use " .. SHIFT_CAST
+                .. "[@focus,harm,nodead" .. condition .. "]" .. fallback .. " " .. spell
+        end
+        local lines = {show}
+        if not chain and step < 4 then
+            lines[#lines + 1] = CLEAR_LINE
+        end
+        lines[#lines + 1] = FOCUS_LINE
+        local mark = step < 3 and DyresToolkit.MarkLine("focus", options.marker) or nil
+        if mark and chain and step < 2 then
+            mark = mark:gsub(" !", FALLBACK:format("", "") .. " !", 1)
+        end
+        lines[#lines + 1] = mark
+        lines[#lines + 1] = "/use [@focus,harm,nodead" .. condition .. "]" .. fallback .. " " .. spell
+        return table.concat(lines, "\n")
     end
-    local lines = {show}
-    if not chain then
-        lines[#lines + 1] = CLEAR_LINE
+    local body
+    for step = 0, 4 do
+        body = Build(step)
+        if #body <= DyresToolkit.MACRO_MAX_BYTES then
+            return body
+        end
     end
-    lines[#lines + 1] = FOCUS_LINE
-    local mark = DyresToolkit.MarkLine("focus", options.marker)
-    if mark and chain then
-        mark = mark:gsub(" !", FALLBACK:format("", "") .. " !", 1)
-    end
-    lines[#lines + 1] = mark
-    lines[#lines + 1] = "/use [@focus,harm,nodead" .. condition .. "]" .. fallback .. " " .. spell
-    return table.concat(lines, "\n")
+    -- Nothing fits: the shortest; the game cuts its end.
+    return body
 end

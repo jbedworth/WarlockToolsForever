@@ -447,7 +447,14 @@ end
 
 local function Anchor(overlay, bar, kind, info)
     local fill = bar:GetStatusBarTexture()
-    local reverse = type(bar.GetReverseFill) == "function" and bar:GetReverseFill() == true
+    -- A secret answer (in combat) is never compared: the last one stands.
+    local reverse = overlay.reverse == true
+    if type(bar.GetReverseFill) == "function" then
+        local answer = bar:GetReverseFill()
+        if not IsSecret(answer) then
+            reverse = answer == true
+        end
+    end
     if overlay.anchoredFill ~= fill or overlay.reverse ~= reverse then
         overlay.anchoredFill, overlay.reverse = fill, reverse
         overlay:ClearAllPoints()
@@ -485,8 +492,22 @@ local function Anchor(overlay, bar, kind, info)
     end
 end
 
+-- In combat the game can make a bar's orientation secret (WTF player report,
+-- 2026-11-19: "attempt to compare a secret" at this compare, from
+-- DrawPrediction on the target bar). A secret is never compared: the last
+-- readable answer for that bar is used, else horizontal (health bars are).
+local orientations = setmetatable({}, {__mode = "k"})
 local function Vertical(bar)
-    return type(bar.GetOrientation) == "function" and bar:GetOrientation() == "VERTICAL"
+    if type(bar.GetOrientation) ~= "function" then
+        return false
+    end
+    local orientation = bar:GetOrientation()
+    if IsSecret(orientation) then
+        return orientations[bar] == true
+    end
+    local vertical = orientation == "VERTICAL"
+    orientations[bar] = vertical
+    return vertical
 end
 
 local function Lighter(r, g, b, share)
@@ -508,11 +529,26 @@ end
 -- The bar's own fill art: an atlas (Era's nameplates) or a texture file.
 local function BarArt(bar)
     local fill = bar:GetStatusBarTexture()
-    local atlas = type(fill.GetAtlas) == "function" and fill:GetAtlas() or nil
+    -- Read into locals first and never compared or tested while secret (the
+    -- target frame's bar answers with secrets in combat; WTF player report,
+    -- 2026-11-19). A secret answer gives no art: the caller's own look draws.
+    local atlas
+    if type(fill.GetAtlas) == "function" then
+        atlas = fill:GetAtlas()
+    end
+    if IsSecret(atlas) then
+        return nil
+    end
     if type(atlas) == "string" and atlas ~= "" then
         return "atlas", atlas
     end
-    local texture = type(fill.GetTexture) == "function" and fill:GetTexture() or nil
+    local texture
+    if type(fill.GetTexture) == "function" then
+        texture = fill:GetTexture()
+    end
+    if IsSecret(texture) then
+        return nil
+    end
     if texture ~= nil then
         return "file", texture
     end

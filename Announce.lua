@@ -30,7 +30,55 @@ local EVENT_LOG_SIZE = 8
 local announce = {casts = {}, blocked = {}, sending = nil, names = {}, lastSummon = nil, log = {},
     lastEmote = {}}
 
+-- Whether a name ("First", "First-Last", or "First Last") is you. Your last
+-- name is UnitName's second value on Forever; UnitFullName's second value is
+-- read too (it can be the realm), and a name with a last name is you when it
+-- matches either, or when neither gives one. 1.13.0 (John, 2026-11-27): a
+-- Soulstone on yourself, "Locus Stormshadow", was whispered to you.
+local function Squash(text)
+    return (text:gsub("[%s%-]", ""))
+end
+
+local function IsSelfName(target)
+    if WTF.IsSecret(target) or type(target) ~= "string" or target == "" then
+        return false
+    end
+    local first, rest = target:match("^([^%s%-]+)[%s%-]*(.*)$")
+    if not first then
+        return false
+    end
+    local myName, surnames = nil, {}
+    for _, read in ipairs({UnitName, UnitFullName}) do
+        if type(read) == "function" then
+            local name, second = read("player")
+            if not WTF.IsSecret(name) and type(name) == "string" and name ~= "" then
+                myName = myName or name
+                if not WTF.IsSecret(second) and type(second) == "string" and second ~= "" then
+                    surnames[#surnames + 1] = Squash(second)
+                end
+            end
+        end
+    end
+    if first ~= myName then
+        return false
+    end
+    if rest == "" or #surnames == 0 then
+        return true
+    end
+    local squashed = Squash(rest)
+    for _, surname in ipairs(surnames) do
+        if squashed == surname then
+            return true
+        end
+    end
+    return false
+end
+
 local function SendChat(message, chatType, target)
+    -- Never whisper yourself: the game shows it as sent and received.
+    if chatType == "WHISPER" and IsSelfName(target) then
+        return
+    end
     local send = type(C_ChatInfo) == "table" and C_ChatInfo.SendChatMessage or SendChatMessage
     announce.sending = chatType
     send(message, chatType, nil, target)
@@ -135,13 +183,7 @@ end
 -- Whether a cast target name is you. In client a Soulstone on yourself was
 -- whispered to you: the cast named you "First-Last", your full name.
 local function IsSelf(target)
-    local name, surname = target:match("^([^%-]+)%-?(.*)$")
-    local myName, mySurname = UnitFullName("player")
-    if WTF.IsSecret(myName) or name ~= myName then
-        return false
-    end
-    return surname == "" or WTF.IsSecret(mySurname) or type(mySurname) ~= "string" or mySurname == ""
-        or surname:gsub("%s", "") == mySurname:gsub("%s", "")
+    return IsSelfName(target)
 end
 
 local function IsUsableTarget(target)

@@ -4,6 +4,22 @@ Player-facing changes for each Warlock Tools Forever release, newest first. The
 release builder copies the section for the TOC version into the GitHub release
 notes and the CurseForge changelog, and fails if that section is missing.
 
+## 1.13.0
+
+### Features
+- The DoT Tracker, DoTs, Control, Shield display, Chimes, Procs, and Reminders settings pages now show the settings of the AddOn that has the feature (Dyre's Debuff Tracker, Dyre's Shields Up, or Dyre's Buff Reminders), not only a button. A change there is the same change as on that AddOn's own page. The Procs page shows every Warlock proc and Dyre's Debuff Tracker's Demonic Brand; the Reminders page shows every Warlock reminder (Demon Armor, a missing demon, and the Voidwalker's taunt). This needs Dyre's Toolkit 2.17.0 and an update of that AddOn; until then, each page keeps its button that opens that AddOn's settings.
+- One name for each of these everywhere: each page takes the name the AddOn gives it, so "Shield" is now Shield display, "Cooldown Chimes" is now Chimes, "Alerts" is now Procs, and "Demon Armor" is now Reminders.
+- While one of those AddOns is not installed or not enabled, its pages say in a box what it would add there, and where to get it (Dyre's Toolkit 2.17.0).
+- WTF's main settings page also has the on and off switch of each of those features, after WTF's own switches. Their pages keep the other settings, greyed while the feature is off. For procs it is Dyre's Buff Reminders' switch for all proc arcs and sounds, so it turns off every Warlock proc cue; Demonic Brand has its own switch after it.
+- Clearer words in tooltips and chat: each setting's tooltip is now one short sentence that says what it does, the buttons to another AddOn's settings say what they open, the login lines say what to install, and the Stones buttons' tooltips show only what each click does.
+- Settings for a feature that is off are greyed: on the Stones page while Stones is off (the stone macros row stays, as the macros work without the bar), and on the Announce page while Announce is off.
+
+### Fixes
+- A Soulstone on yourself no longer whispers you. WTF never whispers you: not for a Soulstone, a summon, or a Healthstone trade, whatever form of your name the game gives.
+
+### Other changes
+- Key Bindings: WTF's old "Smart curse (moved to Dyre's Debuff Tracker)" row is now in the "Dyre's AddOns" section with the other Dyre's AddOns, not in the general AddOns section. A key you bound stays bound.
+
 ## 1.12.3
 
 ### Other changes

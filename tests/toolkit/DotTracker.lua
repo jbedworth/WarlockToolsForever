@@ -64,6 +64,36 @@ DyresToolkit.TRACKER_GROW = {"down", "up"}
 -- unseen click area (family rule). A change needs Rebuild. Owners check this
 -- flag before they offer the setting.
 DyresToolkit.TRACKER_HIDE_EMPTY = true
+-- Panel switches (unreleased; a player, 2026-11-19: "Is there a way to
+-- disable the target dot window or hide it? I like having the focus/ other
+-- targets but I already have this info on the target window."; John: "a 3
+-- panels toggle show/off, default to show"): store.show[key] false hides that
+-- panel (target, focus, list), also while unlocked; anything else shows it.
+-- The list still leaves out your target and focus. A change needs Refresh
+-- (the pinned sections change out of combat). Owners check this flag before
+-- they offer the settings.
+DyresToolkit.TRACKER_PANELS = {"target", "focus", "list"}
+-- Panel frame switch (unreleased; a DDT player, 2026-11-20, GitHub issue 1:
+-- "When a target is selected, a frame appears with a purple border. I'd like
+-- to hide all of that and only show the debuff bars."; John: "Build parts 1
+-- and 2"): store.frame false draws each row with no background and no
+-- border (the name, the bars, and the health stay); anything else draws
+-- them. The pinned outline has its own setting (TRACKER_OUTLINE). A change
+-- needs ApplyPanelColors (at once, also in combat). Owners check this flag
+-- before they offer the setting.
+DyresToolkit.TRACKER_FRAME = true
+-- Per-panel settings (unreleased; John, 2026-11-21: "The panel settings need
+-- to be organized by the panel they control, and each needs it's own config
+-- (size, border width, etc.)"; "The show mob health checkbox, and text
+-- config ... are missing from the Target/Focus/Others boxes"):
+-- store.panels[key] (key "target", "focus", or "list") may hold its own
+-- value for each name below; a missing one (nil) uses the tracker-wide
+-- store key. sizes is {compact = {...}, bars = {...}}, each a full sizes
+-- table for that look (a missing field uses the tracker-wide one). As the
+-- tracker-wide keys: health, healthText, outlineWidth, and sizes need
+-- Rebuild; frame needs ApplyPanelColors. Owners check this flag before they
+-- offer per-panel settings.
+DyresToolkit.TRACKER_PANEL_OPTIONS = {"health", "healthText", "frame", "outlineWidth", "sizes"}
 local SLOT_GAP = 6
 local PADDING = 6
 -- Seconds a list row stays without a unit to bind, out of combat; in combat
@@ -185,7 +215,12 @@ end
 --               0 none; a change needs Rebuild), grow {target, focus,
 --               list} ("down" or "up", TRACKER_GROW; a change needs
 --               Rebuild), hideEmpty (true: no placeholders and no pinned
---               clicks, TRACKER_HIDE_EMPTY; a change needs Rebuild),
+--               clicks, TRACKER_HIDE_EMPTY; a change needs Rebuild), frame
+--               (false: no row background or border, TRACKER_FRAME; a
+--               change needs ApplyPanelColors), panels {target, focus,
+--               list} (each panel's own health, healthText, frame,
+--               outlineWidth, and sizes, TRACKER_PANEL_OPTIONS; nil uses
+--               the tracker-wide key),
 --               position, sections
 --               {target, focus, list}, and each slot's lastUsed key;
 --               curseMode ("last", the default, or "smart": the slot with
@@ -360,6 +395,12 @@ function DyresToolkit.CreateDotTracker(spec)
         return store.hideEmpty == true
     end
 
+    -- TRACKER_PANELS: only false hides a panel. Read live.
+    local function PanelShown(key)
+        local show = store.show
+        return not (type(show) == "table" and show[key] == false)
+    end
+
     -- The slots a row shows, as SLOTS indexes in the saved order: one for
     -- each spell family you know, or all of them while you know none.
     local function ShownSlots()
@@ -373,12 +414,48 @@ function DyresToolkit.CreateDotTracker(spec)
         return #shown > 0 and shown or all
     end
 
-    local function Sizes()
-        return store.sizes[IsCompact() and "compact" or "bars"]
+    -- TRACKER_PANEL_OPTIONS: the panel's own value, else the tracker-wide
+    -- one. Read live; key nil is the list.
+    local function PanelOption(key, name)
+        local panels = store.panels
+        local own = type(panels) == "table" and panels[key or "list"]
+        if type(own) == "table" and own[name] ~= nil then
+            return own[name]
+        end
+        return store[name]
     end
 
-    local function OutlineWidth()
-        local spec, width = DyresToolkit.TRACKER_OUTLINE, tonumber(store.outlineWidth)
+    -- A panel's sizes for the chosen look: its own over the tracker-wide ones.
+    local function Sizes(key)
+        local theme = IsCompact() and "compact" or "bars"
+        local base = store.sizes[theme]
+        local panels = store.panels
+        local own = type(panels) == "table" and type(panels[key or "list"]) == "table"
+            and panels[key or "list"].sizes
+        own = type(own) == "table" and own[theme]
+        if type(own) ~= "table" then
+            return base
+        end
+        local merged = {}
+        for name, value in pairs(base) do
+            merged[name] = value
+        end
+        for name, value in pairs(own) do
+            merged[name] = value
+        end
+        return merged
+    end
+
+    local function HealthOn(key)
+        return PanelOption(key, "health") and true or false
+    end
+
+    local function HealthMode(key)
+        return PanelOption(key, "healthText")
+    end
+
+    local function OutlineWidth(key)
+        local spec, width = DyresToolkit.TRACKER_OUTLINE, tonumber(PanelOption(key, "outlineWidth"))
         if not width or width ~= width then
             return spec.default
         end
@@ -392,12 +469,12 @@ function DyresToolkit.CreateDotTracker(spec)
     end
 
     -- The stacked pinned rows' step keeps the outlines clear of each other.
-    local function PinnedSpacing()
-        return OutlineWidth() + OUTLINE_GAP + 2
+    local function PinnedSpacing(key)
+        return OutlineWidth(key) + OUTLINE_GAP + 2
     end
 
-    local function TextScale()
-        return Sizes().textScale / 100
+    local function TextScale(key)
+        return Sizes(key).textScale / 100
     end
 
     local function OneLine(text)
@@ -410,78 +487,80 @@ function DyresToolkit.CreateDotTracker(spec)
         return text
     end
 
-    local function ScaleFont(text)
+    local function ScaleFont(text, key)
         local font, size, flags = text:GetFont()
         if font and type(size) == "number" then
-            text:SetFont(font, size * TextScale(), flags)
+            text:SetFont(font, size * TextScale(key), flags)
         end
         return text
     end
 
-    local function HealthTextWidth()
-        if not store.health or store.healthText == "none" or not HEALTH_TEXT_WIDTH[store.healthText] then
+    local function HealthTextWidth(key)
+        local mode = HealthMode(key)
+        if not HealthOn(key) or mode == "none" or not HEALTH_TEXT_WIDTH[mode] then
             return 0
         end
-        return math.floor(HEALTH_TEXT_WIDTH[store.healthText] * TextScale() + 0.5)
+        return math.floor(HEALTH_TEXT_WIDTH[mode] * TextScale(key) + 0.5)
     end
 
-    local function NameAround()
-        local position = Sizes().namePosition
+    local function NameAround(key)
+        local position = Sizes(key).namePosition
         return position == "above" or position == "below"
     end
 
-    local function NameLine()
-        return math.floor(NAME_LINE * TextScale() + 0.5)
+    local function NameLine(key)
+        return math.floor(NAME_LINE * TextScale(key) + 0.5)
     end
 
-    local function SlotSize()
-        return IsCompact() and Sizes().iconSize or Sizes().lineHeight
+    local function SlotSize(key)
+        return IsCompact() and Sizes(key).iconSize or Sizes(key).lineHeight
     end
 
-    local function BarIcon()
-        return Sizes().lineHeight - 2
+    local function BarIcon(key)
+        return Sizes(key).lineHeight - 2
     end
 
-    local function BarHeader()
-        return math.floor(BAR_HEADER * TextScale() + 0.5)
+    local function BarHeader(key)
+        return math.floor(BAR_HEADER * TextScale(key) + 0.5)
     end
 
-    local function SlotsWidth()
-        return #tracker.shown * (SlotSize() + SLOT_GAP)
+    local function SlotsWidth(key)
+        return #tracker.shown * (SlotSize(key) + SLOT_GAP)
     end
 
-    local function RowWidth()
+    local function RowWidth(key)
         if not IsCompact() then
-            return Sizes().barWidth
+            return Sizes(key).barWidth
         end
-        if NameAround() then
-            return PADDING * 2 + math.max(Sizes().nameWidth, SlotsWidth())
+        if NameAround(key) then
+            return PADDING * 2 + math.max(Sizes(key).nameWidth, SlotsWidth(key))
         end
-        return PADDING * 2 + Sizes().nameWidth + SlotsWidth()
+        return PADDING * 2 + Sizes(key).nameWidth + SlotsWidth(key)
     end
 
-    local function RowHeight()
+    local function RowHeight(key)
         if IsCompact() then
-            return SlotSize() + ROW_PADDING * 2 + (NameAround() and NameLine() or 0)
+            return SlotSize(key) + ROW_PADDING * 2 + (NameAround(key) and NameLine(key) or 0)
         end
-        return BarHeader() + #tracker.shown * (SlotSize() + BAR_LINE_GAP) + PADDING
+        return BarHeader(key) + #tracker.shown * (SlotSize(key) + BAR_LINE_GAP) + PADDING
     end
 
-    local function RowStep()
-        return RowHeight() + 2
+    local function RowStep(key)
+        return RowHeight(key) + 2
     end
 
     local function PlaceSlot(region, row, position)
         region:ClearAllPoints()
-        local size, where = SlotSize(), Sizes().namePosition
+        local key = row.panelKey
+        local size, where = SlotSize(key), Sizes(key).namePosition
         if IsCompact() then
             local x = PADDING + (position - 1) * (size + SLOT_GAP)
             if where == "left" then
-                region:SetPoint("LEFT", row, "LEFT", x + Sizes().nameWidth, 0)
+                region:SetPoint("LEFT", row, "LEFT", x + Sizes(key).nameWidth, 0)
             elseif where == "right" then
                 region:SetPoint("LEFT", row, "LEFT", x, 0)
             else
-                region:SetPoint("TOPLEFT", row, "TOPLEFT", x, -(ROW_PADDING + (where == "above" and NameLine() or 0)))
+                region:SetPoint("TOPLEFT", row, "TOPLEFT", x, -(ROW_PADDING + (where == "above" and NameLine(key) or 0)))
             end
             region:SetSize(size, size)
         else
@@ -490,29 +569,30 @@ function DyresToolkit.CreateDotTracker(spec)
             if GrowsUp(row.panelKey) then
                 position = #tracker.shown - position + 1
             end
-            local top = where == "below" and ROW_PADDING or BarHeader()
+            local top = where == "below" and ROW_PADDING or BarHeader(key)
             region:SetPoint("TOPLEFT", row, "TOPLEFT", PADDING, -(top + (position - 1) * (size + BAR_LINE_GAP)))
-            region:SetSize(RowWidth() - PADDING * 2, size)
+            region:SetSize(RowWidth(key) - PADDING * 2, size)
         end
     end
 
     local function PlaceName(row)
-        local name, where = row.name, Sizes().namePosition
+        local key = row.panelKey
+        local name, where = row.name, Sizes(key).namePosition
         OneLine(name)
-        local reserve = HealthTextWidth()
+        local reserve = HealthTextWidth(key)
         name:ClearAllPoints()
         if IsCompact() and where == "left" then
             name:SetPoint("LEFT", PADDING, 0)
-            name:SetWidth(Sizes().nameWidth - 4 - reserve)
+            name:SetWidth(Sizes(key).nameWidth - 4 - reserve)
         elseif IsCompact() and where == "right" then
-            name:SetPoint("LEFT", PADDING + SlotsWidth(), 0)
-            name:SetWidth(Sizes().nameWidth - 4 - reserve)
+            name:SetPoint("LEFT", PADDING + SlotsWidth(key), 0)
+            name:SetWidth(Sizes(key).nameWidth - 4 - reserve)
         elseif where == "below" then
             name:SetPoint("BOTTOMLEFT", PADDING, ROW_PADDING)
-            name:SetWidth(RowWidth() - PADDING * 2 - reserve)
+            name:SetWidth(RowWidth(key) - PADDING * 2 - reserve)
         else
             name:SetPoint("TOPLEFT", PADDING, -ROW_PADDING)
-            name:SetWidth(RowWidth() - PADDING * 2 - reserve)
+            name:SetWidth(RowWidth(key) - PADDING * 2 - reserve)
         end
     end
 
@@ -525,18 +605,19 @@ function DyresToolkit.CreateDotTracker(spec)
     -- (EllesmereUI's path on Forever). Number and percent are separate texts,
     -- so no secret string is formatted.
     local function PlaceHealth(row)
-        local bar, where = row.health, Sizes().namePosition
+        local key = row.panelKey
+        local bar, where = row.health, Sizes(key).namePosition
         bar:ClearAllPoints()
         if IsCompact() and where == "left" then
             bar:SetPoint("TOPLEFT", row, "TOPLEFT", HEALTH_INSET, -HEALTH_INSET)
-            bar:SetPoint("BOTTOMRIGHT", row, "BOTTOMLEFT", PADDING + Sizes().nameWidth - HEALTH_ICON_GAP, HEALTH_INSET)
+            bar:SetPoint("BOTTOMRIGHT", row, "BOTTOMLEFT", PADDING + Sizes(key).nameWidth - HEALTH_ICON_GAP, HEALTH_INSET)
             return
         elseif IsCompact() and where == "right" then
-            bar:SetPoint("TOPLEFT", row, "TOPLEFT", PADDING + SlotsWidth() - SLOT_GAP + HEALTH_ICON_GAP, -HEALTH_INSET)
+            bar:SetPoint("TOPLEFT", row, "TOPLEFT", PADDING + SlotsWidth(key) - SLOT_GAP + HEALTH_ICON_GAP, -HEALTH_INSET)
             bar:SetPoint("BOTTOMRIGHT", row, "BOTTOMRIGHT", -HEALTH_INSET, HEALTH_INSET)
             return
         end
-        local height = IsCompact() and NameLine() + 2 or BarHeader() - 2
+        local height = IsCompact() and NameLine(key) + 2 or BarHeader(key) - 2
         local edge, y = where == "below" and "BOTTOM" or "TOP", where == "below" and 2 or -2
         bar:SetPoint(edge .. "LEFT", row, edge .. "LEFT", PADDING, y)
         bar:SetPoint(edge .. "RIGHT", row, edge .. "RIGHT", -PADDING, y)
@@ -544,7 +625,7 @@ function DyresToolkit.CreateDotTracker(spec)
     end
 
     local function CreateHealth(row)
-        if not store.health then
+        if not HealthOn(row.panelKey) then
             return row
         end
         local level = row:GetFrameLevel()
@@ -563,18 +644,20 @@ function DyresToolkit.CreateDotTracker(spec)
     end
 
     local function CreateHealthText(row, regions)
-        local mode = store.healthText
+        local mode = HealthMode(row.panelKey)
         if not row.health or mode == "none" then
             return
         end
         local after = row.name
         if mode == "percent" or mode == "both" then
-            row.healthPercent = OneLine(ScaleFont(regions:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")))
+            row.healthPercent = OneLine(ScaleFont(regions:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall"),
+                row.panelKey))
             row.healthPercent:SetPoint("LEFT", after, "RIGHT", 2, 0)
             after = row.healthPercent
         end
         if mode == "number" or mode == "both" then
-            row.healthNumber = OneLine(ScaleFont(regions:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")))
+            row.healthNumber = OneLine(ScaleFont(regions:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall"),
+                row.panelKey))
             row.healthNumber:SetPoint("LEFT", after, "RIGHT", 2, 0)
         end
     end
@@ -707,17 +790,17 @@ function DyresToolkit.CreateDotTracker(spec)
             PlaceSlot(button, row, position)
             button:SetMouseClickEnabled(false)
             local icon = button:CreateTexture(nil, "ARTWORK")
-            icon:SetSize(BarIcon(), BarIcon())
+            icon:SetSize(BarIcon(row.panelKey), BarIcon(row.panelKey))
             icon:SetPoint("LEFT", 1, 0)
             icon:SetTexCoord(0.07, 0.93, 0.07, 0.93)
             local bar = CreateFrame("StatusBar", nil, button)
-            bar:SetPoint("TOPLEFT", button, "TOPLEFT", BarIcon() + 4, 0)
+            bar:SetPoint("TOPLEFT", button, "TOPLEFT", BarIcon(row.panelKey) + 4, 0)
             bar:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", 0, 0)
             bar:SetStatusBarTexture("Interface\\Buttons\\WHITE8X8")
-            local spellName = ScaleFont(bar:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall"))
+            local spellName = ScaleFont(bar:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall"), row.panelKey)
             spellName:SetPoint("LEFT", 4, 0)
             spellName:SetJustifyH("LEFT")
-            local timeLeft = ScaleFont(bar:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall"))
+            local timeLeft = ScaleFont(bar:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall"), row.panelKey)
             timeLeft:SetPoint("RIGHT", -4, 0)
             PrepareBar(row, index, bar, spellName, timeLeft)
             button:SetIcon(icon)
@@ -750,7 +833,7 @@ function DyresToolkit.CreateDotTracker(spec)
             local textHolder = CreateFrame("Frame", nil, button)
             textHolder:SetAllPoints(button)
             textHolder:SetFrameLevel(cooldown:GetFrameLevel() + 1)
-            local text = ScaleFont(textHolder:CreateFontString(nil, "OVERLAY", "NumberFontNormal"))
+            local text = ScaleFont(textHolder:CreateFontString(nil, "OVERLAY", "NumberFontNormal"), row.panelKey)
             text:SetPoint("CENTER", 0, 0)
             button:SetIcon(icon)
             button:SetDurationCooldown(cooldown)
@@ -760,11 +843,20 @@ function DyresToolkit.CreateDotTracker(spec)
         end
     end
 
-    -- A row in its panel's color: the border, the pinned outline, the health
-    -- fill. All are the tracker's own, so they change at once, also in combat.
+    -- TRACKER_FRAME: only false hides the rows' background and border. Read
+    -- live, the panel's own value first (TRACKER_PANEL_OPTIONS).
+    local function FrameShown(key)
+        return PanelOption(key, "frame") ~= false
+    end
+
+    -- A row in its panel's color: the background and border (clear with the
+    -- frame off), the pinned outline, the health fill. All are the tracker's
+    -- own, so they change at once, also in combat.
     local function ColorPanel(row)
         local r, g, b = PanelColor(row.panelKey or "list")
-        row:SetBackdropBorderColor(r, g, b)
+        local frame = FrameShown(row.panelKey)
+        row:SetBackdropColor(BROWN[1], BROWN[2], BROWN[3], frame and BROWN[4] or 0)
+        row:SetBackdropBorderColor(r, g, b, frame and 1 or 0)
         if row.outline then
             row.outline:SetBackdropBorderColor(r, g, b)
         end
@@ -776,14 +868,13 @@ function DyresToolkit.CreateDotTracker(spec)
     local function CreateRow(parent, unit)
         local row = CreateFrame("Frame", nil, parent, "BackdropTemplate")
         row.panelKey = unit or "list"
-        row:SetSize(RowWidth(), RowHeight())
+        row:SetSize(RowWidth(row.panelKey), RowHeight(row.panelKey))
         row:SetBackdrop({bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
             edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border", edgeSize = 10,
             insets = {left = 2, right = 2, top = 2, bottom = 2}})
-        row:SetBackdropColor(BROWN[1], BROWN[2], BROWN[3], BROWN[4])
         local regions = CreateHealth(row)
         ColorPanel(row)
-        row.name = ScaleFont(regions:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall"))
+        row.name = ScaleFont(regions:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall"), row.panelKey)
         PlaceName(row)
         row.name:SetJustifyH("LEFT")
         CreateHealthText(row, regions)
@@ -803,10 +894,10 @@ function DyresToolkit.CreateDotTracker(spec)
                 local line = regions:CreateTexture(nil, "BACKGROUND")
                 PlaceSlot(line, row, position)
                 line:SetColorTexture(BAR_BACKGROUND[1], BAR_BACKGROUND[2], BAR_BACKGROUND[3], BAR_BACKGROUND[4])
-                placeholder:SetSize(BarIcon(), BarIcon())
+                placeholder:SetSize(BarIcon(row.panelKey), BarIcon(row.panelKey))
                 placeholder:SetPoint("LEFT", line, "LEFT", 1, 0)
-                local label = ScaleFont(regions:CreateFontString(nil, "BORDER", "GameFontDisableSmall"))
-                label:SetPoint("LEFT", line, "LEFT", BarIcon() + 8, 0)
+                local label = ScaleFont(regions:CreateFontString(nil, "BORDER", "GameFontDisableSmall"), row.panelKey)
+                label:SetPoint("LEFT", line, "LEFT", BarIcon(row.panelKey) + 8, 0)
                 label:SetText(slot.label)
             end
         end
@@ -963,9 +1054,16 @@ function DyresToolkit.CreateDotTracker(spec)
         GameTooltip:Show()
     end
 
+    -- Each pinned panel's own height and outline (TRACKER_PANEL_OPTIONS).
     local function StackOffset(key)
-        local step = RowStep() + PinnedSpacing()
-        return key == "target" and 0 or key == "focus" and step or step * 2
+        if key == "target" then
+            return 0
+        end
+        local focus = RowStep("target") + PinnedSpacing("target")
+        if key == "focus" then
+            return focus
+        end
+        return focus + RowStep("focus") + PinnedSpacing("focus")
     end
 
     -- Locked, rows let clicks through to the world. While Ctrl is held (out
@@ -1036,11 +1134,11 @@ function DyresToolkit.CreateDotTracker(spec)
             button.unit = pinned.unit
             if SLOTS[slotIndex] == SMART_SLOT then
                 -- The smart marker: on the icon's lower right corner.
-                local mark = ScaleFont(button:CreateFontString(nil, "OVERLAY", "NumberFontNormalSmall"))
+                local mark = ScaleFont(button:CreateFontString(nil, "OVERLAY", "NumberFontNormalSmall"), key)
                 if IsCompact() then
                     mark:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", 1, -1)
                 else
-                    mark:SetPoint("BOTTOMRIGHT", button, "BOTTOMLEFT", BarIcon() + 2, -1)
+                    mark:SetPoint("BOTTOMRIGHT", button, "BOTTOMLEFT", BarIcon(key) + 2, -1)
                 end
                 mark:SetTextColor(1, 0.82, 0)
                 button.mark = mark
@@ -1051,7 +1149,7 @@ function DyresToolkit.CreateDotTracker(spec)
         end
         row:EnableMouse(true)
         DragScripts(row, key)
-        local width = OutlineWidth()
+        local width = OutlineWidth(key)
         if width > 0 then
             local outline = CreateFrame("Frame", nil, row, "BackdropTemplate")
             local inset = width + OUTLINE_GAP
@@ -1095,7 +1193,7 @@ function DyresToolkit.CreateDotTracker(spec)
                 end
             end
             for _, key in ipairs({"target", "focus"}) do
-                tracker.sections[key]:SetShown(Enabled())
+                tracker.sections[key]:SetShown(Enabled() and PanelShown(key))
             end
         end)
     end
@@ -1228,7 +1326,7 @@ function DyresToolkit.CreateDotTracker(spec)
             if tracker.listTop ~= "up" then
                 tracker.listTop = "up"
                 tracker.list:ClearAllPoints()
-                tracker.list:SetPoint("BOTTOMLEFT", tracker.stack, "TOPLEFT", 0, PinnedSpacing())
+                tracker.list:SetPoint("BOTTOMLEFT", tracker.stack, "TOPLEFT", 0, PinnedSpacing("target"))
             end
             return
         end
@@ -1237,8 +1335,8 @@ function DyresToolkit.CreateDotTracker(spec)
             listTop = StackOffset("list")
         else
             for _, key in ipairs({"target", "focus"}) do
-                if not sections[key] and IsLiveHostile(PINNED[key].unit) then
-                    listTop = math.max(listTop, StackOffset(key) + RowStep() + PinnedSpacing())
+                if not sections[key] and PanelShown(key) and IsLiveHostile(PINNED[key].unit) then
+                    listTop = math.max(listTop, StackOffset(key) + RowStep(key) + PinnedSpacing(key))
                 end
             end
         end
@@ -1284,9 +1382,9 @@ function DyresToolkit.CreateDotTracker(spec)
             used[row] = true
             row:ClearAllPoints()
             if up then
-                row:SetPoint("BOTTOMLEFT", list, "BOTTOMLEFT", 0, (index - 1) * RowStep())
+                row:SetPoint("BOTTOMLEFT", list, "BOTTOMLEFT", 0, (index - 1) * RowStep("list"))
             else
-                row:SetPoint("TOPLEFT", list, "TOPLEFT", 0, -(index - 1) * RowStep())
+                row:SetPoint("TOPLEFT", list, "TOPLEFT", 0, -(index - 1) * RowStep("list"))
             end
             row.name:SetText(row.mobName)
             row:Show()
@@ -1300,7 +1398,7 @@ function DyresToolkit.CreateDotTracker(spec)
                 end
             end
         end
-        list:SetShown(Enabled() and #listed > 0)
+        list:SetShown(Enabled() and PanelShown("list") and #listed > 0)
         FollowPinnedRows()
     end
 
@@ -1668,8 +1766,8 @@ function DyresToolkit.CreateDotTracker(spec)
                 row.container:SetUnit("none")
                 row:Hide()
             end
-            for _, frame in pairs(tracker.sections) do
-                frame:SetSize(RowWidth(), RowHeight())
+            for key, frame in pairs(tracker.sections) do
+                frame:SetSize(RowWidth(key), RowHeight(key))
             end
             Place()
             tracker.pinned = {target = CreatePinnedRow("target"), focus = CreatePinnedRow("focus")}
@@ -1721,7 +1819,7 @@ function DyresToolkit.CreateDotTracker(spec)
     function Place()
         local stack, position, point = tracker.stack, store.position, spec.point
         local sections = type(store.sections) == "table" and store.sections or {}
-        stack:SetSize(RowWidth(), (RowStep() + PinnedSpacing()) * 2)
+        stack:SetSize(RowWidth("target"), StackOffset("list"))
         stack:ClearAllPoints()
         if position then
             stack:SetPoint(position.point, UIParent, position.relativePoint, position.x, position.y)
@@ -1736,7 +1834,7 @@ function DyresToolkit.CreateDotTracker(spec)
             if saved then
                 frame:SetPoint(saved.point, UIParent, saved.relativePoint, saved.x, saved.y)
             elseif key == "list" and GrowsUp("list") then
-                frame:SetPoint("BOTTOMLEFT", stack, "TOPLEFT", 0, PinnedSpacing())
+                frame:SetPoint("BOTTOMLEFT", stack, "TOPLEFT", 0, PinnedSpacing("target"))
             else
                 frame:SetPoint("TOPLEFT", stack, "TOPLEFT", 0, -StackOffset(key))
             end
@@ -1858,7 +1956,8 @@ function DyresToolkit.CreateDotTracker(spec)
         BuildRows()
     end
 
-    -- New panel colors: the tracker's own regions, at once, also in combat.
+    -- New panel colors, or the frame switch (TRACKER_FRAME): the tracker's own
+    -- regions, at once, also in combat.
     function tracker:ApplyPanelColors()
         for _, row in ipairs(self.rows) do
             ColorPanel(row)

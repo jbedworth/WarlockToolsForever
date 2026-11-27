@@ -154,11 +154,9 @@ function WTF.ReportMovedFeatures()
     for _, other in ipairs(WTF.MOVED_TO) do
         local state = AddOnState(other.addon)
         if state == "disabled" then
-            WTF.Report("Enable " .. other.title .. " in the AddOn list for " .. other.what
-                .. ": it moved there from WTF.")
+            WTF.Report("Enable " .. other.title .. " in the AddOn list for " .. other.what .. ".")
         elseif state == "missing" then
-            WTF.Report("Install " .. other.title .. " from CurseForge for " .. other.what
-                .. ": it moved there from WTF.")
+            WTF.Report("Install " .. other.title .. " from CurseForge for " .. other.what .. ".")
         end
     end
 end

@@ -28,16 +28,21 @@ that every class can use:
 - Proc overlays (spell activation overlays, such as Nightfall and
   Decimation) are not in WTF: a Dyre's AddOn draws them (Dyre's Toolkit 2.11
   or later). That AddOn also plays the Nightfall sound with its arcs, and
-  WTF's Alerts page then shows **Nightfall arcs and sound** and opens its
+  WTF's Procs page then shows **Nightfall arcs and sound** and opens its
   settings.
 
 The CurseForge app installs both with WTF. They copy your WTF settings for
 these features once, the first time they run on a character. If one is
 missing, WTF still works and says once at login to install it from
-CurseForge (or to enable it in the AddOn list). WTF's Shield, Cooldown
-Chimes, Alerts, and Demon Armor settings pages now have a button that opens
-that AddOn's settings. WTF no longer plays any sound, so it no longer needs
-Dyre's Sounds.
+CurseForge (or to enable it in the AddOn list). WTF's Shield display, Chimes,
+Procs, and Reminders settings pages show that AddOn's settings, with the
+same names as on its own page: every Warlock proc, and every Warlock
+reminder (Demon Armor, a missing demon, and the Voidwalker's taunt in a
+group). The Procs page also has Dyre's Debuff Tracker's Demonic Brand
+settings. A change there is the same change as on that AddOn's own page. With an older Dyre's Toolkit or an older version
+of that AddOn, the page has a button that opens that AddOn's settings.
+While the AddOn is missing, a box on the page says what it would add. WTF
+no longer plays any sound, so it no longer needs Dyre's Sounds.
 
 ## Dyre's Debuff Tracker
 
@@ -58,8 +63,9 @@ settings for these features once. WTF keeps them as they were and never
 changes them, and says in chat what it copied. If Dyre's Debuff Tracker is missing,
 WTF still works and says once at login to install it from CurseForge (or to
 enable it in the AddOn list). WTF's **DoT Tracker**, **DoTs**, and
-**Control** settings pages now have a button that opens Dyre's Debuff
-Tracker's settings.
+**Control** settings pages show Dyre's Debuff Tracker's settings for them
+(with an older Dyre's Toolkit or Debuff Tracker, a button that opens its
+settings).
 
 ## Dyre's Toolkit
 

@@ -71,16 +71,43 @@ local function Readable(value)
     return type(value) == "string" and not IsSecret(value) and value ~= ""
 end
 
--- "Name - Realm", or nil while the client cannot say.
+-- "Name - Realm", or nil while the client cannot say the name. The realm:
+-- GetRealmName(), else UnitFullName's, else GetNormalizedRealmName(); with no
+-- realm at all, the name alone (2.16.0; a CurseForge player, 2026-11-27: on
+-- Forever GetRealmName() gave "", so import said "Your character is not ready
+-- yet" for good). A client that names the realm keeps the same key as before.
+local function RealmName()
+    if type(GetRealmName) == "function" then
+        local realm = GetRealmName()
+        if Readable(realm) then
+            return realm
+        end
+    end
+    if type(UnitFullName) == "function" then
+        local _, realm = UnitFullName("player")
+        if Readable(realm) then
+            return realm
+        end
+    end
+    if type(GetNormalizedRealmName) == "function" then
+        local realm = GetNormalizedRealmName()
+        if Readable(realm) then
+            return realm
+        end
+    end
+    return nil
+end
+
 function ns.CharacterKey()
-    if type(UnitName) ~= "function" or type(GetRealmName) ~= "function" then
+    if type(UnitName) ~= "function" then
         return nil
     end
-    local name, realm = UnitName("player"), GetRealmName()
-    if not Readable(name) or not Readable(realm) then
+    local name = UnitName("player")
+    if not Readable(name) then
         return nil
     end
-    return name .. " - " .. realm
+    local realm = RealmName()
+    return realm and (name .. " - " .. realm) or name
 end
 
 local function Copy(value, skip, depth)
@@ -716,12 +743,18 @@ end
 -- run InitFrame).
 -- Returns nil without those methods or CreateFrame; the caller then adds a
 -- button row as before.
+local rowButtons = setmetatable({}, {__mode = "k"})
+
 local function AttachRowButton(initializer, text, onClick, tooltip, enabled)
     if type(initializer) ~= "table" or type(initializer.InitFrame) ~= "function"
-            or type(initializer.Resetter) ~= "function" or type(CreateFrame) ~= "function" then
+            or type(initializer.Resetter) ~= "function" or type(CreateFrame) ~= "function"
+            or type(hooksecurefunc) ~= "function" then
         return nil
     end
-    local initFrame, resetter = initializer.InitFrame, initializer.Resetter
+    -- Secure hooks, not replacements: Blizzard's row setup and reset run
+    -- first, untainted (pooled frames are shared with Blizzard's settings;
+    -- 2026-11-19 taint fix). Our button per pooled frame is kept here.
+    local buttons = rowButtons
     local shown = {}
     local function Update()
         for button in pairs(shown) do
@@ -730,9 +763,8 @@ local function AttachRowButton(initializer, text, onClick, tooltip, enabled)
             end
         end
     end
-    function initializer:InitFrame(frame)
-        initFrame(self, frame)
-        local button = frame.dyreRowButton
+    hooksecurefunc(initializer, "InitFrame", function(_, frame)
+        local button = buttons[frame]
         if not button then
             button = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
             button:SetSize(80, 22)
@@ -741,7 +773,7 @@ local function AttachRowButton(initializer, text, onClick, tooltip, enabled)
                     GameTooltip:Hide()
                 end
             end)
-            frame.dyreRowButton = button
+            buttons[frame] = button
         end
         local control = frame.Control
         local after = control and (control.IncrementButton or control.Dropdown) or control
@@ -769,14 +801,14 @@ local function AttachRowButton(initializer, text, onClick, tooltip, enabled)
         shown[button] = true
         Update()
         button:Show()
-    end
-    function initializer:Resetter(frame)
-        if frame.dyreRowButton then
-            shown[frame.dyreRowButton] = nil
-            frame.dyreRowButton:Hide()
+    end)
+    hooksecurefunc(initializer, "Resetter", function(_, frame)
+        local button = buttons[frame]
+        if button then
+            shown[button] = nil
+            button:Hide()
         end
-        return resetter(self, frame)
-    end
+    end)
     return Update
 end
 
@@ -837,8 +869,7 @@ function ns.AddProfileSettings(category, layout)
             return container:GetData()
         end
         rows.source = Settings.CreateDropdown(category, setting, Options,
-            "Pick another character's profile, or Defaults for a clean slate, then press Copy. It covers "
-            .. "every Dyre's AddOn.\n\nA character shows here after it logs in once with this version.")
+            "Pick another character's settings, or Defaults, then press Copy.")
         local function CopyChoice()
             if not CanCopy() then
                 ns.Report("Pick another character's profile, or Defaults, to copy.")
@@ -862,6 +893,7 @@ function ns.AddProfileSettings(category, layout)
             if type(rows.copy) == "table" and type(rows.copy.AddModifyPredicate) == "function" then
                 rows.copy:AddModifyPredicate(CanCopy)
             end
+            DyresToolkit.GreyButtonLabel(rows.copy)
             layout:AddInitializer(rows.copy)
         end
     end

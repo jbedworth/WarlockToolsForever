@@ -55,7 +55,9 @@ local DyresToolkit = ns.toolkit
 --   one of yours can be up at a time: a new cast replaces the old mob's row).
 -- macros: name (exact; adopted by name, never a second copy), spell (the ID
 --   whose name is cast), known (the control key whose spells you must know),
---   pet (the spell is your pet's: Spells.PetKnows), condition, shift, marker
+--   pet (the spell is your pet's: Spells.PetKnows), petFamily (the cast
+--   also needs the pet's family, read from the client: Control.MacroBody),
+--   condition, shift, marker
 --   (the control key whose marker setting the /tm uses). See
 --   Macros.FocusCastMacro.
 
@@ -203,7 +205,10 @@ DyresToolkit.ClassData = {
             {name = "! Fear", spell = 5782, known = "fear", shift = true},
             {name = "! Banish", spell = 710, known = "banish", marker = "banish"},
             -- Only with a Succubus or Incubus that knows it.
-            {name = "! Seduction", spell = 6358, pet = true, condition = ",pet:Succubus/Incubus"},
+            -- petFamily: the pet's family in the client's language (2.11.1:
+            -- the English "pet:Succubus/Incubus" matched nothing on a French
+            -- client).
+            {name = "! Seduction", spell = 6358, pet = true, petFamily = true},
         },
     },
     MAGE = {

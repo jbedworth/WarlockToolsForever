@@ -21,12 +21,12 @@ their other classes ("virality"):
   DSU's too (John, 2026-11-18: "DSU is the right home for our 'spell
   activation overlays'"); WTF has none. John, 2026-11-20: every proc cue
   moves from DSU to DBR (DBR 1.13.0, Toolkit 2.12.0), so WTF's code names
-  no proc AddOn. The Alerts page follows the owner of the Toolkit kind
+  no proc AddOn. The Procs page (was Alerts) follows the owner of the Toolkit kind
   "proc:nightfall" (1.10.1, John: "Yes, fix it"): `WTF.ProcOwner(key)` is
   `KindOwner(PROC_KIND_PREFIX .. key)` when the Toolkit has both, else nil
   (a feature test, as DBR's `ProcOwner`; an AddOn that steps aside for
   SpellActivationOverlay makes no claim). With no owner, the old row
-  "Nightfall sound" (AddSettingsLink to DBR's Proc Sounds). With an owner,
+  "Procs" (AddSettingsLink to DBR; 1.13.0 link labels are the section names: "Chimes", "Procs", "Reminders", DDT cues "Debuff Cues"). With an owner,
   "Nightfall arcs and sound": WTF's own button (`AddSettingsLink` fixes its
   AddOn when the row is made), whose click asks for the owner again and
   calls its `openSettings` from `toolkit.AddOns()` (not in combat), and
@@ -44,10 +44,69 @@ their other classes ("virality"):
   scripts/publish_curseforge.py), so the app installs them.
 - At login, on a Warlock with WTF available, Core's `WTF.ReportMovedFeatures`
   says once per session for each of DSU, DBR, and DDT that is not loaded: "Install
-  <title> from CurseForge for <features>: it moved there from WTF.", or
+  <title> from CurseForge for <features>.", or
   "Enable <title> in the AddOn list ..." when `C_AddOns.GetAddOnInfo` shows it
   installed but not loadable (reason not "MISSING"). CurseForge only.
-- The Shield, Cooldown Chimes, Alerts, and Demon Armor pages are links, not
+- Settings sections (1.13.0; John, 2026-11-26: WTF "should surface every
+  setting in the wrapped addon's settings, and just pass-through the setting
+  to the wrapped addon"; 2026-11-27: "Fix the settings delegation in MTF and
+  WTF"). WTF is a host: each moved page (DDT_PAGES, MOVED_PAGES: `section`,
+  `filter`) calls Toolkit 2.17.0's `AddSettingsSection(page, layout, {addon,
+  key, host = "WarlockToolsForever", filter, link})`, with `link` the
+  AddSettingsLink options below. The owner's rows read and write the owner's
+  live settings ("rows"); with the owner or its section missing, the toolkit
+  draws the link ("link"); nil, the greyed note. Keys: DDT `tracker`, `dots`,
+  `control`; DSU `shield`; DBR `chimes`, `procs`, `reminders` (no filters,
+  John 2026-11-27: "Let's add all the Warlock procs/alerts and reminders");
+  the Procs page also draws DDT `cues` (Demonic Brand) after DBR's procs
+  (`also`), with its own link and primer, and its master follows Procs on the
+  top page. Page titles (John: "let's use the same name consistently
+  everywhere"): `SettingsSectionTitle(addon, key)`, the owner's title, else
+  WTF's word ("DoT Tracker", "DoTs", "Control", "Shield display", "Chimes", "Procs",
+  "Reminders"; were "Cooldown Chimes", "Alerts", "Demon Armor"). WTF's own
+  pages keep Soul Shards, Stones, Announce. The Procs page asks for a section only when DBR registered
+  `procs` (`SettingsSections`; owners register by ADDON_LOADED, before WTF's
+  PLAYER_LOGIN builds the page); otherwise it keeps the proc owner rows
+  below, which a plain link cannot do. Without AddSettingsSection (an older
+  toolkit), every page stays as below. WTF registers no setting of its own
+  for these features.
+- Primer box (1.13.0; John, 2026-11-27: when the AddOn is missing, "a message
+  box on those panels telling people" what they get if they install it). Each
+  moved page has `primer`: for a Warlock, what the AddOn adds there, then
+  "Install <title> from CurseForge." Plain words, at most 300 characters (the
+  toolkit cuts at 400; the box does not grow; a test checks each). Passed as
+  AddSettingsSection's `primer` only when `AddSettingsPrimer` exists (2.17.0;
+  `SETTINGS_SECTIONS_VERSION` is still 1, so the function is the test); the
+  toolkit shows it only while the owner is not loaded. The Procs page's proc
+  owner path draws it itself with `AddSettingsPrimer` while DBR is not loaded
+  (not joined and not `C_AddOns.IsAddOnLoaded`), shown only while no AddOn
+  owns "proc:nightfall".
+- Parts (1.13.0; John, 2026-11-27: "when the top-level is off, the settings
+  that are controlling a disabled feature should be disabled too. Also, the
+  top-level disable for each section should be on the top-level MTF panel",
+  for WTF too). With `SETTINGS_SECTIONS_VERSION` 3 or later (`HasParts`), the
+  top page has, after WTF's own switches, each moved section's top switch
+  (`part = "master"`, no link or primer, in the sub-pages' order: DoT Tracker,
+  DoTs, Control, Shield display, Chimes, Procs, DDT's cues, Reminders; DBR's "procs"
+  master is the proc engine's switch, John 2026-11-27: "Add the Procs master
+  switch", which turns every proc cue off); the
+  toolkit adds nothing for a missing owner or a section with no
+  single top switch. Each sub-page asks for `part = "rest"`, with link and
+  primer; the owner greys those rows while its switch is off. Before 3, no
+  part: each sub-page keeps its whole section. Several owners' top switches
+  are named "Enable" on their own pages (DBR procs and chimes, DDT dots and
+  control); the names on WTF's top page are the owners'.
+- WTF's own rows are greyed only while the switch that controls their feature
+  is off. Stones (`stones.enabled`) gates the bar and the reminders: "Show the
+  Stones bar", its size, and both reminders get `AddModifyPredicate`; "Keep
+  stone macros" does not (the macros work without the bar). Announce
+  (`announce.enabled`): the canvas page's checks, edit boxes, and channel
+  radios are `SetEnabled(false)` with grey labels, read on each `OnRefresh`
+  (the switch is on the top page). Soul Shard management (`shards.enabled`)
+  only turns automatic deletion off; the limit, the report, and the counter
+  still serve the right-click trim, so no Soul Shards row greys.
+- Before 1.13.0, or with an older toolkit: the Shield display, Chimes, Procs,
+  and Reminders pages are links, not
   mirrors (author): each is one `DyresToolkit.AddSettingsLink` button (toolkit
   2.3.0; greyed while that AddOn has not joined the toolkit, and a click then
   says what to install; never in combat) that opens DSU's or DBR's settings.
@@ -107,7 +166,18 @@ announcements go with the Control bar (the 2026-10-30 decision).
   the `openSettings` it joined the Toolkit with; greyed while missing, and a
   click then says "Install Dyre's Debuff Tracker from CurseForge for ...").
   Without the helper, one greyed note says where it went. The tooltip says
-  "moved to Dyre's Debuff Tracker in WTF 1.11.0".
+  "Opens Dyre's Debuff Tracker's settings for <features>." (player words,
+  2026-11-27: no WTF versions or move history in what players read; the
+  notes say "<name> (in <owner>)" and "Install <owner> from CurseForge for ...").
+- Tooltips (John, 2026-11-27: "every one of the tooltips seems to start with a
+  good one sentence description, but then has nonsensical follow-on text"):
+  one plain sentence that says what the setting does; a second only when a
+  player would lose something without it ("Turning this off deletes them.",
+  "Shards you move into your bags are never deleted."). No how-to tips,
+  commands, combat timing, defaults, or history. A test checks every setting
+  tooltip (at most two sentences, 160 characters, no /wtf). The Stones
+  buttons' tooltips show only the click hints. Primers may be a short
+  paragraph.
 - One chat line only (lead, as MTF): DDT says in chat what it copied, so WTF
   says nothing of its own about the move; without DDT, only
   `ReportMovedFeatures`' install (or enable) line. A 1.11.0 test build saved
@@ -119,7 +189,11 @@ announcements go with the Control bar (the 2026-10-30 decision).
   to `CLICK DyresDebuffTrackerSmartCurse:LeftButton` (also when both update
   at once; whether the client keeps a key for an undefined command is not
   verified). Never create the button again. docs/RELEASE_PLAN.md says when
-  and how to remove it; a test checks the one binding and no button.
+  and how to remove it; a test checks the one binding and no button. Its
+  `category` is "Dyre's AddOns" (1.13.0; John: ours "should not be there" in
+  the AddOns section; Keybindings.lua 189-229: a category makes the
+  collapsible section, a header only a blank gap), as Toolkit 2.16.0's tank
+  bindings; keys are saved by binding name, so a bound key stays.
 - `SHARED_FUNCTIONS` is only `FormatAnnouncement` and `NoteFocusWorks`
   (Announce.lua's fill, and the focusWorks hand-over); without them WTF uses
   its own fill and keeps its own flag, with no chat line.
@@ -365,6 +439,14 @@ announcements go with the Control bar (the 2026-10-30 decision).
   to the new defaults at login. Group means raid, else
   party, else nothing; Say is optional. SAY outdoors needs a hardware event and
   the success event is not one, so a blocked Say is reported once.
+- Never a whisper to yourself (1.13.0; John, 2026-11-27: a Soulstone on
+  himself, "Locus Stormshadow", was whispered to him and shown as sent and
+  received). Announce.lua's SendChat drops every WHISPER whose target
+  `IsSelfName` says is you: "First", "First-Last", or "First Last" (spaces
+  and hyphens ignored), first name equal to UnitName("player")'s; with a last
+  name, it must match UnitName's second value or UnitFullName's (which can be
+  the realm), unless neither gives one. Secret names are never you. The cast
+  target check (`IsSelf`) uses the same function.
 - The Healthstone gift whisper goes when the trade window opens
   (`TRADE_SHOW` within 10 s of the button's trade), to the friendly target
   named at the click, once, before WTF places the stone (author's choice:

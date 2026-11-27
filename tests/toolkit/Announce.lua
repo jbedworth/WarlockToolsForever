@@ -10,17 +10,20 @@ local DyresToolkit = ns.toolkit
 -- over. The owning AddOn keeps its switches and texts in its own saved
 -- variables and passes them in.
 
--- Raid markers by index, as /tm numbers them, and their chat codes.
+-- Raid markers by index, as /tm numbers them, and their chat codes. The
+-- codes are {rt1} to {rt8} (2.11.1): every client's chat turns them into the
+-- icon, while a word such as {moon} works only where the reader's client
+-- knows the English word (a localization audit, 2026-11-20).
 DyresToolkit.RAID_MARKERS = {
     {index = 0, label = "None"},
-    {index = 1, label = "Star", code = "{star}"},
-    {index = 2, label = "Circle", code = "{circle}"},
-    {index = 3, label = "Diamond", code = "{diamond}"},
-    {index = 4, label = "Triangle", code = "{triangle}"},
-    {index = 5, label = "Moon", code = "{moon}"},
-    {index = 6, label = "Square", code = "{square}"},
-    {index = 7, label = "Cross", code = "{cross}"},
-    {index = 8, label = "Skull", code = "{skull}"},
+    {index = 1, label = "Star", code = "{rt1}"},
+    {index = 2, label = "Circle", code = "{rt2}"},
+    {index = 3, label = "Diamond", code = "{rt3}"},
+    {index = 4, label = "Triangle", code = "{rt4}"},
+    {index = 5, label = "Moon", code = "{rt5}"},
+    {index = 6, label = "Square", code = "{rt6}"},
+    {index = 7, label = "Cross", code = "{rt7}"},
+    {index = 8, label = "Skull", code = "{rt8}"},
 }
 
 function DyresToolkit.ValidMarker(index)
@@ -32,7 +35,7 @@ function DyresToolkit.ValidMarker(index)
     return false
 end
 
--- A marker's chat code, such as "{moon}", else "" (none, or not a marker).
+-- A marker's chat code, such as "{rt5}" (the moon), else "" (none, or not a marker).
 function DyresToolkit.MarkerCode(index)
     for _, marker in ipairs(DyresToolkit.RAID_MARKERS) do
         if marker.index == index then

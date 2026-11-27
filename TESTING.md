@@ -312,22 +312,27 @@ and printing.
 - [ ] A failed stone click shows in red at the top of the screen as well as
       in chat.
 - [ ] Moved features (1.3.0), with Dyre's Shields Up and Dyre's Buff
-      Reminders enabled: no "moved there from WTF" line at login. The shield
+      Reminders enabled: no "Install ... from CurseForge for the ..." line at login. The shield
       display shows once, from Dyre's Shields Up, with the scale, number, and
       place you had in WTF (its first run on this character); Cooldown
       chimes, the Nightfall sound, and the Demon Armor icon come from Dyre's
       Buff Reminders with your WTF choices; a Demon Armor icon click casts
       the armor you used last. WTF plays no sound and draws no shield or
       icon of its own.
-- [ ] WTF's Shield, Cooldown Chimes, Alerts, and Demon Armor pages each show
-      one button; it opens Dyre's Shields Up's or Dyre's Buff Reminders'
+- [ ] Names (1.13.0): WTF's pages read Shield display, Chimes, Procs, and Reminders
+      (or the owner's titles), the same as the headings on Dyre's Buff
+      Reminders' and Dyre's Shields Up's own pages and the switches on WTF's
+      top page. Procs shows every Warlock proc, then Demonic Brand; Reminders
+      shows Demon Armor, Pet (your demon), and the Voidwalker taunt switch.
+- [ ] With an older Dyre's Toolkit: WTF's Shield display, Chimes, Procs, and Reminders
+      pages each show one button; it opens Dyre's Shields Up's or Dyre's Buff Reminders'
       settings out of combat. In combat a click says it opens out of combat.
 - [ ] Nightfall owner (1.10.1): with an AddOn that plays Nightfall with proc
-      arcs (Dyre's Toolkit 2.11 or later), the Alerts page shows one row,
+      arcs (Dyre's Toolkit 2.11 or later), the Procs page shows one row,
       "Nightfall arcs and sound"; its tooltip names that AddOn, and its button
       opens that AddOn's page with its Procs rows (out of combat; in combat it
       says it opens out of combat). Disable that AddOn (or use one without
-      proc arcs), `/reload`: the row is "Nightfall sound" and opens Dyre's
+      proc arcs), `/reload`: the row is "Procs" and opens Dyre's
       Buff Reminders' Proc Sounds.
 - [ ] Disable Dyre's Shields Up, then Dyre's Buff Reminders, in the AddOn
       list: at login one line each says to enable it, once per session;

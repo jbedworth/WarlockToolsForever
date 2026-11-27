@@ -18,8 +18,9 @@ local DyresToolkit = ns.toolkit
 -- SetAuraSlotCandidateFilters, each slot one hidden button whose initializer
 -- the AddOn runs once, then shown with the first of your auras on the unit that
 -- its candidate filters match, with the icon, cooldown sweep, draining bar,
--- spell name, and time left that the engine would draw. Forever keeps the
--- engine: this is used only when the template is missing.
+-- spell name, time left, and stack gate (SetApplicationBar) that the engine
+-- would draw. Forever keeps the engine: this is used only when the template
+-- is missing.
 
 local TEMPLATE = "CustomAuraContainerTemplate"
 local MAX_AURAS = 40
@@ -141,6 +142,17 @@ local function ShowSlot(slot, aura)
             display.cooldown:Clear()
         end
     end
+    -- The stack gate, as the engine's ApplyApplicationBar: shown from
+    -- minApplications stacks up.
+    if display.applications then
+        local options = type(display.applicationOptions) == "table" and display.applicationOptions or {}
+        local least = type(options.minApplications) == "number" and options.minApplications or 0
+        local most = type(options.maxApplications) == "number" and options.maxApplications or least
+        local applications = type(aura.applications) == "number" and aura.applications or 0
+        display.applications:SetMinMaxValues(least, math.max(most, 1))
+        display.applications:SetValue(applications)
+        display.applications:SetShown(applications >= least)
+    end
     button:Show()
     if duration > 0 and expires > 0 then
         button.duration, button.expires = duration, expires
@@ -228,6 +240,9 @@ local function NewSlotButton(container)
     function button:SetDurationBar(region, options) self.display.bar, self.display.barOptions = region, options end
     function button:SetSpellName(region) self.display.spellName = region end
     function button:SetDurationText(region) self.display.text = region end
+    function button:SetApplicationBar(region, options)
+        self.display.applications, self.display.applicationOptions = region, options
+    end
     function button:SetMouseClickEnabled(enabled) self:EnableMouse(enabled == true) end
     function button:SetMouseMotionEnabled() end
     return button

@@ -3,7 +3,9 @@
          WTF makes no WarlockToolsForeverSmartCurse button any more, so this binding does nothing.
          It only keeps the old command defined, so the game keeps a player's key on it until Dyre's
          Debuff Tracker moves that key to its own command (also when both AddOns update at once).
-         A later WTF release removes this file (docs/RELEASE_PLAN.md). -->
+         A later WTF release removes this file (docs/RELEASE_PLAN.md).
+         category makes the Key Bindings section (a header only makes a blank gap), so the row sits in
+         the one "Dyre's AddOns" section with the other Dyre's AddOns (1.12.4), not under AddOns. -->
     <Binding name="CLICK WarlockToolsForeverSmartCurse:LeftButton" runOnUp="true" header="WARLOCKTOOLSFOREVER"
-        category="ADDONS"/>
+        category="Dyre's AddOns"/>
 </Bindings>

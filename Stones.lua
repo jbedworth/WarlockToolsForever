@@ -582,14 +582,10 @@ local function ShowTooltip(button)
     else
         GameTooltip:AddLine("Right-click: you know no rank yet.", 0.7, 0.7, 0.7, true)
     end
-    if soulstone then
-        GameTooltip:AddLine("Soulstones cannot be applied in combat.", 0.7, 0.7, 0.7, true)
-    else
+    -- Click hints only (John, 2026-11-27: no follow-on text). A Soulstone
+    -- click in combat says in chat that it cannot be applied.
+    if not soulstone then
         GameTooltip:AddLine("Middle-click: use your best Healthstone on yourself.", 1, 1, 1, true)
-    end
-    if WTF.db.stones.macros then
-        GameTooltip:AddLine("For your action bars: the \"" .. WTF.STONE_MACROS[button.kind]
-            .. "\" macro in your character macros does the same, also in combat.", 0.7, 0.7, 0.7, true)
     end
     GameTooltip:Show()
 end

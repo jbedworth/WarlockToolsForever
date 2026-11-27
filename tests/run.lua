@@ -518,6 +518,72 @@ local function fixture(options)
         function toolkit.AddDefaultTick(initializer, range)
             toolkit.ticks[#toolkit.ticks + 1] = {initializer = initializer, range = range}
         end
+        -- Toolkit 2.17.0: options.sections turns AddSettingsSection on. Its keys
+        -- ("addon.key") are the sections the owners registered: those add the
+        -- owner's row; any other draws the link, as the real toolkit does.
+        -- options.noSectionList: a toolkit without SettingsSections.
+        if options.sections then
+            toolkit.sectionCalls = {}
+            if not options.noSectionList then
+                function toolkit.SettingsSections(addon)
+                    local keys = {}
+                    for name in pairs(options.sections) do
+                        local owner, key = name:match("^(.-)%.(.+)$")
+                        if owner == addon then keys[#keys + 1] = key end
+                    end
+                    table.sort(keys)
+                    return keys
+                end
+            end
+            -- The primer box (2.17.0): a row with the text.
+            function toolkit.AddSettingsPrimer(category, layout, text)
+                local row = {primer = text, shownPredicates = {}}
+                function row:AddShownPredicate(predicate)
+                    self.shownPredicates[#self.shownPredicates + 1] = predicate
+                end
+                layout:AddInitializer(row)
+                return row
+            end
+            -- options.sectionsVersion: SETTINGS_SECTIONS_VERSION (3: parts).
+            -- options.noMaster: sections ("addon.key") with no single top switch.
+            toolkit.SETTINGS_SECTIONS_VERSION = options.sectionsVersion
+            -- options.sectionTitles: the owners' titles ("addon.key" = title).
+            if options.sectionTitles then
+                function toolkit.SettingsSectionTitle(addon, key)
+                    return options.sectionTitles[addon .. "." .. key]
+                end
+            end
+            function toolkit.AddSettingsSection(category, layout, opts)
+                local call = {category = category, opts = opts}
+                toolkit.sectionCalls[#toolkit.sectionCalls + 1] = call
+                local name = opts.addon .. "." .. opts.key
+                if opts.part == "master" then
+                    if options.sections[name] and not (options.noMaster or {})[name] then
+                        layout:AddInitializer({name = name .. ":master", master = true})
+                        call.result = "rows"
+                        return "rows"
+                    end
+                    return nil
+                end
+                if options.sections[opts.addon .. "." .. opts.key] then
+                    layout:AddInitializer({name = opts.addon .. ":" .. opts.key, ownerRow = true, filter = opts.filter})
+                    call.result = "rows"
+                    return "rows"
+                end
+                local joined = false
+                for _, member in ipairs(options.members or {}) do
+                    if member.addon == opts.addon then joined = true end
+                end
+                if opts.primer and not joined then
+                    call.primer = toolkit.AddSettingsPrimer(category, layout, opts.primer)
+                end
+                local link = {}
+                for name, value in pairs(opts.link or {}) do link[name] = value end
+                link.addon = link.addon or opts.addon
+                call.result = toolkit.AddSettingsLink(category, layout, link) and "link" or nil
+                return call.result
+            end
+        end
         if options.toolkitMissing then toolkit[options.toolkitMissing] = nil end
         -- Toolkit 2.14.0: options.showWelcome sets ShowWelcome's answer.
         if options.showWelcome ~= nil then
@@ -665,7 +731,8 @@ local function fixture(options)
     env.UnitExists = function(unit) return state.units[unit] ~= nil end
     env.UnitFullName = function(unit)
         local data = state.units[unit]
-        if data then return data.name, data.surname or (unit == "player" and "Maebryn" or nil) end
+        -- data.realm: a client whose UnitFullName gives the realm, not the last name.
+        if data then return data.name, data.realm or data.surname or (unit == "player" and "Maebryn" or nil) end
     end
     env.UnitIsPlayer = function(unit) return state.units[unit] ~= nil and state.units[unit].player == true end
     env.UnitIsFriend = function(_, unit) return state.units[unit] ~= nil and state.units[unit].friend == true end
@@ -1492,13 +1559,16 @@ end)
 -- Features that moved out in 1.3.0 and 1.11.0 ---------------------------------
 
 local MOVED_LINES = {
-    shield = "Install Dyre's Shields Up from CurseForge for the shield display: it moved there from WTF.",
+    shield = "Install Dyre's Shields Up from CurseForge for the shield display.",
     reminders = "Install Dyre's Buff Reminders from CurseForge for the cooldown chimes, the Nightfall sound, "
-        .. "and the Demon Armor reminder: it moved there from WTF.",
+        .. "and the Demon Armor reminder.",
     ddt = "Install Dyre's Debuff Tracker from CurseForge for the DoT tracker, DoT colors, nameplate DoT dots, "
-        .. "DoT damage prediction, the smart curse, and the Control bar with its macros and announcements: it "
-        .. "moved there from WTF.",
+        .. "DoT damage prediction, the smart curse, and the Control bar with its macros and announcements.",
 }
+-- A moved-feature line (not the Toolkit's "for one layout mode" line).
+local function movedLine(text)
+    return text:find("from CurseForge for the ", 1, true) ~= nil or text:find("in the AddOn list for the ", 1, true) ~= nil
+end
 local ALL_MOVED_LOADED = {DyresShieldsUp = true, DyresBuffReminders = true, DyresDebuffTracker = true}
 
 test("without Dyre's Shields Up, Dyre's Buff Reminders, or Dyre's Debuff Tracker, login says once to install them", function()
@@ -1510,22 +1580,57 @@ test("without Dyre's Shields Up, Dyre's Buff Reminders, or Dyre's Debuff Tracker
     state.slash("shards")
     state.emit("PLAYER_ENTERING_WORLD")
     for index = count + 1, #state.messages do
-        equal(state.messages[index]:find("moved there from WTF", 1, true), nil, "once per session")
+        equal(movedLine(state.messages[index]), false, "once per session")
     end
 end)
 test("an installed but disabled AddOn is to be enabled; a loaded one says nothing", function()
     local state = fixture({installedAddOns = {DyresShieldsUp = "DISABLED"},
         loadedAddOns = {DyresBuffReminders = true}})
     local all = table.concat(state.messages, "\n")
-    contains(all, "WTF: Enable Dyre's Shields Up in the AddOn list for the shield display: it moved there from WTF.")
+    contains(all, "WTF: Enable Dyre's Shields Up in the AddOn list for the shield display.")
     equal(all:find("Install Dyre's Shields Up", 1, true), nil, "nothing to install")
     equal(all:find("Dyre's Buff Reminders", 1, true), nil, "Dyre's Buff Reminders is loaded")
     local quiet = fixture({loadedAddOns = ALL_MOVED_LOADED})
-    equal(table.concat(quiet.messages, "\n"):find("moved there from WTF", 1, true), nil)
+    equal(movedLine(table.concat(quiet.messages, "\n")), false)
+end)
+test("player texts: link tooltips and notes say what they open, with no WTF versions or move history", function()
+    local state = fixture({toolkit = true})
+    for _, link in ipairs(state.toolkit.links) do
+        equal(link.opts.tooltip:find("WTF 1.", 1, true), nil, link.opts.name)
+        equal(link.opts.tooltip:find("moved", 1, true), nil, link.opts.name)
+        equal(link.opts.tooltip:sub(1, 6), "Opens ", link.opts.name)
+        equal(link.opts.tooltip:find("s's", 1, true), nil, "Dyre's Buff Reminders' settings")
+    end
+    local plain = fixture({toolkit = true, toolkitMissing = "AddSettingsLink"})
+    for _, title in ipairs({"Shield display", "Chimes", "Procs", "Reminders", "DoT Tracker", "DoTs", "Control"}) do
+        local note = plain.categories[title].initializers[1]
+        equal(note.tooltip:find("WTF 1.", 1, true), nil, title)
+        equal(note.tooltip:find("moved", 1, true), nil, title)
+    end
+    local all = table.concat(fixture().messages, "\n")
+    equal(all:find("moved there", 1, true), nil, "login lines")
+end)
+test("player texts: every WTF setting tooltip is one plain sentence, two at most", function()
+    -- John, 2026-11-27: one sentence that says what it does; no follow-on text.
+    for _, options in ipairs({{}, {toolkit = true}, {toolkit = true, toolkitMissing = "AddSettingsLink"}}) do
+        local state = fixture(options)
+        for name, page in pairs(state.categories) do
+            for _, each in ipairs(page.initializers) do
+                local tooltip = each.tooltip
+                if type(tooltip) == "string" then
+                    -- Macro names ("! Fear") are not sentence ends.
+                    local _, ends = tooltip:gsub('"! ', '"'):gsub("[.!?]%s", "")
+                    equal(ends <= 1, true, name .. ": " .. tooltip)
+                    equal(#tooltip <= 160, true, name .. ": short (" .. #tooltip .. "): " .. tooltip)
+                    equal(tooltip:find("/wtf", 1, true), nil, name .. ": no commands: " .. tooltip)
+                end
+            end
+        end
+    end
 end)
 test("other classes get no moved-feature lines", function()
     local state = fixture({class = "MAGE"})
-    equal(table.concat(state.messages, "\n"):find("moved there from WTF", 1, true), nil)
+    equal(movedLine(table.concat(state.messages, "\n")), false)
 end)
 test("the old shield, chime, Nightfall, and reminder settings stay exactly as saved", function()
     local shield = {enabled = false, scale = 80, position = {point = "LEFT", relativePoint = "LEFT", x = 3, y = 4},
@@ -1575,14 +1680,14 @@ end)
 test("the Shield, Cooldown Chimes, Alerts, and Demon Armor pages link to the AddOns that have them", function()
     local state = fixture({toolkit = true})
     local cases = {
-        {"Shield", "DyresShieldsUp", "Shield display", "Open Shield settings",
+        {"Shield display", "DyresShieldsUp", "Shield display", "Open Shield settings",
             "Install Dyre's Shields Up from CurseForge for the shield display."},
-        {"Cooldown Chimes", "DyresBuffReminders", "Cooldown chimes", "Open Chime settings",
-            "Install Dyre's Buff Reminders from CurseForge for the cooldown chimes."},
-        {"Alerts", "DyresBuffReminders", "Nightfall sound", "Open Proc settings",
-            "Install Dyre's Buff Reminders from CurseForge for the Nightfall sound (Proc Sounds)."},
-        {"Demon Armor", "DyresBuffReminders", "Demon Armor reminder", "Open Reminder settings",
-            "Install Dyre's Buff Reminders from CurseForge for the Demon Armor reminder."},
+        {"Chimes", "DyresBuffReminders", "Chimes", "Open Chime settings",
+            "Install Dyre's Buff Reminders from CurseForge for Chimes."},
+        {"Procs", "DyresBuffReminders", "Procs", "Open Proc settings",
+            "Install Dyre's Buff Reminders from CurseForge for Procs."},
+        {"Reminders", "DyresBuffReminders", "Reminders", "Open Reminder settings",
+            "Install Dyre's Buff Reminders from CurseForge for Reminders."},
     }
     equal(#state.toolkit.links, #cases + 3, "and the three Dyre's Debuff Tracker pages")
     for _, case in ipairs(cases) do
@@ -1597,7 +1702,7 @@ test("the Shield, Cooldown Chimes, Alerts, and Demon Armor pages link to the Add
         equal(link.opts.name, case[3])
         equal(link.opts.button, case[4])
         equal(link.opts.missing, case[5])
-        contains(link.opts.tooltip, "moved to")
+        contains(link.opts.tooltip, " settings for ")
         equal(#page.initializers, 0, case[1] .. ": nothing but the link")
         equal(page.headings[1].buttonText, case[4])
     end
@@ -1628,7 +1733,7 @@ test("the DoT Tracker, DoTs, and Control pages each open Dyre's Debuff Tracker, 
         equal(link.opts.name, case[2])
         equal(link.opts.button, "Open Debuff Tracker settings")
         equal(link.opts.missing, case[3])
-        contains(link.opts.tooltip, "moved to Dyre's Debuff Tracker in WTF 1.11.0. This opens its settings.")
+        equal(link.opts.tooltip, "Opens Dyre's Debuff Tracker's settings for " .. case[3]:match("for (.*)$"))
         equal(#page.initializers, 0, case[1] .. ": nothing but the link")
         equal(#page.headings, 1, case[1] .. ": one row")
     end
@@ -1678,6 +1783,15 @@ test("the Bindings.xml shim keeps only the old smart curse command, with no butt
     equal(names[1], "CLICK WarlockToolsForeverSmartCurse:LeftButton")
     contains(text, 'header="WARLOCKTOOLSFOREVER"')
     contains(text, "A later WTF release removes this file")
+    -- 1.13.0 (John: ours "should not be there" under AddOns): the category
+    -- makes the section, so every binding names "Dyre's AddOns", none ADDONS.
+    local categories = {}
+    for category in text:gmatch('<Binding%s[^>]-category="([^"]*)"') do categories[#categories + 1] = category end
+    equal(#categories, #names, "each binding names its category")
+    for _, category in ipairs(categories) do
+        equal(category, "Dyre's AddOns")
+    end
+    equal(text:find('category="ADDONS"', 1, true), nil, "not the AddOns section")
     local state = fixture({toolkit = true})
     equal(state.env.BINDING_HEADER_WARLOCKTOOLSFOREVER, "Warlock Tools Forever")
     equal(state.env["BINDING_NAME_CLICK WarlockToolsForeverSmartCurse:LeftButton"],
@@ -1770,12 +1884,15 @@ end)
 -- "proc:nightfall" (any one), else Dyre's Buff Reminders' Proc Sounds.
 local function nightfallRows(state)
     local rows = {}
-    for _, row in ipairs(state.categories.Alerts.headings) do
+    for _, row in ipairs(state.categories.Procs.headings) do
         local shown = true
         for _, predicate in ipairs(row.shownPredicates or {}) do
             shown = shown and predicate()
         end
-        rows[#rows + 1] = {row = row, shown = shown}
+        -- Only Dyre's Buff Reminders' rows, not the Demonic Brand section after them.
+        if row.name ~= "Debuff Cues" and not (row.primer or ""):find("Demonic Brand", 1, true) then
+            rows[#rows + 1] = {row = row, shown = shown}
+        end
     end
     return rows
 end
@@ -1801,7 +1918,7 @@ test("Nightfall: the Alerts page follows whichever AddOn owns proc:nightfall", f
     local state = fixture({toolkit = true, nightfallOwner = false, members = members(opened)})
     equal(state.wtf.ProcOwner("nightfall"), nil, "no claim yet")
     local row = shownNightfall(state)
-    equal(row.name, "Nightfall sound", "no owner: Dyre's Buff Reminders' Proc Sounds, as before")
+    equal(row.name, "Procs", "no owner: Dyre's Buff Reminders' Proc Sounds, as before")
     equal(row.buttonText, "Open Proc settings")
     -- An owner claims at its PLAYER_LOGIN, after WTF built the page.
     for _, case in ipairs({{"DyresShieldsUp", "Dyre's Shields Up", "DSU"},
@@ -1822,31 +1939,31 @@ test("Nightfall: the Alerts page follows whichever AddOn owns proc:nightfall", f
     state.combat = false
     -- It steps aside (for SpellActivationOverlay): no claim, the old row again.
     state.nightfallOwner = nil
-    equal(shownNightfall(state).name, "Nightfall sound")
+    equal(shownNightfall(state).name, "Procs")
 end)
 test("Nightfall: the owner's row names it in its tooltip; an unknown owner by its folder", function()
     local state = fixture({toolkit = true, nightfallOwner = "DyresBuffReminders", members = members({})})
     local row = shownNightfall(state)
-    equal(row.tooltip, "Dyre's Buff Reminders plays it with its proc arcs. This opens its settings.")
+    equal(row.tooltip, "Opens Dyre's Buff Reminders' settings for the Nightfall arcs and sound.")
     equal(state.wtf.ProcOwnerTitle("SomeAddOn"), "SomeAddOn")
     state.nightfallOwner = "SomeAddOn"
     row.buttonClick()
-    contains(state.last(), "No Dyre's AddOn plays it with proc arcs now.")
+    contains(state.last(), "No Dyre's AddOn shows Nightfall arcs now.")
 end)
 test("Nightfall: a real claim and release change the row and its tooltip", function()
     local state = fixture({toolkit = true, procPrefix = true, members = members({}),
         familyAddOns = {DyresBuffReminders = true}})
     local shared = state.env.DyresToolkit
-    equal(shownNightfall(state).name, "Nightfall sound")
+    equal(shownNightfall(state).name, "Procs")
     local owner = nightfallRows(state)[2].row
-    equal(owner.tooltip, "No AddOn plays it with proc arcs now.")
+    equal(owner.tooltip, "No AddOn shows Nightfall arcs now.")
     equal(shared.ClaimOwner("proc:nightfall", "DyresBuffReminders", 10), true)
     equal(shownNightfall(state), owner)
-    equal(owner.tooltip, "Dyre's Buff Reminders plays it with its proc arcs. This opens its settings.",
+    equal(owner.tooltip, "Opens Dyre's Buff Reminders' settings for the Nightfall arcs and sound.",
         "the owner change renames it")
     shared.SetOwnerEnabled("proc:nightfall", "DyresBuffReminders", false)
-    equal(shownNightfall(state).name, "Nightfall sound")
-    equal(owner.tooltip, "No AddOn plays it with proc arcs now.")
+    equal(shownNightfall(state).name, "Procs")
+    equal(owner.tooltip, "No AddOn shows Nightfall arcs now.")
 end)
 test("Nightfall: an owner at build time comes first; without shown predicates, only its row", function()
     local state = fixture({toolkit = true, nightfallOwner = "DyresShieldsUp", members = members({})})
@@ -1861,24 +1978,331 @@ test("Nightfall: an owner at build time comes first; without shown predicates, o
     local before = fixture({toolkit = true, nightfallOwner = false, linkNoShown = true})
     rows = nightfallRows(before)
     equal(#rows, 1)
-    equal(rows[1].row.name, "Nightfall sound")
+    equal(rows[1].row.name, "Procs")
 end)
 test("Nightfall: an older Toolkit (no PROC_KIND_PREFIX or KindOwner) keeps Dyre's Buff Reminders", function()
     for _, missing in ipairs({"PROC_KIND_PREFIX", "KindOwner"}) do
         local state = fixture({toolkit = true, nightfallOwner = "DyresShieldsUp", sharedMissing = missing})
         equal(state.wtf.ProcOwner("nightfall"), nil, missing)
-        equal(shownNightfall(state).name, "Nightfall sound", missing)
+        equal(shownNightfall(state).name, "Procs", missing)
     end
     local none = fixture({nightfallOwner = false, noSharedToolkit = true})
     equal(none.wtf.ProcOwner("nightfall"), nil, "no Toolkit")
 end)
+-- 1.13.0 (John, 2026-11-26: WTF "should surface every setting in the wrapped
+-- addon's settings, and just pass-through the setting to the wrapped addon").
+local SECTION_PAGES = {
+    {"DoT Tracker", "DyresDebuffTracker", "tracker"},
+    {"DoTs", "DyresDebuffTracker", "dots"},
+    {"Control", "DyresDebuffTracker", "control"},
+    {"Shield display", "DyresShieldsUp", "shield"},
+    {"Chimes", "DyresBuffReminders", "chimes"},
+    {"Procs", "DyresBuffReminders", "procs"},
+    {"Reminders", "DyresBuffReminders", "reminders"},
+}
+local function allSections()
+    local sections = {}
+    for _, case in ipairs(SECTION_PAGES) do sections[case[2] .. "." .. case[3]] = true end
+    sections["DyresDebuffTracker.cues"] = true
+    return sections
+end
+-- The sections in the top page's order: Dyre's Debuff Tracker's "cues" after Procs.
+local function masterOrder()
+    local list = {}
+    for _, case in ipairs(SECTION_PAGES) do
+        list[#list + 1] = case
+        if case[3] == "procs" then list[#list + 1] = {"Procs", "DyresDebuffTracker", "cues"} end
+    end
+    return list
+end
+local function sectionCall(state, title)
+    local page = state.categories[title]
+    for _, call in ipairs(state.toolkit.sectionCalls) do
+        if call.category == page then return call end
+    end
+end
+test("sections: each moved page draws its owner's rows, passed through to the owner", function()
+    local state = fixture({toolkit = true, sections = allSections(), nightfallOwner = "DyresShieldsUp",
+        members = members({})})
+    equal(#state.toolkit.sectionCalls, #SECTION_PAGES + 1, "one section per page, and Demonic Brand on Procs")
+    equal(#state.toolkit.links, 0, "no links: the owners drew their rows")
+    for _, case in ipairs(SECTION_PAGES) do
+        local page = state.categories[case[1]]
+        local call = sectionCall(state, case[1])
+        equal(page.parent, state.categories["Warlock Tools Forever"], case[1] .. " is under WTF's page")
+        equal(call.opts.addon, case[2], case[1])
+        equal(call.opts.key, case[3], case[1])
+        equal(call.opts.host, "WarlockToolsForever")
+        equal(call.result, "rows")
+        equal(call.opts.filter, nil, case[1] .. ": the whole section (every Warlock proc and reminder)")
+        -- The link the toolkit draws when the owner is missing: the same as before.
+        equal(call.opts.link.addon, case[2])
+        contains(call.opts.link.tooltip, " settings for ")
+        contains(call.opts.link.missing, "from CurseForge for")
+        equal(#page.headings, case[1] == "Procs" and 2 or 1, case[1] .. ": the owner's rows only")
+        equal(page.headings[1].ownerRow, true)
+        equal(#page.initializers, 0, case[1] .. ": no WTF setting of its own")
+    end
+    equal(sectionCall(state, "Procs").opts.link.name, "Procs")
+    equal(sectionCall(state, "Shield display").opts.link.button, "Open Shield settings")
+end)
+test("sections: an owner without its section gets the link, as before", function()
+    local state = fixture({toolkit = true, sections = {}, nightfallOwner = false, members = members({})})
+    for _, case in ipairs(SECTION_PAGES) do
+        local page = state.categories[case[1]]
+        local link
+        for _, each in ipairs(state.toolkit.links) do
+            if each.category == page and not link then link = each end
+        end
+        equal(link.opts.addon, case[2], case[1] .. ": the link")
+        contains(link.opts.tooltip, "Opens ")
+    end
+    -- The Nightfall page keeps its proc owner rows while there is no "procs" section.
+    equal(sectionCall(state, "Procs").opts.key, "cues", "no \"procs\" section asked for; only Demonic Brand")
+    equal(#nightfallRows(state), 2)
+    equal(shownNightfall(state).name, "Procs")
+    state.nightfallOwner = "DyresShieldsUp"
+    equal(shownNightfall(state).name, "Nightfall arcs and sound")
+    equal(#state.toolkit.sectionCalls, #SECTION_PAGES, "every other page, and Demonic Brand, asked the toolkit")
+    for _, call in ipairs(state.toolkit.sectionCalls) do
+        equal(call.result, "link")
+    end
+    -- Dyre's Buff Reminders with its sections, Dyre's Debuff Tracker without.
+    local mixed = fixture({toolkit = true, sections = {["DyresBuffReminders.chimes"] = true,
+        ["DyresBuffReminders.procs"] = true}})
+    equal(sectionCall(mixed, "Chimes").result, "rows")
+    equal(sectionCall(mixed, "Procs").result, "rows")
+    equal(sectionCall(mixed, "DoTs").result, "link")
+    equal(sectionCall(mixed, "Reminders").result, "link")
+end)
+test("sections: without SettingsSections the toolkit decides for the Nightfall page too", function()
+    local state = fixture({toolkit = true, sections = {}, noSectionList = true})
+    equal(sectionCall(state, "Procs").result, "link")
+    local rows = state.categories.Procs.headings
+    equal(#rows, 4, "each owner's primer and link")
+    contains(rows[1].primer, "Nightfall")
+    equal(rows[2].name, "Procs")
+    contains(rows[3].primer, "Demonic Brand")
+    equal(rows[4].name, "Debuff Cues")
+end)
+-- One name per section (John, 2026-11-27: "let's use the same name
+-- consistently everywhere"): the owner's title, else WTF's word.
+test("names: each moved page takes its owner's section title, else the same word", function()
+    local plain = fixture({toolkit = true, sections = {}})
+    local main = plain.categories["Warlock Tools Forever"]
+    for _, title in ipairs({"DoT Tracker", "DoTs", "Control", "Shield display", "Chimes", "Procs", "Reminders"}) do
+        equal(plain.categories[title].parent, main, title .. ": the fallback word")
+    end
+    equal(plain.categories.Alerts, nil, "no Alerts page")
+    equal(plain.categories["Cooldown Chimes"], nil)
+    equal(plain.categories["Demon Armor"], nil)
+    local named = fixture({toolkit = true, sections = allSections(), sectionTitles = {
+        ["DyresDebuffTracker.tracker"] = "DoT tracker and damage prediction", ["DyresBuffReminders.procs"] = "Procs",
+        ["DyresDebuffTracker.cues"] = "Cues"}})
+    equal(named.categories["DoT tracker and damage prediction"].parent, named.categories["Warlock Tools Forever"])
+    equal(named.categories["DoT Tracker"], nil, "the owner's words")
+    equal(named.categories.Cues, nil, "Demonic Brand has no page of its own: it is on Procs")
+    equal(named.categories.DoTs.parent, named.categories["Warlock Tools Forever"], "no title given: WTF's word")
+    for _, title in ipairs({"Soul Shards", "Stones", "Announce"}) do
+        equal(named.categories[title].parent, named.categories["Warlock Tools Forever"], title .. " keeps its name")
+    end
+end)
+test("names: the Procs page also draws Dyre's Debuff Tracker's Demonic Brand, with its own link and primer", function()
+    local state = fixture({toolkit = true, sections = allSections(), sectionsVersion = 3})
+    local page = state.categories.Procs
+    local calls = {}
+    for _, call in ipairs(state.toolkit.sectionCalls) do
+        if call.category == page then calls[#calls + 1] = call end
+    end
+    equal(#calls, 2)
+    equal(calls[1].opts.key, "procs", "Dyre's Buff Reminders' procs first")
+    equal(calls[2].opts.addon, "DyresDebuffTracker")
+    equal(calls[2].opts.key, "cues")
+    equal(calls[2].opts.part, "rest")
+    equal(calls[2].opts.link.name, "Debuff Cues")
+    equal(calls[2].opts.link.addon, "DyresDebuffTracker")
+    contains(calls[2].opts.primer, "Demonic Brand")
+    contains(calls[2].opts.primer, "Install Dyre's Debuff Tracker from CurseForge.")
+    equal(#calls[2].opts.primer <= 300, true)
+    -- Missing: its link and primer after Dyre's Buff Reminders' rows.
+    local missing = fixture({toolkit = true, sections = {["DyresBuffReminders.procs"] = true}})
+    local rows = missing.categories.Procs.headings
+    equal(rows[1].ownerRow, true)
+    contains(rows[2].primer, "Demonic Brand")
+    equal(rows[3].name, "Debuff Cues")
+    -- An older toolkit (no sections): the Procs page as before, no Demonic Brand row.
+    local old = fixture({toolkit = true})
+    for _, row in ipairs(old.categories.Procs.headings) do
+        equal(row.name == "Debuff Cues", false)
+    end
+end)
+test("sections: an older toolkit (no AddSettingsSection) keeps the moved pages exactly as before", function()
+    local state = fixture({toolkit = true, sections = allSections(), toolkitMissing = "AddSettingsSection"})
+    equal(#state.toolkit.sectionCalls, 0)
+    equal(#state.toolkit.links, #SECTION_PAGES)
+    equal(state.categories["Shield display"].headings[1].buttonText, "Open Shield settings")
+end)
+-- The primer box (John, 2026-11-27: when the AddOn is missing, tell "people
+-- what they get if they install it").
+local PRIMER_OWNERS = {DyresDebuffTracker = "Dyre's Debuff Tracker", DyresShieldsUp = "Dyre's Shields Up",
+    DyresBuffReminders = "Dyre's Buff Reminders"}
+local PRIMER_WORDS = {["DoT Tracker"] = "DIES", DoTs = "nameplates", Control = "\"! Seduction\"",
+    ["Shield display"] = "Sacrifice", Chimes = "cooldown chimes", Procs = "Decimation",
+    Reminders = "Torment"}
+test("primer: each moved page passes what its AddOn adds, and where to get it", function()
+    local everyone = {}
+    for _, case in ipairs(SECTION_PAGES) do everyone[case[2] .. "." .. case[3]] = true end
+    local state = fixture({toolkit = true, sections = everyone})
+    for _, case in ipairs(SECTION_PAGES) do
+        local primer = sectionCall(state, case[1]).opts.primer
+        local owner = PRIMER_OWNERS[case[2]]
+        equal(primer:sub(1, #owner + 5), owner .. " adds", case[1] .. ": names the AddOn first")
+        contains(primer, PRIMER_WORDS[case[1]], case[1])
+        equal(primer:sub(-(#owner + 25)), "Install " .. owner .. " from CurseForge.", case[1])
+        equal(#primer <= 300, true, case[1] .. ": under 300 characters (" .. #primer .. ")")
+        equal(primer:find("%-%-") == nil and primer:find("\226\128\148") == nil, true, "no dashes")
+    end
+end)
+test("primer: the box shows only while the AddOn is missing; an older toolkit gets no primer", function()
+    local state = fixture({toolkit = true, sections = {}})
+    local call = sectionCall(state, "Shield display")
+    equal(call.primer.primer, call.opts.primer, "the box, above the link")
+    equal(state.categories["Shield display"].headings[1], call.primer)
+    equal(state.categories["Shield display"].headings[2].buttonText, "Open Shield settings")
+    local joined = fixture({toolkit = true, sections = {}, members = members({})})
+    equal(sectionCall(joined, "Shield display").primer, nil, "loaded: the link alone")
+    local old = fixture({toolkit = true, sections = {}, toolkitMissing = "AddSettingsPrimer"})
+    equal(sectionCall(old, "Shield display").opts.primer, nil, "not passed without AddSettingsPrimer")
+    equal(#old.categories["Shield display"].headings, 1)
+end)
+test("primer: the Nightfall page's proc owner rows draw it while Dyre's Buff Reminders is missing", function()
+    local state = fixture({toolkit = true, sections = {}, nightfallOwner = false})
+    local rows = nightfallRows(state)
+    equal(#rows, 3, "the primer, the link, and the owner row")
+    contains(rows[1].row.primer, "Nightfall")
+    equal(rows[1].shown, true)
+    state.nightfallOwner = "DyresShieldsUp"
+    equal(nightfallRows(state)[1].shown, false, "an AddOn plays it with arcs: no primer")
+    -- Loaded by the client but not joined yet: no primer.
+    local client = fixture({toolkit = true, sections = {}, nightfallOwner = false, loadedAddOns = {DyresBuffReminders = true}})
+    equal(#nightfallRows(client), 2, "loaded: no primer")
+    local joined = fixture({toolkit = true, sections = {}, nightfallOwner = false, members = members({})})
+    equal(#nightfallRows(joined), 2, "joined: no primer")
+end)
+-- Parts (SETTINGS_SECTIONS_VERSION 3; John, 2026-11-27: "the top-level
+-- disable for each section should be on the top-level MTF panel").
+local function callsWithPart(state, part)
+    local list = {}
+    for _, call in ipairs(state.toolkit.sectionCalls) do
+        if call.opts.part == part then list[#list + 1] = call end
+    end
+    return list
+end
+test("parts: each owner's top switch is on WTF's top page, in the sub-pages' order; the rest on the sub-page", function()
+    local state = fixture({toolkit = true, sections = allSections(), sectionsVersion = 3,
+        noMaster = {["DyresDebuffTracker.dots"] = true}})
+    local main = state.categories["Warlock Tools Forever"]
+    local masters = callsWithPart(state, "master")
+    local order = masterOrder()
+    equal(#masters, #order, "every section is asked")
+    local shown = {}
+    for index, case in ipairs(order) do
+        local call = masters[index]
+        equal(call.category, main, case[1] .. ": on the top page")
+        equal(call.opts.addon .. "." .. call.opts.key, case[2] .. "." .. case[3], "in the sub-pages' order")
+        equal(call.opts.host, "WarlockToolsForever")
+        equal(call.opts.link, nil, "no link on the top page")
+        equal(call.opts.primer, nil, "no primer on the top page")
+        equal(call.opts.filter, nil, case[1] .. ": the whole switch (procs: the proc engine's master)")
+        if call.result then shown[#shown + 1] = case[2] .. "." .. case[3] .. ":master" end
+    end
+    equal(#main.headings, #order - 1, "dots has no single top switch: nothing")
+    for index, heading in ipairs(main.headings) do
+        equal(heading.name, shown[index])
+        equal(heading.position, 3, "after WTF's own three switches")
+    end
+    local alerts = sectionCall(state, "Procs")
+    equal(alerts.opts.key, "procs")
+    equal(alerts.opts.filter, nil, "every Warlock proc")
+    for _, case in ipairs(SECTION_PAGES) do
+        local call = sectionCall(state, case[1])
+        equal(call.opts.part, "rest", case[1])
+        equal(call.result, "rows")
+        contains(call.opts.link.tooltip, " settings for ")
+        equal(type(call.opts.primer), "string", case[1] .. ": the primer stays")
+    end
+end)
+test("parts: with the owners missing the top page adds nothing and the sub-pages keep link and primer", function()
+    local state = fixture({toolkit = true, sections = {}, sectionsVersion = 3})
+    equal(#state.categories["Warlock Tools Forever"].headings, 0)
+    local shield = sectionCall(state, "Shield display")
+    equal(shield.opts.part, "rest")
+    equal(shield.result, "link")
+    equal(state.categories["Shield display"].headings[1].primer, shield.opts.primer)
+end)
+test("parts: a toolkit before version 3 keeps today's pages", function()
+    for _, version in ipairs({2, 1, false}) do
+        local state = fixture({toolkit = true, sections = allSections(), sectionsVersion = version or nil})
+        equal(#callsWithPart(state, "master"), 0, tostring(version))
+        equal(#state.categories["Warlock Tools Forever"].headings, 0)
+        equal(sectionCall(state, "Shield display").opts.part, nil, "the whole section on the sub-page")
+    end
+end)
+test("WTF's own pages: Stones rows are greyed while Stones is off; the stone macros stay", function()
+    local state = fixture()
+    local page = state.categories.Stones
+    local function row(variable)
+        for _, each in ipairs(page.initializers) do
+            if each.setting.variable == variable then return each end
+        end
+    end
+    local function usable(each)
+        for _, predicate in ipairs(each.modifyPredicates) do
+            if not predicate() then return false end
+        end
+        return true
+    end
+    local gated = {"WTF_STONES_SHOWN", "WTF_STONES_SCALE", "WTF_STONES_REMIND_SOULSTONE",
+        "WTF_STONES_REMIND_HEALTHSTONE"}
+    for _, variable in ipairs(gated) do equal(usable(row(variable)), true, variable) end
+    state.wtf.db.stones.enabled = false
+    for _, variable in ipairs(gated) do equal(usable(row(variable)), false, variable .. " greyed") end
+    equal(usable(row("WTF_STONES_MACROS")), true, "the macros work without the bar")
+    -- Soul Shard management only turns automatic deletion off: the limit, the
+    -- report, and the counter still work (the right-click trim), so no row greys.
+    state.wtf.db.shards.enabled = false
+    for _, each in ipairs(state.categories["Soul Shards"].initializers) do
+        equal(#each.modifyPredicates, 0, each.setting.variable)
+    end
+end)
+test("WTF's own pages: the Announce page is greyed while Announce is off", function()
+    local state = fixture()
+    local page = state.categories.Announce.frame
+    page:OnRefresh()
+    equal(page.rows[1].check.enabled, true)
+    equal(page.rows[1].edit.enabled, true)
+    equal(page.channels[1].enabled, true)
+    state.wtf.db.announce.enabled = false
+    page:OnRefresh()
+    for _, each in ipairs(page.rows) do
+        equal(each.check.enabled, false)
+        equal(each.edit.enabled, false)
+        equal(each.check.label.textColor[1], 0.5, "the label is grey")
+    end
+    for _, radio in ipairs(page.channels) do equal(radio.enabled, false) end
+    state.wtf.db.announce.enabled = true
+    page:OnRefresh()
+    equal(page.rows[2].check.enabled, true)
+    equal(page.rows[2].check.label.textColor[1], 1)
+end)
 test("without the toolkit's link, each moved page says where its feature went", function()
     for _, options in ipairs({{}, {toolkit = true, toolkitMissing = "AddSettingsLink"}}) do
         local state = fixture(options)
-        local page = state.categories.Shield
+        local page = state.categories["Shield display"]
         equal(#page.initializers, 1)
         local note = page.initializers[1]
-        equal(note.setting.name, "Shield display (moved to Dyre's Shields Up)")
+        equal(note.setting.name, "Shield display (in Dyre's Shields Up)")
+        equal(note.tooltip, "Install Dyre's Shields Up from CurseForge for the shield display.")
         contains(note.tooltip, "Install Dyre's Shields Up from CurseForge")
         equal(note.modifyPredicates[1](), false, "greyed: it only says something")
     end
@@ -3255,7 +3679,7 @@ test("middle-click always uses your best Healthstone, whatever the target", func
     health.scripts.OnEnter(health)
     local text = table.concat(state.tooltip, "|")
     contains(text, "Middle-click: use your best Healthstone on yourself.")
-    contains(text, "the \"! Healthstone\" macro in your character macros")
+    equal(text:find("macro", 1, true), nil, "click hints only")
     local empty = fixture({known = {[6201] = true}})
     empty.clear()
     empty.clickButton(HEALTH, "MiddleButton")
@@ -3458,8 +3882,8 @@ test("with Dyre's Toolkit WTF's settings sit under Dyre's AddOns, three levels d
     local page = state.categories["Warlock Tools Forever"]
     equal(page.parent, home)
     equal(state.registered, nil, "no top-level page of its own")
-    for _, name in ipairs({"Soul Shards", "Stones", "DoT Tracker", "DoTs", "Alerts", "Shield",
-        "Cooldown Chimes", "Control", "Announce"}) do
+    for _, name in ipairs({"Soul Shards", "Stones", "DoT Tracker", "DoTs", "Procs", "Shield display",
+        "Chimes", "Control", "Announce"}) do
         equal(state.categories[name].parent, page, name .. " is under WTF's page")
     end
     equal(state.settings.WTF_GRID, nil, "the toolkit's page has the grid")
@@ -3715,14 +4139,14 @@ test("/wtf reset moves the Stones bar back, after combat if needed", function()
     state.emit("PLAYER_REGEN_ENABLED")
     equal(bar.points[1][1], "CENTER")
 end)
-test("the stone tooltip explains both clicks and the macro name", function()
+test("the stone tooltip explains the clicks, with no follow-on text", function()
     local state = stonesFixture()
     local soul = state.env[SOUL]
     soul.scripts.OnEnter(soul)
     equal(state.tooltip[1], "Soulstone")
     contains(state.tooltip[2], "Left-click: use Lesser Soulstone on your friendly target, or on yourself.")
     contains(state.tooltip[3], "Right-click: create Lesser Soulstone.")
-    contains(state.tooltip[5], "the \"! Soulstone\" macro")
+    equal(#state.tooltip, 3, "the title and the two clicks")
 end)
 test("Spellstone and Firestone show as greyed-out Coming soon switches", function()
     local state = fixture()
@@ -4369,6 +4793,35 @@ test("a Soulstone on yourself announces nothing, with or without your last name"
     state.emit("UNIT_SPELLCAST_SENT", "player", "Dyre-Theog", "other", 20707)
     state.emit("UNIT_SPELLCAST_SUCCEEDED", "player", "other", 20707)
     equal(#state.sent, 2, "someone with your first name and another last name is someone else")
+end)
+test("never a whisper to yourself: Soulstone, summon, and Healthstone trade, in every name form", function()
+    -- John, 2026-11-27: a Soulstone on himself, Locus Stormshadow, was whispered to him.
+    local function whispers(state)
+        local count = 0
+        for _, sent in ipairs(state.sent) do
+            if sent.chatType == "WHISPER" then count = count + 1 end
+        end
+        return count
+    end
+    for _, realm in ipairs({false, "Forever"}) do
+        local state = fixture({group = "party", units = {player = {name = "Locus", surname = "Stormshadow",
+            realm = realm or nil, player = true, friend = true, level = 20}}})
+        for index, name in ipairs({"Locus", "Locus-Stormshadow", "Locus Stormshadow", "Locus - Stormshadow"}) do
+            state.emit("UNIT_SPELLCAST_SENT", "player", name, "self" .. index, 20707)
+            state.emit("UNIT_SPELLCAST_SUCCEEDED", "player", "self" .. index, 20707)
+        end
+        equal(whispers(state), 0, tostring(realm) .. ": no whisper to yourself")
+        state.wtf.WhisperHealthstoneGift("Locus Stormshadow", "Locus-Stormshadow")
+        state.wtf.WhisperHealthstoneGift("Locus", nil)
+        equal(whispers(state), 0, "no Healthstone whisper to yourself")
+        cast(state, 698, "Locus Stormshadow")
+        equal(whispers(state), 0, "no summon whisper to yourself")
+        state.emit("UNIT_SPELLCAST_SENT", "player", "Locus-Brightwind", "other", 20707)
+        state.emit("UNIT_SPELLCAST_SUCCEEDED", "player", "other", 20707)
+        equal(whispers(state), 1, "another Locus is someone else")
+        state.wtf.WhisperHealthstoneGift("Mira Dawn", "Mira-Dawn")
+        equal(whispers(state), 2, "others still get the whisper")
+    end
 end)
 test("debug_announce shows the spell names and the latest cast events", function()
     local state = fixture({group = "party"})
