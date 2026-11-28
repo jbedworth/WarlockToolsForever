@@ -4,6 +4,13 @@ Player-facing changes for each Warlock Tools Forever release, newest first. The
 release builder copies the section for the TOC version into the GitHub release
 notes and the CurseForge changelog, and fails if that section is missing.
 
+## 1.15.0
+
+### Features
+- The Stones bar now has a **Spellstone** button and a **Firestone** button. On Forever both stones go on your main-hand weapon, so left-click puts your best one on your weapon, and right-click makes one, the same way round as the Soulstone and Healthstone buttons. A stone you haven't learned yet shows greyed out, and its tooltip tells you the level you learn it at.
+- When you carry a Spellstone or Firestone and your weapon has neither one on, its button glows, so you don't forget to put it on. An oil on your weapon doesn't count. The glow needs Dyre's Toolkit 2.21.0 or later.
+- Don't want the new buttons or the glow? Each has its own switch on the Stones settings page. Let me know what you think!
+
 ## 1.14.4
 
 ### Fixes

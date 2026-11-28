@@ -287,6 +287,20 @@ and printing.
       prints the combat line once.
 - [ ] With a lower-level friend targeted, right-click on the Healthstone button
       creates a rank that friend can use; `/wtf debug_stones` agrees.
+- [ ] Spellstone and Firestone (level 28 or higher): both buttons show; one
+      not learned is greyed and its tooltip gives the learn level.
+      Right-click creates the best rank; left-click puts it on the main hand
+      (the game may ask to replace an enchant). `/dyre weapon` after each
+      stone: note the enchant ID it shows and check it is in Stones.lua's
+      `STONE_ENCHANTS` (Firestone 1803, 1823, 1824, 1825; Spellstone 8059,
+      8060, 8061). With Dyre's Toolkit 2.21.0: the button glows while you
+      carry the stone and the weapon has no stone; it stops when you apply
+      one, and comes back when the enchant ends. An oil plus a stone: what
+      `/dyre weapon` shows, and that the glow stays off while the stone is
+      on. An oil alone: the glow shows. Create a stone in combat: the glow
+      shows at once. `/wtf debug_stones` shows the weapon line. Turning each
+      button switch off removes it from the bar, and the glow switch stops
+      the glow.
 - [ ] "! Healthstone" and "! Soulstone" appear in your character macros
       with the stone's icon. On an action bar, left-click uses your best stone
       in combat; right-click creates one (the Healthstone one downranked when

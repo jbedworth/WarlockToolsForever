@@ -381,9 +381,32 @@ announcements go with the Control bar (the 2026-10-30 decision).
   silently turned the macros off in client. Missing macro APIs are reported
   once. "Keep stone macros"
   (default on) turned off deletes them.
-- Spellstone and Firestone buttons and reminders are agreed future scope.
-  Until built, the Stones page shows four greyed-out "(Coming soon)"
-  switches (author-approved) that are never on and save nothing.
+- Spellstone and Firestone (built, unreleased; John, 2026-11-28): on Forever
+  both are main-hand weapon imbues (60 min), not Classic's off-hand items
+  (Blizzard's Rogue and Warlock class deep dive; Good-to-Go's Forever data,
+  from this client's tables). Spellstone: spells 2362, 17727, 17728 make
+  items 5522, 13602, 13603 (learned at 36, 48, 60). Firestone: 6366, 17951,
+  17952, 17953 make 1254, 13699, 13700, 13701 (28, 36, 46, 56). Buttons 3 and
+  4 on the bar, the same clicks as the other stones: left-click is the item
+  action with `target-slot1` 16 (SecureTemplates.lua uses it once the item
+  asks for a target), right-click casts the best rank known by spell ID. Each
+  has a switch (`showSpellstone`, `showFirestone`, default on); the bar lays
+  out again out of combat when one changes. A stone not learned shows
+  greyed (desaturated) with its learn level in the tooltip, never hidden.
+  No macros and no chat reminders for these stones.
+- The ready glow (John, 2026-11-28: "Once created and one is in your bag and
+  it's not applied, we show the 'glow' reminder around the icon in the
+  bar"): a button glows while you carry that stone, know it, and the main
+  hand has neither stone's enchant. Enchant IDs in Stones.lua's
+  `STONE_ENCHANTS` (Good-to-Go, from SpellEffect): Firestone 1803, 1823,
+  1824, 1825; Spellstone 8059, 8060, 8061. Any other enchant (an oil) is
+  not a stone. The read is Dyre's Toolkit 2.21.0's (`WEAPON_ENCHANT_VERSION`
+  1, `OnWeaponEnchantChanged`; "unknown" keeps the last glow); without it,
+  no glow. Also on BAG_UPDATE_DELAYED. The glow is WTF's own texture
+  (UI-ActionButton-Border, ADD, gold) with a looping Alpha animation, not
+  secure, so it changes in combat; no OnUpdate, and not the client's
+  overlay glow (unverified on Forever). One switch, "Glow when a stone is
+  ready to apply" (`glowStones`, default on), greyed while Stones is off.
 - Healthstone middle-click (author-approved): `type3` item action for the best
   Healthstone carried, whatever the target.
 - Healthstones are unique per rank, so the create rank skips ranks already
@@ -460,13 +483,11 @@ announcements go with the Control bar (the 2026-10-30 decision).
   the success event was blocked (ADDON_ACTION_BLOCKED), so it waits for the
   next key press or world click (`WTF.RunOnNextInput`), as shard deletion
   does, and is dropped after 30 s without one. A blocked chat type is
-  reported once. No Spellstone or Firestone emotes until those exist.
+  reported once. No Spellstone or Firestone emotes.
 - Texts are trimmed, single-line, at most 255 bytes, else the default. The
   Announce settings subpage is a canvas page with edit boxes.
 - If Forever adds meeting stones, announce that one is up (agreed, not built).
 
-- Agreed next (not yet built): Spellstone and Firestone buttons, once the
-  author's characters reach the levels that teach them; Forever has both.
 
 ### Dyre's Toolkit (built; author-approved, 2026-10-19)
 

@@ -55,7 +55,8 @@ local SPELLS = {[1120] = "Drain Soul", [11675] = "Drain Soul", [8288] = "Drain S
     [687] = "Demon Skin", [706] = "Demon Armor", [11735] = "Demon Armor",
     [17962] = "Conflagrate", [18288] = "Amplify Curse", [1122] = "Inferno", [603] = "Bane of Doom"}
 local ITEMS = {[5232] = {"Minor Soulstone", 18}, [16892] = {"Lesser Soulstone", 30},
-    [5512] = {"Minor Healthstone", 1}, [5511] = {"Lesser Healthstone", 12}, [5509] = {"Healthstone", 24}}
+    [5512] = {"Minor Healthstone", 1}, [5511] = {"Lesser Healthstone", 12}, [5509] = {"Healthstone", 24},
+    [1254] = {"Lesser Firestone", 0}, [13699] = {"Firestone", 0}}
 local DRAIN_SOUL_RANK_4 = 11675
 local SHADOW_BOLT = 686
 
@@ -1289,6 +1290,19 @@ local function fixture(options)
         end}
         for _, name in ipairs(TOOLKIT_FILES) do
             local chunk, message = loadfile(TOOLKIT_DIR .. name)
+            if not chunk then error(message) end
+            setfenv(chunk, env)
+            chunk("DyresToolkit", toolkitNS)
+        end
+        -- options.weapons: the Toolkit's main-hand read (Weapons.lua, 2.21.0),
+        -- with GetWeaponEnchantInfo from state.mainHand {has, ms, id}.
+        if options.weapons then
+            state.mainHand = options.mainHand or {}
+            env.GetWeaponEnchantInfo = function()
+                local hand = state.mainHand
+                return hand.has, hand.ms, 0, hand.id
+            end
+            local chunk, message = loadfile(TOOLKIT_DIR .. "Weapons.lua")
             if not chunk then error(message) end
             setfenv(chunk, env)
             chunk("DyresToolkit", toolkitNS)
@@ -4212,23 +4226,181 @@ test("the stone tooltip explains the clicks, with no follow-on text", function()
     contains(state.tooltip[3], "Right-click: create Lesser Soulstone.")
     equal(#state.tooltip, 3, "the title and the two clicks")
 end)
-test("Spellstone and Firestone show as greyed-out Coming soon switches", function()
-    local state = fixture()
-    for _, variable in ipairs({"WTF_STONES_SPELLSTONE", "WTF_STONES_FIRESTONE", "WTF_STONES_REMIND_SPELLSTONE",
-        "WTF_STONES_REMIND_FIRESTONE"}) do
-        local setting = state.settings[variable]
-        contains(setting.name, "(Coming soon)")
-        equal(setting:GetValue(), false)
-        setting:SetValue(true)
-        equal(setting:GetValue(), false, "never turns on")
+-- Spellstone and Firestone (on Forever, weapon imbues on the main hand).
+local SPELL = "WarlockToolsForeverSpellstone"
+local FIRE = "WarlockToolsForeverFirestone"
+test("weapon stones: left-click puts the best stone on the main hand, right-click creates the best rank", function()
+    local state = stonesFixture({known = {[6366] = true, [17951] = true}, carried = {[1254] = 1}})
+    local fire = state.env[FIRE]
+    equal(fire.attributes.type1, "item")
+    equal(fire.attributes.item1, "item:1254")
+    equal(fire.attributes["target-slot1"], 16, "the main-hand slot")
+    equal(fire.attributes.type2, "spell")
+    equal(fire.attributes.spell2, 17951, "the best rank known")
+    equal(fire.count.text, 1)
+    equal(fire.icon.texture, 1000 + 1254)
+    equal(fire.icon.desaturated, false)
+    state.carried[1254] = 0
+    state.carried[13699] = 1
+    state.emit("BAG_UPDATE_DELAYED")
+    equal(fire.attributes.item1, "item:13699", "the better stone")
+    fire.scripts.OnEnter(fire)
+    equal(state.tooltip[1], "Firestone")
+    contains(state.tooltip[2], "Left-click: put Firestone on your main-hand weapon.")
+    contains(state.tooltip[3], "Right-click: create Firestone.")
+    equal(#state.tooltip, 3)
+end)
+test("weapon stones: a stone you have not learned is shown greyed and says so", function()
+    local state = stonesFixture()
+    local spell = state.env[SPELL]
+    equal(spell.shown, true, "listed, never hidden")
+    equal(spell.icon.desaturated, true, "greyed")
+    equal(spell.icon.texture, "Interface\\Icons\\INV_Misc_Gem_Sapphire_01")
+    equal(spell.attributes.type1, nil)
+    equal(spell.attributes.type2, nil)
+    state.clickButton(SPELL, "RightButton")
+    equal(state.last(), "WTF: You do not know Create Spellstone yet.")
+    state.clickButton(SPELL, "LeftButton")
+    equal(state.last(), "WTF: No Spellstone in your bags. Right-click to create one.")
+    spell.scripts.OnEnter(spell)
+    contains(state.tooltip[2], "Left-click: you carry none.")
+    contains(state.tooltip[3], "Right-click: you learn Create Spellstone at level 36.")
+end)
+test("weapon stones: each button's switch saves, and the bar lays out again out of combat", function()
+    local state = stonesFixture()
+    local bar, spell, fire = state.env.WarlockToolsForeverStones, state.env[SPELL], state.env[FIRE]
+    equal(state.wtf.db.stones.showSpellstone, true, "on by default")
+    equal(state.wtf.db.stones.showFirestone, true, "on by default")
+    equal(bar.width, 174, "four buttons")
+    local x = fire.points[#fire.points][4]
+    equal(x, 132, "the fourth place")
+    state.settings.WTF_STONES_SPELLSTONE:SetValue(false)
+    equal(state.wtf.db.stones.showSpellstone, false, "saved")
+    equal(state.settings.WTF_STONES_SPELLSTONE:GetValue(), false)
+    equal(spell.shown, false)
+    equal(bar.width, 132, "three buttons")
+    x = fire.points[#fire.points][4]
+    equal(x, 90, "the Firestone moves up")
+    state.combat = true
+    state.settings.WTF_STONES_FIRESTONE:SetValue(false)
+    equal(state.wtf.db.stones.showFirestone, false, "saved at once")
+    equal(fire.shown, true, "no change in combat")
+    state.combat = false
+    state.emit("PLAYER_REGEN_ENABLED")
+    equal(fire.shown, false, "hidden when combat ends")
+    equal(bar.width, 90, "two buttons")
+    local reloaded = stonesFixture({db = {stones = {showSpellstone = false, showFirestone = "junk"}}})
+    equal(reloaded.wtf.db.stones.showSpellstone, false, "kept")
+    equal(reloaded.wtf.db.stones.showFirestone, true, "repaired")
+    for _, variable in ipairs({"WTF_STONES_SPELLSTONE", "WTF_STONES_FIRESTONE"}) do
+        local row
+        for _, initializer in ipairs(state.categories.Stones.initializers) do
+            if initializer.setting and initializer.setting.variable == variable then row = initializer end
+        end
+        equal(row.modifyPredicates[1](), true)
+        state.wtf.db.stones.enabled = false
+        equal(row.modifyPredicates[1](), false, variable .. " greyed while Stones is off")
+        state.wtf.db.stones.enabled = true
     end
-    local disabled = 0
+end)
+-- The ready glow (John, 2026-11-28), from the Toolkit's main-hand read.
+local function glowFixture(extra)
+    local options = {toolkit = true, weapons = true, known = {[6366] = true, [17951] = true},
+        carried = {[1254] = 1}, mainHand = {has = false}}
+    for key, value in pairs(extra or {}) do options[key] = value end
+    return stonesFixture(options)
+end
+local function setMainHand(state, has, id)
+    state.mainHand = {has = has, ms = has and 3600000 or nil, id = id}
+    state.emit("UNIT_INVENTORY_CHANGED", "player")
+end
+test("glow: a stone you carry glows while your weapon has neither stone", function()
+    local state = glowFixture()
+    local fire, spell = state.env[FIRE], state.env[SPELL]
+    equal(fire.glowing, true, "a Firestone in the bag, nothing on the weapon")
+    equal(fire.glow.shown, true)
+    equal(fire.glow.pulse.playing, true, "it pulses")
+    equal(spell.glowing, false, "not learned: greyed, never glows")
+    setMainHand(state, true, 1823)
+    equal(fire.glowing, false, "a Firestone on the weapon")
+    equal(fire.glow.shown, false)
+    setMainHand(state, true, 8059)
+    equal(fire.glowing, false, "a Spellstone on the weapon: no Firestone glow either")
+    setMainHand(state, true, 2629)
+    equal(fire.glowing, true, "another enchant (an oil) is not a stone")
+    setMainHand(state, false)
+    equal(fire.glowing, true)
+    state.carried[1254] = 0
+    state.emit("BAG_UPDATE_DELAYED")
+    equal(fire.glowing, false, "nothing to apply")
+end)
+test("glow: it follows your bags and weapon in combat, with no secure change", function()
+    local state = glowFixture({carried = {}})
+    local fire = state.env[FIRE]
+    equal(fire.glowing, false)
+    state.combat = true
+    state.carried[1254] = 1
+    state.emit("BAG_UPDATE_DELAYED")
+    equal(fire.glowing, true, "a stone created in combat glows at once")
+    equal(fire.attributes.item1, nil, "the click action waits for combat to end")
+    setMainHand(state, true, 1803)
+    equal(fire.glowing, false)
+    state.combat = false
+    state.emit("PLAYER_REGEN_ENABLED")
+    equal(fire.attributes.item1, "item:1254")
+end)
+test("glow: an unknown weapon read keeps the last glow", function()
+    local state = glowFixture()
+    local fire = state.env[FIRE]
+    equal(fire.glowing, true)
+    local hidden = secret()
+    state.secrets[hidden] = true
+    state.mainHand = {has = hidden}
+    state.emit("UNIT_INVENTORY_CHANGED", "player")
+    equal(fire.glowing, true, "a secret read changes nothing")
+end)
+test("glow: one switch, on by default, saved, and greyed while Stones is off", function()
+    local state = glowFixture()
+    local fire = state.env[FIRE]
+    local setting = state.settings.WTF_STONES_GLOW
+    equal(setting.name, "Glow when a stone is ready to apply")
+    equal(state.wtf.db.stones.glowStones, true, "on by default")
+    setting:SetValue(false)
+    equal(state.wtf.db.stones.glowStones, false, "saved")
+    equal(fire.glowing, false, "off: no glow")
+    setting:SetValue(true)
+    equal(fire.glowing, true)
+    state.settings.WTF_STONES_ENABLED:SetValue(false)
+    equal(fire.glowing, false, "no glow while Stones is off")
+    local row
     for _, initializer in ipairs(state.categories.Stones.initializers) do
-        local predicate = initializer.modifyPredicates[1]
-        if predicate and predicate() == false then disabled = disabled + 1 end
+        if initializer.setting and initializer.setting.variable == "WTF_STONES_GLOW" then row = initializer end
     end
-    equal(disabled, 4)
-    equal(state.wtf.db.stones.spellstone, nil, "nothing saved")
+    equal(row.modifyPredicates[1](), false, "greyed while Stones is off")
+    state.wtf.db.stones.enabled = true
+    equal(row.modifyPredicates[1](), true)
+    equal(state.settings.WTF_STONES_REMIND_SPELLSTONE, nil, "the Coming soon rows are gone")
+    equal(state.settings.WTF_STONES_REMIND_FIRESTONE, nil)
+    local reloaded = stonesFixture({db = {stones = {glowStones = false}}})
+    equal(reloaded.wtf.db.stones.glowStones, false, "kept")
+end)
+test("glow: without the Toolkit's weapon read, nothing glows and the buttons still work", function()
+    for _, options in ipairs({{toolkit = true}, {}}) do
+        options.known, options.carried = {[6366] = true}, {[1254] = 1}
+        local state = stonesFixture(options)
+        local fire = state.env[FIRE]
+        equal(fire.glowing, false)
+        equal(fire.glow.shown, false)
+        equal(fire.attributes.item1, "item:1254")
+    end
+end)
+test("debug_stones shows the weapon read and each glow", function()
+    local state = glowFixture()
+    setMainHand(state, true, 2629)
+    state.clear()
+    state.slash("debug_stones")
+    contains(table.concat(state.messages, "|"),
+        "debug_stones weapon known=true enchant=2629 stone=nil glow spellstone=false firestone=true")
 end)
 test("debug_stones lists ranks, carried stones, and level requirements", function()
     local state = stonesFixture()
@@ -4642,10 +4814,19 @@ end)
 -- The Stones bar as a Dyre's Toolkit widget (1.14.0; John, 2026-11-27: button
 -- bars horizontal or vertical, a Toolkit feature, Toolkit 2.18.0).
 local ORIENTATION = "DYRE_WARLOCKTOOLSFOREVER_STONES_ORIENTATION"
+-- Two buttons, as before the weapon stones, unless a test turns them on.
+local function twoButtons(options)
+    options.db = options.db or {}
+    options.db.stones = options.db.stones or {}
+    for _, key in ipairs({"showSpellstone", "showFirestone"}) do
+        if options.db.stones[key] == nil then options.db.stones[key] = false end
+    end
+    return options
+end
 local function widgetFixture(extra)
     local options = {toolkit = true, widgets = true}
     for key, value in pairs(extra or {}) do options[key] = value end
-    return stonesFixture(options)
+    return stonesFixture(twoButtons(options))
 end
 local function lastPoint(frame)
     local point = frame.points[#frame.points]
@@ -4675,7 +4856,7 @@ test("widget: an old Stones save loads in the same place and size as before, rea
             end
             return {stones = stones}
         end
-        local old = stonesFixture({toolkit = true, db = copy()})
+        local old = stonesFixture(twoButtons({toolkit = true, db = copy()}))
         local new = widgetFixture({db = copy()})
         local context = "save " .. index
         equal(old.wtf.StonesWidget(), nil, context .. ": an older toolkit keeps WTF's own bar")
@@ -4777,7 +4958,7 @@ test("widget: /wtf reset puts the Stones bar back through the toolkit, after com
 end)
 test("widget: a profile copy places the Stones bar and lays it out from the profile", function()
     local state = widgetFixture({profiles = true})
-    otherProfile(state, {stones = {orientation = "vertical", scale = 80,
+    otherProfile(state, {stones = {orientation = "vertical", scale = 80, showSpellstone = false, showFirestone = false,
         position = {point = "CENTER", relativePoint = "BOTTOMLEFT", x = 400, y = 300}}})
     local stones = state.wtf.db.stones
     local ok = state.toolkitNS.profile:CopyFrom("Alt - Forever")
@@ -4849,7 +5030,7 @@ test("widget: without Toolkit 2.18.0's button bars, the Stones bar is WTF's own,
         local point = lastPoint(state.env[HEALTH])
         equal(point, "LEFT", "a row, as before")
         equal(state.settings[ORIENTATION], nil, "no Layout row")
-        equal(bar.width, 90)
+        equal(bar.width, 174, "four buttons: the weapon stones are on by default")
     end
 end)
 -- Hide empty DoT slots (John, 2026-11-17; Toolkit TRACKER_HIDE_EMPTY).

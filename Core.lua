@@ -393,6 +393,11 @@ function WTF.SanitizeDB(db)
         macros = stones.macros ~= false,
         remindSoulstone = stones.remindSoulstone ~= false,
         remindHealthstone = stones.remindHealthstone ~= false,
+        -- Spellstone and Firestone buttons on the bar (on by default).
+        showSpellstone = stones.showSpellstone ~= false,
+        showFirestone = stones.showFirestone ~= false,
+        -- The ready glow on those buttons (on by default).
+        glowStones = stones.glowStones ~= false,
         soulstone = soulstone and type(soulstone.name) == "string" and type(soulstone.ends) == "number"
             and {name = soulstone.name, ends = soulstone.ends} or nil,
     }

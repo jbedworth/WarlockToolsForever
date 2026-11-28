@@ -151,7 +151,7 @@ game unchanged.
 
 ## Stones
 
-A small bar with a Soulstone and a Healthstone button; see
+A small bar with Soulstone, Healthstone, Spellstone, and Firestone buttons; see
 [Moving frames](#moving-frames) to place it. **Stones bar size** on the
 Stones settings page makes it smaller or bigger (50-150%). **Layout**
 (Horizontal or Vertical) makes it a row or a column; it needs Dyre's
@@ -180,8 +180,16 @@ Toolkit 2.18.0 or later, and without it the bar is a row.
   Turn **Keep stone macros** off on the Stones settings page to remove them.
   (On Forever, `/click` macros do not press AddOn buttons, so these macros
   use the game's own `/use`.)
-- Spellstone and Firestone buttons and reminders are planned; they show as
-  greyed-out **Coming soon** switches on the Stones settings page.
+- **Spellstone and Firestone:** on Forever, both stones go on your
+  main-hand weapon and last an hour. Left-click puts your best stone on your
+  weapon; right-click creates the best rank you know. A stone you have not
+  learned yet shows greyed, and its tooltip says the level you learn it at.
+  Turn **Spellstone button** or **Firestone button** off on the Stones
+  settings page to take a button off the bar.
+- **The glow:** a Spellstone or Firestone button glows while you carry that
+  stone and your weapon has neither stone on. An oil on your weapon does not
+  count. It needs Dyre's Toolkit 2.21.0 or later. Turn **Glow when a stone is
+  ready to apply** off to stop it.
 - The game lets the buttons change only out of combat, so a stone made or used
   in combat updates them when combat ends.
 - **Stone status:** WTF remembers who has your Soulstone and says in chat when

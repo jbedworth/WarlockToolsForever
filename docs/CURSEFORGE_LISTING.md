@@ -44,7 +44,8 @@ WTF does some of this itself, and my other Dyre's AddOns do the rest. The CurseF
 - Right-click the counter to delete every shard above your limit.
 
 ### Stones
-- The **Stones bar** has a Soulstone button and a Healthstone button. Left-click uses your best stone, and right-click makes one. You can lay it out as a row or a column.
+- The **Stones bar** has Soulstone, Healthstone, Spellstone, and Firestone buttons. Left-click uses your best stone, and right-click makes one. You can lay it out as a row or a column.
+- On Forever, Spellstones and Firestones go on your weapon. Their buttons glow when you carry one and your weapon has neither on (needs Dyre's Toolkit).
 - Target a friend and left-click the Healthstone button, and WTF trades them the best Healthstone they can use. If you don't have one for them, it makes one first.
 - WTF keeps two macros up to date for your action bars, **! Healthstone** and **! Soulstone**.
 - WTF remembers who has your Soulstone and tells you when it ends. It also reminds you when no Soulstone is up or you're out of Healthstones.

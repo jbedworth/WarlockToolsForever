@@ -1,10 +1,11 @@
 local addonName, WTF = ...
 
--- Stones: one button each for Soulstones and Healthstones on a small movable
--- bar. Left-click uses the best stone you carry; right-click creates the best
--- rank you know (for a Healthstone, the best rank your friendly player target
--- can use). The buttons are secure, so they work in combat, but their actions
--- can change only out of combat; changes wait for combat to end.
+-- Stones: one button each for Soulstones, Healthstones, Spellstones, and
+-- Firestones on a small movable bar. Left-click uses the best stone you carry
+-- (a Spellstone or Firestone on your main-hand weapon); right-click creates
+-- the best rank you know (for a Healthstone, the best rank your friendly
+-- player target can use). The buttons are secure, so they work in combat, but
+-- their actions can change only out of combat; changes wait for combat to end.
 
 -- Ranks from lowest to highest: the create spell and the item it makes.
 -- Classic's IDs, which Consumable Connoisseur's Forever data confirms in
@@ -24,6 +25,44 @@ local HEALTHSTONES = {
     {spell = 11729, items = {5510}},  -- Greater, level 36
     {spell = 11730, items = {9421}},  -- Major, level 48
 }
+-- On Forever, Spellstones and Firestones are weapon imbues on the main hand
+-- that last 60 minutes (Blizzard's Rogue and Warlock class deep dive), not
+-- Classic's off-hand items: using the stone applies it to the weapon. Classic's
+-- spell and item IDs, which this client's tables keep (Good-to-Go's Forever
+-- data, from wago.tools). level: the level the first rank is learned at.
+local SPELLSTONES = {
+    {spell = 2362, items = {5522}},    -- Spellstone, level 36
+    {spell = 17727, items = {13602}},  -- Greater, level 48
+    {spell = 17728, items = {13603}},  -- Major, level 60
+}
+local FIRESTONES = {
+    {spell = 6366, items = {1254}},    -- Lesser, level 28
+    {spell = 17951, items = {13699}},  -- Firestone, level 36
+    {spell = 17952, items = {13700}},  -- Greater, level 46
+    {spell = 17953, items = {13701}},  -- Major, level 56
+}
+-- setting: the db.stones flag that puts the button on the bar.
+local WEAPON_STONES = {
+    spellstone = {ranks = SPELLSTONES, title = "Spellstone", create = "Create Spellstone", level = 36,
+        setting = "showSpellstone", icon = "Interface\\Icons\\INV_Misc_Gem_Sapphire_01"},
+    firestone = {ranks = FIRESTONES, title = "Firestone", create = "Create Firestone", level = 28,
+        setting = "showFirestone", icon = "Interface\\Icons\\INV_Ammo_FireTar"},
+}
+local WEAPON_KINDS = {"spellstone", "firestone"}
+-- The enchant each stone puts on the weapon, by its ID (Good-to-Go's Forever
+-- data: this client's SpellEffect ENCHANT_ITEM_TEMPORARY values). /dyre
+-- weapon shows the ID in client; they may change, so they live here only.
+local STONE_ENCHANTS = {
+    [8059] = "spellstone", [8060] = "spellstone", [8061] = "spellstone",
+    [1803] = "firestone", [1823] = "firestone", [1824] = "firestone", [1825] = "firestone",
+}
+local GLOW_TEXTURE = "Interface\\Buttons\\UI-ActionButton-Border"
+local GLOW_SCALE = 1.8
+local GLOW_PULSE_SECONDS = 0.8
+local GLOW_LOW_ALPHA = 0.35
+-- The secure item action's target-slot puts the stone on this slot once the
+-- item asks for a target (SecureTemplates.lua, SpellCanTargetItem).
+local MAIN_HAND_SLOT = 16
 local SOULSTONE_ICON = "Interface\\Icons\\INV_Misc_Orb_04"
 local HEALTHSTONE_ICON = "Interface\\Icons\\INV_Stone_04"
 local BUTTON_SIZE = 36
@@ -171,9 +210,47 @@ function WTF.StonesWidget()
     return buttons.widget
 end
 
+-- The buttons on the bar, in order: Soulstone and Healthstone always, then
+-- each weapon stone whose switch is on (shown greyed until you learn it).
+local function ShownButtons()
+    local list = {buttons.soulstone, buttons.healthstone}
+    for _, kind in ipairs(WEAPON_KINDS) do
+        if WTF.db.stones[WEAPON_STONES[kind].setting] then
+            list[#list + 1] = buttons[kind]
+        end
+    end
+    return list
+end
+
+local function BarWidth(count)
+    return PADDING * 2 + BUTTON_SIZE * count + BUTTON_GAP * (count - 1)
+end
+
+-- Which weapon stone buttons are on, as text, to lay out again on a change.
+local function LayoutKey()
+    local key = ""
+    for _, kind in ipairs(WEAPON_KINDS) do
+        key = key .. (WTF.db.stones[WEAPON_STONES[kind].setting] and "1" or "0")
+    end
+    return key
+end
+
+-- Out of combat only: the buttons are secure.
 local function LayoutStoneButtons()
-    buttons.widget:LayoutButtons({buttons.soulstone, buttons.healthstone},
-        {size = BUTTON_SIZE, gap = BUTTON_GAP, padding = PADDING})
+    local list = ShownButtons()
+    for _, kind in ipairs(WEAPON_KINDS) do
+        buttons[kind]:SetShown(WTF.db.stones[WEAPON_STONES[kind].setting] == true)
+    end
+    buttons.layoutKey = LayoutKey()
+    if buttons.widget then
+        buttons.widget:LayoutButtons(list, {size = BUTTON_SIZE, gap = BUTTON_GAP, padding = PADDING})
+        return
+    end
+    buttons.bar:SetSize(BarWidth(#list), PADDING * 2 + BUTTON_SIZE)
+    for index, button in ipairs(list) do
+        button:ClearAllPoints()
+        button:SetPoint("LEFT", buttons.bar, "LEFT", PADDING + (index - 1) * (BUTTON_SIZE + BUTTON_GAP), 0)
+    end
 end
 
 -- Character macros "WTF Healthstone" and "WTF Soulstone". On Forever, /click
@@ -336,7 +413,61 @@ function WTF.ApplyStoneMacros()
     end
 end
 
+-- The ready glow (John, 2026-11-28: "Once created and one is in your bag and
+-- it's not applied, we show the 'glow' reminder around the icon in the bar"):
+-- a Spellstone or Firestone button glows while you carry that stone, know it,
+-- and your main hand has neither stone on. Another enchant (an oil) is not a
+-- stone. The main hand comes from Dyre's Toolkit (WEAPON_ENCHANT_VERSION 1);
+-- without it, or before its first read, nothing glows. The glow is a plain
+-- texture, not secure, so it changes in combat too.
+local weapon = {known = false, stone = nil, id = nil}
+
+local function SetGlow(button, on)
+    if not button.glow then
+        return
+    end
+    if on then
+        button.glow:Show()
+        button.glow.pulse:Play()
+    else
+        button.glow.pulse:Stop()
+        button.glow:Hide()
+    end
+    button.glowing = on
+end
+
+local function UpdateGlows()
+    if not buttons.bar then
+        return
+    end
+    local settings = WTF.db.stones
+    for _, kind in ipairs(WEAPON_KINDS) do
+        local ranks = WEAPON_STONES[kind].ranks
+        SetGlow(buttons[kind], settings.enabled and settings.glowStones and weapon.known and not weapon.stone
+            and BestKnownRank(ranks) ~= nil and CountCarried(ranks) > 0 or false)
+    end
+end
+WTF.RefreshStoneGlows = UpdateGlows
+
+-- The toolkit's listener: never called for "unknown", so the last glow stays.
+local function OnWeaponEnchant(state, id)
+    weapon.known = true
+    weapon.id = state == "on" and id or nil
+    weapon.stone = state == "on" and type(id) == "number" and STONE_ENCHANTS[id] or nil
+    UpdateGlows()
+end
+
+local function WatchWeapon()
+    local toolkit = WTF.toolkit
+    if type(toolkit) == "table" and (tonumber(toolkit.WEAPON_ENCHANT_VERSION) or 0) >= 1
+            and type(toolkit.OnWeaponEnchantChanged) == "function" then
+        toolkit.OnWeaponEnchantChanged(OnWeaponEnchant)
+    end
+end
+
 local function ApplyActions()
+    -- Bags change in combat too; the glow can follow, the actions cannot.
+    UpdateGlows()
     if InCombatLockdown() then
         stones.pending = true
         return
@@ -384,6 +515,21 @@ local function ApplyActions()
     health.icon:SetTexture(healthIcon and C_Item.GetItemIconByID(healthIcon) or HEALTHSTONE_ICON)
     soul.count:SetText(CountCarried(SOULSTONES))
     health.count:SetText(CountCarried(HEALTHSTONES))
+    for _, kind in ipairs(WEAPON_KINDS) do
+        local line, button = WEAPON_STONES[kind], buttons[kind]
+        local item, rank = BestCarriedItem(line.ranks), BestKnownRank(line.ranks)
+        button:SetAttribute("type1", item and "item" or nil)
+        button:SetAttribute("item1", item and ("item:" .. item) or nil)
+        button:SetAttribute("target-slot1", item and MAIN_HAND_SLOT or nil)
+        button:SetAttribute("type2", rank and "spell" or nil)
+        button:SetAttribute("spell2", rank and rank.spell or nil)
+        button.itemID, button.rank = item, rank
+        local icon = item or (rank and rank.items[1])
+        button.icon:SetTexture(icon and C_Item.GetItemIconByID(icon) or line.icon)
+        -- Listed and greyed, never hidden: a stone you have not learned yet.
+        button.icon:SetDesaturated(not item and not rank)
+        button.count:SetText(CountCarried(line.ranks))
+    end
     UpdateMacros(soulRank, healthRank)
 end
 
@@ -393,6 +539,9 @@ local function UpdateVisibility()
         return
     end
     local settings = WTF.db.stones
+    if LayoutKey() ~= buttons.layoutKey then
+        LayoutStoneButtons()
+    end
     if settings.enabled and settings.shown then
         buttons.bar:Show()
     else
@@ -558,6 +707,15 @@ local function PostClick(button, mouseButton, down)
         end
         return
     end
+    local line = WEAPON_STONES[kind]
+    if line then
+        if mouseButton == "RightButton" and not button.rank then
+            Say("You do not know " .. line.create .. " yet.")
+        elseif mouseButton == "LeftButton" and not button.itemID then
+            Say("No " .. line.title .. " in your bags. Right-click to create one.")
+        end
+        return
+    end
     if mouseButton == "MiddleButton" then
         if kind == "healthstone" and not button.itemID then
             Say("No Healthstone in your bags. Right-click to create one.")
@@ -587,8 +745,30 @@ local function ItemName(itemID)
     return name or "a stone"
 end
 
+local function ShowWeaponStoneTooltip(button, line)
+    GameTooltip:SetText(line.title, GOLD[1], GOLD[2], GOLD[3])
+    if button.itemID then
+        GameTooltip:AddLine("Left-click: put " .. ItemName(button.itemID) .. " on your main-hand weapon.",
+            1, 1, 1, true)
+    else
+        GameTooltip:AddLine("Left-click: you carry none.", 0.7, 0.7, 0.7, true)
+    end
+    if button.rank then
+        GameTooltip:AddLine("Right-click: create " .. ItemName(button.rank.items[1]) .. ".", 1, 1, 1, true)
+    else
+        GameTooltip:AddLine("Right-click: you learn " .. line.create .. " at level " .. line.level .. ".",
+            0.7, 0.7, 0.7, true)
+    end
+    GameTooltip:Show()
+end
+
 local function ShowTooltip(button)
     GameTooltip:SetOwner(button, "ANCHOR_TOP")
+    local line = WEAPON_STONES[button.kind]
+    if line then
+        ShowWeaponStoneTooltip(button, line)
+        return
+    end
     local soulstone = button.kind == "soulstone"
     GameTooltip:SetText(soulstone and "Soulstone" or "Healthstone", GOLD[1], GOLD[2], GOLD[3])
     if not soulstone and button.mode == "trade" then
@@ -659,6 +839,23 @@ local function CreateStoneButton(bar, name, kind, index)
     border:SetBackdropBorderColor(GOLD[1], GOLD[2], GOLD[3])
     button.count = button:CreateFontString(nil, "OVERLAY", "NumberFontNormal")
     button.count:SetPoint("BOTTOMRIGHT", -2, 2)
+    if WEAPON_STONES[kind] then
+        local glow = button:CreateTexture(nil, "OVERLAY")
+        glow:SetTexture(GLOW_TEXTURE)
+        glow:SetBlendMode("ADD")
+        glow:SetVertexColor(GOLD[1], GOLD[2], GOLD[3])
+        glow:SetPoint("CENTER", button, "CENTER", 0, 0)
+        glow:SetSize(BUTTON_SIZE * GLOW_SCALE, BUTTON_SIZE * GLOW_SCALE)
+        glow:Hide()
+        -- An animation, not an OnUpdate script: it fades and returns.
+        glow.pulse = glow:CreateAnimationGroup()
+        glow.pulse:SetLooping("BOUNCE")
+        local fade = glow.pulse:CreateAnimation("Alpha")
+        fade:SetFromAlpha(1)
+        fade:SetToAlpha(GLOW_LOW_ALPHA)
+        fade:SetDuration(GLOW_PULSE_SECONDS)
+        button.glow = glow
+    end
     button:SetScript("PostClick", PostClick)
     button:SetScript("OnEnter", ShowTooltip)
     button:SetScript("OnLeave", function() GameTooltip:Hide() end)
@@ -938,9 +1135,8 @@ function WTF.InitializeStones()
     if not macros.available and WTF.db.stones.macros then
         WTF.Report("Stone macros stay off: this client lacks " .. macros.missing .. ".")
     end
-    local width, height = PADDING * 2 + BUTTON_SIZE * 2 + BUTTON_GAP, PADDING * 2 + BUTTON_SIZE
+    local height = PADDING * 2 + BUTTON_SIZE
     local bar = CreateFrame("Frame", "WarlockToolsForeverStones", UIParent, "BackdropTemplate")
-    bar:SetSize(width, height)
     bar:SetBackdrop({bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
         edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border", edgeSize = 12,
         insets = {left = 3, right = 3, top = 3, bottom = 3}})
@@ -949,6 +1145,11 @@ function WTF.InitializeStones()
     buttons.bar = bar
     buttons.soulstone = CreateStoneButton(bar, "WarlockToolsForeverSoulstone", "soulstone", 1)
     buttons.healthstone = CreateStoneButton(bar, "WarlockToolsForeverHealthstone", "healthstone", 2)
+    buttons.spellstone = CreateStoneButton(bar, "WarlockToolsForeverSpellstone", "spellstone", 3)
+    buttons.firestone = CreateStoneButton(bar, "WarlockToolsForeverFirestone", "firestone", 4)
+    -- Sized for the buttons it shows, so the toolkit places it at that size.
+    local width = BarWidth(#ShownButtons())
+    bar:SetSize(width, height)
     local toolkit = BarToolkit()
     if toolkit then
         -- A visible bar of buttons: it takes clicks also while locked. Its
@@ -960,7 +1161,6 @@ function WTF.InitializeStones()
             sizes = {scale = {min = WTF.FRAME_SCALE_MIN, max = WTF.FRAME_SCALE_MAX, step = WTF.FRAME_SCALE_STEP,
                 default = WTF.DEFAULT_FRAME_SCALE}},
         })
-        LayoutStoneButtons()
     else
         bar:SetMovable(true)
         bar:SetClampedToScreen(true)
@@ -974,6 +1174,7 @@ function WTF.InitializeStones()
         bar:SetScale(WTF.db.stones.scale / 100)
         PlaceBar(bar)
     end
+    LayoutStoneButtons()
     -- Level requirements need item data, which arrives later on first use.
     if type(C_Item.RequestLoadItemDataByID) == "function" then
         for _, rank in ipairs(HEALTHSTONES) do
@@ -989,6 +1190,7 @@ function WTF.InitializeStones()
         events:RegisterUnitEvent(event, "player")
     end
     Refresh()
+    WatchWeapon()
     WTF.StartStoneStatus()
 end
 
@@ -1005,15 +1207,16 @@ function WTF.ReportClickDebug()
     local keyDown = type(GetCVarBool) == "function" and GetCVarBool("ActionButtonUseKeyDown")
     Report(string.format("ActionButtonUseKeyDown=%s combat=%s healthstoneMode=%s",
         tostring(keyDown), tostring(InCombatLockdown()), tostring(buttons.healthstone.mode)))
-    for _, button in ipairs({buttons.healthstone, buttons.soulstone}) do
+    for _, button in ipairs({buttons.healthstone, buttons.soulstone, buttons.spellstone, buttons.firestone}) do
         local constrained = type(button.HasAccessConstraints) == "function" and button:HasAccessConstraints()
         local visible = button:IsVisible()
         Report(string.format("%s useOnKeyDown=%s constrained=%s shown=%s", button:GetName(),
             tostring(button:GetAttribute("useOnKeyDown")), tostring(constrained), tostring(visible)))
         for index = 1, 3 do
-            Report(string.format("  button%d type=%s item=%s spell=%s macrotext=%s", index,
+            Report(string.format("  button%d type=%s item=%s spell=%s macrotext=%s targetSlot=%s", index,
                 tostring(button:GetAttribute("type" .. index)), tostring(button:GetAttribute("item" .. index)),
-                tostring(button:GetAttribute("spell" .. index)), tostring(button:GetAttribute("macrotext" .. index))))
+                tostring(button:GetAttribute("spell" .. index)), tostring(button:GetAttribute("macrotext" .. index)),
+                tostring(button:GetAttribute("target-slot" .. index))))
         end
     end
 end
@@ -1026,7 +1229,8 @@ function WTF.ReportStoneDebug()
         WTF.Report("debug_stones missing " .. missing)
         return
     end
-    for _, group in ipairs({{"soulstone", SOULSTONES}, {"healthstone", HEALTHSTONES}}) do
+    for _, group in ipairs({{"soulstone", SOULSTONES}, {"healthstone", HEALTHSTONES},
+        {"spellstone", SPELLSTONES}, {"firestone", FIRESTONES}}) do
         for _, rank in ipairs(group[2]) do
             local carried = {}
             for _, itemID in ipairs(rank.items) do
@@ -1038,6 +1242,9 @@ function WTF.ReportStoneDebug()
                 table.concat(carried, ","), tostring(MinLevel(rank.items[1]))))
         end
     end
+    WTF.Report(string.format("debug_stones weapon known=%s enchant=%s stone=%s glow spellstone=%s firestone=%s",
+        tostring(weapon.known), tostring(weapon.id), tostring(weapon.stone),
+        tostring(buttons.spellstone and buttons.spellstone.glowing), tostring(buttons.firestone and buttons.firestone.glowing)))
     local healthRank = WTF.HealthstoneRankForTarget()
     WTF.Report(string.format("debug_stones targetLevel=%s healthstoneRank=%s pending=%s",
         tostring(FriendlyPlayerLevel()), tostring(healthRank and healthRank.spell), tostring(stones.pending)))

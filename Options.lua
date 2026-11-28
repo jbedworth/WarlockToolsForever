@@ -59,18 +59,6 @@ local function Flag(page, variable, name, group, key, default, tooltip, onChange
     return Settings.CreateCheckbox(page, setting, tooltip)
 end
 
--- A greyed-out checkbox for a planned feature (author-approved): never on,
--- never saved.
-local function ComingSoon(page, variable, name, tooltip)
-    local setting = Proxy(page, variable, Settings.VarType.Boolean, name .. " (Coming soon)", false,
-        function() return false end, function() end)
-    local initializer = Settings.CreateCheckbox(page, setting, tooltip)
-    if type(initializer.AddModifyPredicate) == "function" then
-        initializer:AddModifyPredicate(function() return false end)
-    end
-    return initializer
-end
-
 local function RefreshShardCounter()
     if WTF.RefreshShardCounter then
         WTF.RefreshShardCounter()
@@ -552,7 +540,7 @@ end
 local function AddStonesPage(parent)
     local page = Settings.RegisterVerticalLayoutSubcategory(parent, STONES_TITLE)
     local shownInitializer = GreyUnless(Flag(page, "WTF_STONES_SHOWN", "Show the Stones bar", "stones", "shown",
-        true, "The bar with the Soulstone and Healthstone buttons.",
+        true, "The bar with your stone buttons.",
         RefreshStones), StonesOn)
     local scale = Proxy(page, "WTF_STONES_SCALE", Settings.VarType.Number, "Stones bar size",
         WTF.DEFAULT_FRAME_SCALE,
@@ -578,18 +566,19 @@ local function AddStonesPage(parent)
         "Keep the \"! Healthstone\" and \"! Soulstone\" macros for your action bars: left-click uses your "
             .. "best stone, right-click creates one. Turning this off deletes them.",
         function() WTF.ApplyStoneMacros() end)
-    ComingSoon(page, "WTF_STONES_SPELLSTONE", "Spellstone button",
-        "A Spellstone button and macro: left-click uses it, right-click creates one.")
-    ComingSoon(page, "WTF_STONES_FIRESTONE", "Firestone button",
-        "A Firestone button and macro: left-click uses it, right-click creates one.")
+    GreyUnless(Flag(page, "WTF_STONES_SPELLSTONE", "Spellstone button", "stones", "showSpellstone", true,
+        "Show a Spellstone button on the Stones bar that puts the stone on your weapon or creates one.",
+        RefreshStones), StonesOn)
+    GreyUnless(Flag(page, "WTF_STONES_FIRESTONE", "Firestone button", "stones", "showFirestone", true,
+        "Show a Firestone button on the Stones bar that puts the stone on your weapon or creates one.",
+        RefreshStones), StonesOn)
     GreyUnless(Flag(page, "WTF_STONES_REMIND_SOULSTONE", "Soulstone reminders", "stones", "remindSoulstone", true,
         "Say in chat when your Soulstone ends or none is up."), StonesOn)
     GreyUnless(Flag(page, "WTF_STONES_REMIND_HEALTHSTONE", "Healthstone reminders", "stones", "remindHealthstone",
         true, "Say in chat when you carry no Healthstone."), StonesOn)
-    ComingSoon(page, "WTF_STONES_REMIND_SPELLSTONE", "Spellstone reminders",
-        "Say in chat when you carry no Spellstone.")
-    ComingSoon(page, "WTF_STONES_REMIND_FIRESTONE", "Firestone reminders",
-        "Say in chat when you carry no Firestone.")
+    GreyUnless(Flag(page, "WTF_STONES_GLOW", "Glow when a stone is ready to apply", "stones", "glowStones", true,
+        "Make the Spellstone or Firestone button glow when you carry that stone and your weapon has neither on.",
+        function() if WTF.RefreshStoneGlows then WTF.RefreshStoneGlows() end end), StonesOn)
 end
 
 -- Announce page --------------------------------------------------------------
