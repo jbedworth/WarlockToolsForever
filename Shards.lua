@@ -565,7 +565,8 @@ local function CreateCounter()
     end)
     counter:SetScript("OnEnter", ShowCounterTooltip)
     counter:SetScript("OnLeave", function() GameTooltip:Hide() end)
-    counter.mover = WTF.CreateMover(counter)
+    counter.mover = WTF.CreateMover(counter, "Soul Shards",
+        {"Right-click deletes the Soul Shards above your limit."})
     -- The saved place is in the counter's own scale, so the scale comes first.
     counter:SetScale(WTF.db.shards.counterScale / 100)
     PlaceCounter()

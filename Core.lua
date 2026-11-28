@@ -557,9 +557,25 @@ local function InstallInputHooks()
     WorldFrame:HookScript("OnMouseDown", OnInput)
 end
 
--- While unlocked, a frame shows a gold outline and a hint (author-approved).
--- A plain child, so it can show and hide also in combat.
-function WTF.CreateMover(frame)
+-- Toolkit 2.20.0's short outline label (OUTLINE_LABEL_VERSION 1; John: "you
+-- missed the soul shard widget"): "<short name>: <frame name>" on the
+-- outline, the move instructions as a tooltip while unlocked, and the label
+-- kept on screen.
+local function HasOutlineLabel()
+    local toolkit = WTF.toolkit
+    return toolkit and (tonumber(toolkit.OUTLINE_LABEL_VERSION) or 0) >= 1
+        and type(toolkit.SetOutlineLabel) == "function"
+end
+
+-- Each outline's "place the label again", called as frames unlock.
+local labelPlacers = {}
+
+-- While unlocked, a frame shows a gold outline and a short label
+-- (author-approved). A plain child, so it can show and hide also in combat.
+-- name: the frame's name for players; tips: more tooltip lines for the
+-- toolkit's label, one plain sentence each. Without the toolkit's label, the
+-- name alone (John: "It's still way too crowded").
+function WTF.CreateMover(frame, name, tips)
     local mover = CreateFrame("Frame", nil, frame, "BackdropTemplate")
     -- On its frame's strata, so the outline is never under what covers it.
     mover:SetFrameStrata(frame:GetFrameStrata())
@@ -569,7 +585,13 @@ function WTF.CreateMover(frame)
     mover:SetBackdropBorderColor(1, 0.82, 0)
     mover.hint = mover:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     mover.hint:SetPoint("BOTTOM", mover, "TOP", 0, 2)
-    mover.hint:SetText("Drag to move · /wtf lock when done")
+    local place = HasOutlineLabel() and WTF.toolkit.SetOutlineLabel(frame, mover, mover.hint, {
+        addon = addonName, name = name, tips = tips, locked = function() return WTF.db.locked end})
+    if type(place) == "function" then
+        labelPlacers[#labelPlacers + 1] = place
+    else
+        mover.hint:SetText(name)
+    end
     mover:SetShown(not WTF.db.locked)
     return mover
 end
@@ -654,6 +676,11 @@ function WTF.SetFramesLocked(locked, quiet)
     WTF.RefreshStonesMover()
     WTF.RefreshShardCounter()
     WTF.RefreshGrid()
+    if not locked then
+        for _, place in ipairs(labelPlacers) do
+            place()
+        end
+    end
     if quiet then
         return
     end

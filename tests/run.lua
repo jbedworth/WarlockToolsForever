@@ -587,6 +587,18 @@ local function fixture(options)
                 return call.result
             end
         end
+        -- Toolkit 2.20.0: options.outlineLabel turns SetOutlineLabel on. Each call
+        -- is kept; the label reads "<short name>: <name>", and the placer counts.
+        if options.outlineLabel then
+            toolkit.OUTLINE_LABEL_VERSION = 1
+            toolkit.outlineLabels = {}
+            function toolkit.SetOutlineLabel(frame, mover, label, opts)
+                local call = {frame = frame, mover = mover, label = label, opts = opts, placed = 1}
+                toolkit.outlineLabels[#toolkit.outlineLabels + 1] = call
+                label:SetText("WTF: " .. opts.name)
+                return function() call.placed = call.placed + 1 end
+            end
+        end
         if options.toolkitMissing then toolkit[options.toolkitMissing] = nil end
         -- Toolkit 2.14.0: options.showWelcome sets ShowWelcome's answer.
         if options.showWelcome ~= nil then
@@ -4732,6 +4744,55 @@ test("widget: a profile copy places the Stones bar and lays it out from the prof
     equal(bar:GetScale(), 0.8)
     local x, y = state.absCenter(bar)
     equal(math.abs(x - 400 * 0.8) < 0.01 and math.abs(y - 300 * 0.8) < 0.01, true, "the profile's place")
+end)
+-- Short outline labels (Toolkit 2.20.0; John: "you missed the soul shard widget").
+test("outline: with Toolkit 2.20.0, the shard counter's outline gets the toolkit's short label", function()
+    local state = stonesFixture({toolkit = true, outlineLabel = true})
+    local toolkit = state.toolkit
+    local counter = state.wtf.shardCounter
+    local bar = state.env.WarlockToolsForeverStones
+    equal(#toolkit.outlineLabels, 2, "both of WTF's own outlines")
+    local stones = toolkit.outlineLabels[2]
+    equal(stones.frame, bar)
+    equal(stones.opts.name, "Stones")
+    equal(stones.opts.tips, nil)
+    equal(bar.mover.hint.text, "WTF: Stones")
+    local call = toolkit.outlineLabels[1]
+    equal(call.frame, counter)
+    equal(call.mover, counter.mover)
+    equal(call.label, counter.mover.hint)
+    equal(call.opts.addon, "WarlockToolsForever")
+    equal(call.opts.name, "Soul Shards")
+    equal(call.opts.tips[1], "Right-click deletes the Soul Shards above your limit.")
+    equal(#call.opts.tips, 1)
+    equal(counter.mover.hint.text, "WTF: Soul Shards")
+    equal(call.opts.locked(), true, "locked at login")
+    state.slash("unlock")
+    equal(call.opts.locked(), false, "follows WTF's lock")
+    equal(call.placed, 2, "placed again as frames unlock")
+    state.slash("lock")
+    equal(call.placed, 2, "not as they lock")
+    toolkit.Unlock()
+    equal(call.placed, 3, "the toolkit's own unlock too")
+    equal(stones.placed, 3)
+end)
+test("outline: the real Toolkit's SetOutlineLabel names the shard counter, when it has one", function()
+    local state = stonesFixture({toolkit = true, widgets = true})
+    if not state.toolkit.SetOutlineLabel then
+        return -- an older Toolkit copy: the test above covers the call
+    end
+    local text = state.wtf.shardCounter.mover.hint.text
+    equal(text:sub(-#"Soul Shards"), "Soul Shards", "the name, from the toolkit")
+    equal(text:find(" lock", 1, true), nil, "the move instructions are a tooltip")
+end)
+test("outline: without Toolkit 2.20.0, each outline says its name alone", function()
+    for _, options in ipairs({{toolkit = true}, {}}) do
+        local state = stonesFixture(options)
+        equal(state.wtf.shardCounter.mover.hint.text, "Soul Shards")
+        equal(state.env.WarlockToolsForeverStones.mover.hint.text, "Stones")
+        state.slash("unlock")
+        equal(state.wtf.shardCounter.mover.hint.text, "Soul Shards", "unchanged as frames unlock")
+    end
 end)
 test("widget: without Toolkit 2.18.0's button bars, the Stones bar is WTF's own, with no Layout row", function()
     for _, options in ipairs({{toolkit = true, widgets = true, noBarLayout = true}, {toolkit = true}, {}}) do

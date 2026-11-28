@@ -4,6 +4,11 @@ Player-facing changes for each Warlock Tools Forever release, newest first. The
 release builder copies the section for the TOC version into the GitHub release
 notes and the CurseForge changelog, and fails if that section is missing.
 
+## 1.14.3
+
+### Fixes
+- When you unlock frames, the Soul Shard counter's label is now short, just "WTF: Soul Shards", so it no longer runs into other AddOns' labels. Hover the counter to see how to move it. With an older Dyre's Toolkit, the label is just "Soul Shards".
+
 ## 1.14.2
 
 ### Other changes

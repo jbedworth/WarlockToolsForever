@@ -968,7 +968,7 @@ function WTF.InitializeStones()
         bar:RegisterForDrag("LeftButton")
         bar:SetScript("OnDragStart", StartDrag)
         bar:SetScript("OnDragStop", StopDrag)
-        bar.mover = WTF.CreateMover(bar)
+        bar.mover = WTF.CreateMover(bar, "Stones")
         WTF.RegisterMovable(bar, function(position) WTF.db.stones.position = position end)
         -- The saved place is in the bar's own scale, so the scale comes first.
         bar:SetScale(WTF.db.stones.scale / 100)
