@@ -9,8 +9,9 @@ tracker and the Fear and Banish control bar are in **Dyre's Debuff Tracker**
 
 ## Compatibility
 
-WTF is for World of Warcraft: Forever `1.60.1` (tested on build `70450`),
-Interface `16001`, Lua `5.1`. It does not check the client version or build,
+WTF is for World of Warcraft: Forever `1.60.1` (tested on build `70888`),
+Interface `16001`, Lua `5.1`. It also runs on Classic Era (Interface
+`11509`), where Forever-only features such as Demonic Brand do not show. It does not check the client version or build,
 because builds change often. At login it checks for the APIs it needs and
 disables itself with one message if any are missing. It runs on Warlocks only;
 on other classes it prints one message and stays off.

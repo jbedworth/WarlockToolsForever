@@ -384,8 +384,9 @@ announcements go with the Control bar (the 2026-10-30 decision).
   Healthstone carried, whatever the target.
 - Healthstones are unique per rank, so the create rank skips ranks already
   carried for the next lower one (author-approved, as Connoisseur does), still
-  within a friendly target's level. Soulstones are not downranked: every rank
-  shares one cooldown.
+  within a friendly target's level. Soulstones are not downranked: a Warlock
+  can carry only one Soulstone in total, of any rank (John, 2026-11-27: "you
+  can't carry more than one of any rank. they don't work like healthstones").
 - Secure attributes and the bar's visibility change only out of combat;
   changes in combat wait for `PLAYER_REGEN_ENABLED`. The bar drags out of
   combat unless locked; `/wtf reset` restores its place.

@@ -642,6 +642,24 @@ local function CheckButton(parent, template, label)
     return button
 end
 
+-- The Announce page's help (1.14.1; John, in client 2026-11-27: the Fear and
+-- Banish messages are on the page the player sees as Crowd Control, not
+-- "the Control page, in Dyre's Debuff Tracker"). The page name is the one
+-- WTF's own page shows; without Dyre's Debuff Tracker there are no Fear and
+-- Banish messages, so the help says what to install.
+function WTF.AnnounceHelpText()
+    local text = "%T is your target's full name, and %Z is your zone. "
+        .. "Press Enter to keep an edit, or Escape to undo it. "
+    if Loaded(DDT.addon) then
+        for _, moved in ipairs(DDT_PAGES) do
+            if moved.section == "control" then
+                return text .. "The Fear and Banish messages are on the " .. PageTitle(moved) .. " page."
+            end
+        end
+    end
+    return text .. "Install Dyre's Debuff Tracker to get Fear and Banish messages too."
+end
+
 local function CreateAnnouncePage()
     local page = CreateFrame("Frame")
     page.rows, page.channels = {}, {}
@@ -655,10 +673,8 @@ local function CreateAnnouncePage()
     page.scroll, page.content = scroll, content
     local title = Text(content, "GameFontHighlightHuge", ANNOUNCE_TITLE)
     title:SetPoint("TOPLEFT", PAGE_LEFT, -16)
-    local help = Text(content, "GameFontHighlightSmall",
-        "%T is the target's full name and %Z your zone. Press Enter to keep an edit, Escape to undo it. "
-            .. "Nothing is sent for yourself or for a cast that fails. The Fear and Banish announcements are on "
-            .. "the Control page, in Dyre's Debuff Tracker.")
+    local help = Text(content, "GameFontHighlightSmall", WTF.AnnounceHelpText())
+    page.help = help
     help:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -8)
     help:SetWidth(EDIT_WIDTH)
 

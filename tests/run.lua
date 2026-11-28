@@ -5053,6 +5053,26 @@ test("announcement texts are repaired on load", function()
     equal(settings.soulstoneWhisperText, state.wtf.ANNOUNCE_DEFAULTS.soulstoneWhisperText)
     equal(settings.channel, "group")
 end)
+test("the Announce help names the page that has the Fear and Banish messages", function()
+    -- John, in client (1.14.0): the help sent players to "the Control page, in
+    -- Dyre's Debuff Tracker", but WTF's own page is Crowd Control.
+    local base = "%T is your target's full name, and %Z is your zone. "
+        .. "Press Enter to keep an edit, or Escape to undo it. "
+    local state = fixture({toolkit = true, loadedAddOns = {DyresDebuffTracker = true},
+        sections = {["DyresDebuffTracker.control"] = true},
+        sectionTitles = {["DyresDebuffTracker.control"] = "Crowd Control"}})
+    equal(state.categories.Announce.frame.help.text,
+        base .. "The Fear and Banish messages are on the Crowd Control page.")
+    equal(state.categories["Crowd Control"] ~= nil, true, "the page has that name")
+    local older = fixture({toolkit = true, loadedAddOns = {DyresDebuffTracker = true}})
+    equal(older.categories.Announce.frame.help.text,
+        base .. "The Fear and Banish messages are on the Control page.", "an older toolkit: WTF's own page name")
+    local missing = fixture({toolkit = true})
+    equal(missing.categories.Announce.frame.help.text,
+        base .. "Install Dyre's Debuff Tracker to get Fear and Banish messages too.")
+    equal(fixture().categories.Announce.frame.help.text,
+        base .. "Install Dyre's Debuff Tracker to get Fear and Banish messages too.", "no toolkit")
+end)
 test("the Announce page edits texts, switches, and the channel", function()
     local state = fixture()
     local page = state.categories.Announce.frame

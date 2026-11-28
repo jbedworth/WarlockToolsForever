@@ -4,6 +4,11 @@ Player-facing changes for each Warlock Tools Forever release, newest first. The
 release builder copies the section for the TOC version into the GitHub release
 notes and the CurseForge changelog, and fails if that section is missing.
 
+## 1.14.1
+
+### Fixes
+- The help at the top of the Announce page now sends you to the right place for the Fear and Banish messages: the Crowd Control page. Without Dyre's Debuff Tracker, it tells you to install it to get them.
+
 ## 1.14.0
 
 ### Features
