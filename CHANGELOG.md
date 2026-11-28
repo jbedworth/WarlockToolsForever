@@ -4,6 +4,11 @@ Player-facing changes for each Warlock Tools Forever release, newest first. The
 release builder copies the section for the TOC version into the GitHub release
 notes and the CurseForge changelog, and fails if that section is missing.
 
+## 1.14.2
+
+### Other changes
+- The Procs page used to swap between two buttons, depending on which AddOn plays your Nightfall arcs. Now it's one button that stays put and changes its name and tooltip when another AddOn takes over.
+
 ## 1.14.1
 
 ### Fixes

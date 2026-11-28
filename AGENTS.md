@@ -25,17 +25,20 @@ their other classes ("virality"):
   "proc:nightfall" (1.10.1, John: "Yes, fix it"): `WTF.ProcOwner(key)` is
   `KindOwner(PROC_KIND_PREFIX .. key)` when the Toolkit has both, else nil
   (a feature test, as DBR's `ProcOwner`; an AddOn that steps aside for
-  SpellActivationOverlay makes no claim). With no owner, the old row
-  "Procs" (AddSettingsLink to DBR; 1.13.0 link labels are the section names: "Chimes", "Procs", "Reminders", DDT cues "Debuff Cues"). With an owner,
-  "Nightfall arcs and sound": WTF's own button (`AddSettingsLink` fixes its
-  AddOn when the row is made), whose click asks for the owner again and
-  calls its `openSettings` from `toolkit.AddOns()` (not in combat), and
-  whose tooltip names the owner by the title it joined with
-  (`WTF.ProcOwnerTitle`, as DBR's `ProcOwnerTitle`), renamed through
-  `OnOwnerChanged`. Each row has a shown predicate that asks the owner each
-  time the page draws, because the owner claims at its PLAYER_LOGIN, which
-  can come after WTF builds the page. No polling. Without shown
-  predicates, only the row for the owner at build time.
+  SpellActivationOverlay makes no claim). One row, WTF's own button
+  (`AddProcRow`; not `AddSettingsLink`, which fixes its AddOn when the row is
+  made). With no owner, the old link's words: "Procs", "Open Proc settings",
+  and its tooltip (1.13.0 link labels are the section names: "Chimes",
+  "Procs", "Reminders", DDT cues "Debuff Cues"); the click opens DBR's
+  `openSettings`, or says the Missing line. With an owner, "Nightfall arcs
+  and sound", "Open settings", and a tooltip that names the owner by the
+  title it joined with (`WTF.ProcOwnerTitle`, as DBR's `ProcOwnerTitle`);
+  the click calls its `openSettings` from `toolkit.AddOns()` (not in
+  combat). The click asks for the owner each time, and `OnOwnerChanged`
+  rewrites the label, button, and tooltip, because the owner claims at its
+  PLAYER_LOGIN, which can come after WTF builds the page. Greyed (modify
+  predicate) while there is no owner and DBR has not joined. No polling, and
+  no shown predicate (see "Settings rows").
 - TOC: `## OptionalDeps: DyresToolkit, DyresShieldsUp, DyresBuffReminders,
   DyresDebuffTracker` (never `## Dependencies`, so WTF loads without them;
   the toolkit stays optional while WTF is not on toolkit widgets). CurseForge
@@ -78,9 +81,10 @@ their other classes ("virality"):
   AddSettingsSection's `primer` only when `AddSettingsPrimer` exists (2.17.0;
   `SETTINGS_SECTIONS_VERSION` is still 1, so the function is the test); the
   toolkit shows it only while the owner is not loaded. The Procs page's proc
-  owner path draws it itself with `AddSettingsPrimer` while DBR is not loaded
-  (not joined and not `C_AddOns.IsAddOnLoaded`), shown only while no AddOn
-  owns "proc:nightfall".
+  row path draws it itself with `AddSettingsPrimer` when the page is built
+  while DBR is not loaded (not joined and not `C_AddOns.IsAddOnLoaded`) and
+  no AddOn owns "proc:nightfall". Only DBR claims that kind, so an owner
+  cannot come later while DBR is missing.
 - Parts (1.13.0; John, 2026-11-27: "when the top-level is off, the settings
   that are controlling a disabled feature should be disabled too. Also, the
   top-level disable for each section should be on the top-level MTF panel",
@@ -717,6 +721,21 @@ Dyre's frame a Toolkit widget.
   failures with concise feedback prefixed `WTF:`.
 - Never prompt or open popups in combat. Never swallow errors with blanket
   `pcall` handlers or replace the error handler.
+- Settings rows: never call `AddShownPredicate` on a settings initializer
+  (family rule, the lead, 2026-11-27: "listed and greyed, never hidden"). A
+  row that does not apply now is greyed (modify predicate); a row that never
+  applies to this character is not added when the page is built. A test
+  fails if any runtime file the TOC lists calls `AddShownPredicate`.
+- The Options search error "ADDON FORBIDDEN: IsUserOAuthed()" (Drasi on
+  CurseForge, 2026-11-27) is a Blizzard bug, not ours, and removing the shown
+  predicates did not fix it. John's taint log (2026-11-27) blames
+  DyresToolkit with no line of ours running during the search, and
+  QuestieTrace triggers the same error with every Dyre's AddOn off. Blizzard's
+  search reads the data of AddOn rows on vertical-layout settings pages
+  (data that AddOn code wrote is tainted), then inits its own Discord
+  sign-in row in the same run; canvas pages, such as Ace's, are skipped. Any
+  AddOn with a vertical-layout page triggers it. John reported it to
+  Blizzard.
 - On an unsupported client, another class, or a mixed install, disable the
   AddOn and report the reason once at login.
 - Repair saved settings on load so a damaged or older table cannot break WTF.

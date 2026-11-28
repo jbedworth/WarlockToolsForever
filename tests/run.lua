@@ -167,7 +167,10 @@ local function fixture(options)
     end
     env.CreateSettingsButtonInitializer = function(name, buttonText, buttonClick, tooltip, addSearchTags)
         local initializer = {name = name, buttonText = buttonText, buttonClick = buttonClick, tooltip = tooltip,
-            shownPredicates = {}}
+            shownPredicates = {}, modifyPredicates = {}}
+        function initializer:AddModifyPredicate(predicate)
+            self.modifyPredicates[#self.modifyPredicates + 1] = predicate
+        end
         if not options.linkNoShown then
             function initializer:AddShownPredicate(predicate)
                 self.shownPredicates[#self.shownPredicates + 1] = predicate
@@ -1315,6 +1318,17 @@ local function fixture(options)
                 if kind == "proc:nightfall" then return state.nightfallOwner end
                 return kindOwner and kindOwner(kind) or nil
             end
+            -- A claim or release, as the Toolkit's ClaimOwner tells its listeners.
+            local listeners = {}
+            local onOwnerChanged = shared.OnOwnerChanged
+            shared.OnOwnerChanged = function(kind, callback)
+                if kind == "proc:nightfall" then listeners[#listeners + 1] = callback end
+                if onOwnerChanged then return onOwnerChanged(kind, callback) end
+            end
+            function state.SetNightfallOwner(owner)
+                state.nightfallOwner = owner
+                for _, callback in ipairs(listeners) do callback() end
+            end
         end
         -- options.procPrefix: the Toolkit's proc kinds (2.11), with its real owners.
         if options.procPrefix then shared.PROC_KIND_PREFIX = shared.PROC_KIND_PREFIX or "proc:" end
@@ -1699,8 +1713,6 @@ test("the Shield, Cooldown Chimes, Alerts, and Demon Armor pages link to the Add
             "Install Dyre's Shields Up from CurseForge for the shield display."},
         {"Chimes", "DyresBuffReminders", "Chimes", "Open Chime settings",
             "Install Dyre's Buff Reminders from CurseForge for Chimes."},
-        {"Procs", "DyresBuffReminders", "Procs", "Open Proc settings",
-            "Install Dyre's Buff Reminders from CurseForge for Procs."},
         {"Reminders", "DyresBuffReminders", "Reminders", "Open Reminder settings",
             "Install Dyre's Buff Reminders from CurseForge for Reminders."},
     }
@@ -1721,6 +1733,13 @@ test("the Shield, Cooldown Chimes, Alerts, and Demon Armor pages link to the Add
         equal(#page.initializers, 0, case[1] .. ": nothing but the link")
         equal(page.headings[1].buttonText, case[4])
     end
+    -- The Procs page: its proc row, with the same words while no AddOn claims Nightfall.
+    local procs = state.categories.Procs
+    equal(procs.parent, state.categories["Warlock Tools Forever"])
+    equal(procs.headings[1].name, "Procs")
+    equal(procs.headings[1].buttonText, "Open Proc settings")
+    equal(procs.headings[1].tooltip, "Install Dyre's Buff Reminders from CurseForge for Procs.")
+    equal(#procs.initializers, 0, "Procs: nothing but its row")
 end)
 
 -- The move to Dyre's Debuff Tracker (1.11.0; John, 2026-11-20: "Yes, full move").
@@ -1911,11 +1930,14 @@ local function nightfallRows(state)
     end
     return rows
 end
+-- The one proc row (never a shown predicate: "listed and greyed, never
+-- hidden"). The primer, when there is one, comes before it.
 local function shownNightfall(state)
     local found
     for _, each in ipairs(nightfallRows(state)) do
-        if each.shown then
-            equal(found, nil, "one row shows")
+        equal(each.shown, true, "no row is hidden")
+        if not each.row.primer then
+            equal(found, nil, "one proc row")
             found = each.row
         end
     end
@@ -1935,12 +1957,14 @@ test("Nightfall: the Alerts page follows whichever AddOn owns proc:nightfall", f
     local row = shownNightfall(state)
     equal(row.name, "Procs", "no owner: Dyre's Buff Reminders' Proc Sounds, as before")
     equal(row.buttonText, "Open Proc settings")
+    row.buttonClick()
+    equal(opened[#opened], "DBR", "no owner: the click opens Dyre's Buff Reminders")
     -- An owner claims at its PLAYER_LOGIN, after WTF built the page.
     for _, case in ipairs({{"DyresShieldsUp", "Dyre's Shields Up", "DSU"},
             {"DyresBuffReminders", "Dyre's Buff Reminders", "DBR"}}) do
-        state.nightfallOwner = case[1]
-        row = shownNightfall(state)
-        equal(row.name, "Nightfall arcs and sound", case[1] .. ": asked again when the page draws")
+        state.SetNightfallOwner(case[1])
+        equal(shownNightfall(state), row, case[1] .. ": the same row")
+        equal(row.name, "Nightfall arcs and sound", case[1] .. ": rewritten on the owner change")
         equal(row.buttonText, "Open settings")
         row.buttonClick()
         equal(opened[#opened], case[3], case[1] .. ": the click opens the owner's settings")
@@ -1952,16 +1976,19 @@ test("Nightfall: the Alerts page follows whichever AddOn owns proc:nightfall", f
     equal(#opened, count, "not in combat")
     contains(state.last(), "The settings open out of combat.")
     state.combat = false
-    -- It steps aside (for SpellActivationOverlay): no claim, the old row again.
-    state.nightfallOwner = nil
-    equal(shownNightfall(state).name, "Procs")
+    -- It steps aside (for SpellActivationOverlay): no claim, the old words again.
+    state.SetNightfallOwner(nil)
+    equal(row.name, "Procs")
+    equal(row.buttonText, "Open Proc settings")
+    equal(row.tooltip, "Opens Dyre's Buff Reminders' settings for Procs.")
 end)
 test("Nightfall: the owner's row names it in its tooltip; an unknown owner by its folder", function()
     local state = fixture({toolkit = true, nightfallOwner = "DyresBuffReminders", members = members({})})
     local row = shownNightfall(state)
     equal(row.tooltip, "Opens Dyre's Buff Reminders' settings for the Nightfall arcs and sound.")
     equal(state.wtf.ProcOwnerTitle("SomeAddOn"), "SomeAddOn")
-    state.nightfallOwner = "SomeAddOn"
+    state.SetNightfallOwner("SomeAddOn")
+    equal(row.tooltip, "Opens SomeAddOn's settings for the Nightfall arcs and sound.")
     row.buttonClick()
     contains(state.last(), "No Dyre's AddOn shows Nightfall arcs now.")
 end)
@@ -1969,31 +1996,38 @@ test("Nightfall: a real claim and release change the row and its tooltip", funct
     local state = fixture({toolkit = true, procPrefix = true, members = members({}),
         familyAddOns = {DyresBuffReminders = true}})
     local shared = state.env.DyresToolkit
-    equal(shownNightfall(state).name, "Procs")
-    local owner = nightfallRows(state)[2].row
-    equal(owner.tooltip, "No AddOn shows Nightfall arcs now.")
+    local row = shownNightfall(state)
+    equal(row.name, "Procs")
+    equal(row.tooltip, "Opens Dyre's Buff Reminders' settings for Procs.")
     equal(shared.ClaimOwner("proc:nightfall", "DyresBuffReminders", 10), true)
-    equal(shownNightfall(state), owner)
-    equal(owner.tooltip, "Opens Dyre's Buff Reminders' settings for the Nightfall arcs and sound.",
-        "the owner change renames it")
+    equal(shownNightfall(state), row)
+    equal(row.name, "Nightfall arcs and sound", "the owner change renames it")
+    equal(row.tooltip, "Opens Dyre's Buff Reminders' settings for the Nightfall arcs and sound.")
     shared.SetOwnerEnabled("proc:nightfall", "DyresBuffReminders", false)
-    equal(shownNightfall(state).name, "Procs")
-    equal(owner.tooltip, "No AddOn shows Nightfall arcs now.")
+    equal(row.name, "Procs")
+    equal(row.tooltip, "Opens Dyre's Buff Reminders' settings for Procs.")
 end)
-test("Nightfall: an owner at build time comes first; without shown predicates, only its row", function()
+test("Nightfall: one row with the owner's words at build time, greyed only with no owner and no Dyre's Buff Reminders", function()
     local state = fixture({toolkit = true, nightfallOwner = "DyresShieldsUp", members = members({})})
     local rows = nightfallRows(state)
-    equal(#rows, 2)
-    equal(rows[1].row.name, "Nightfall arcs and sound", "the owner's row first")
-    equal(shownNightfall(state), rows[1].row)
-    local plain = fixture({toolkit = true, nightfallOwner = "DyresShieldsUp", linkNoShown = true})
-    rows = nightfallRows(plain)
-    equal(#rows, 1, "one row, no shown predicates")
+    equal(#rows, 1, "one row")
     equal(rows[1].row.name, "Nightfall arcs and sound")
-    local before = fixture({toolkit = true, nightfallOwner = false, linkNoShown = true})
-    rows = nightfallRows(before)
-    equal(#rows, 1)
-    equal(rows[1].row.name, "Procs")
+    local function enabled(row)
+        for _, predicate in ipairs(row.modifyPredicates or {}) do
+            if not predicate() then return false end
+        end
+        return true
+    end
+    equal(enabled(rows[1].row), true, "an owner: usable")
+    local missing = fixture({toolkit = true, nightfallOwner = false})
+    local row = shownNightfall(missing)
+    equal(row.name, "Procs")
+    equal(row.tooltip, "Install Dyre's Buff Reminders from CurseForge for Procs.")
+    equal(enabled(row), false, "no owner, no Dyre's Buff Reminders: greyed, not hidden")
+    row.buttonClick()
+    equal(missing.last(), "WTF: Install Dyre's Buff Reminders from CurseForge for Procs.")
+    missing.SetNightfallOwner("DyresShieldsUp")
+    equal(enabled(row), true, "a later owner: usable")
 end)
 test("Nightfall: an older Toolkit (no PROC_KIND_PREFIX or KindOwner) keeps Dyre's Buff Reminders", function()
     for _, missing in ipairs({"PROC_KIND_PREFIX", "KindOwner"}) do
@@ -2064,19 +2098,21 @@ end)
 test("sections: an owner without its section gets the link, as before", function()
     local state = fixture({toolkit = true, sections = {}, nightfallOwner = false, members = members({})})
     for _, case in ipairs(SECTION_PAGES) do
-        local page = state.categories[case[1]]
-        local link
-        for _, each in ipairs(state.toolkit.links) do
-            if each.category == page and not link then link = each end
+        if case[1] ~= "Procs" then
+            local page = state.categories[case[1]]
+            local link
+            for _, each in ipairs(state.toolkit.links) do
+                if each.category == page and not link then link = each end
+            end
+            equal(link.opts.addon, case[2], case[1] .. ": the link")
+            contains(link.opts.tooltip, "Opens ")
         end
-        equal(link.opts.addon, case[2], case[1] .. ": the link")
-        contains(link.opts.tooltip, "Opens ")
     end
-    -- The Nightfall page keeps its proc owner rows while there is no "procs" section.
+    -- The Nightfall page keeps its proc row while there is no "procs" section.
     equal(sectionCall(state, "Procs").opts.key, "cues", "no \"procs\" section asked for; only Demonic Brand")
-    equal(#nightfallRows(state), 2)
+    equal(#nightfallRows(state), 1)
     equal(shownNightfall(state).name, "Procs")
-    state.nightfallOwner = "DyresShieldsUp"
+    state.SetNightfallOwner("DyresShieldsUp")
     equal(shownNightfall(state).name, "Nightfall arcs and sound")
     equal(#state.toolkit.sectionCalls, #SECTION_PAGES, "every other page, and Demonic Brand, asked the toolkit")
     for _, call in ipairs(state.toolkit.sectionCalls) do
@@ -2154,7 +2190,8 @@ end)
 test("sections: an older toolkit (no AddSettingsSection) keeps the moved pages exactly as before", function()
     local state = fixture({toolkit = true, sections = allSections(), toolkitMissing = "AddSettingsSection"})
     equal(#state.toolkit.sectionCalls, 0)
-    equal(#state.toolkit.links, #SECTION_PAGES)
+    equal(#state.toolkit.links, #SECTION_PAGES - 1, "every page but Procs, which has its proc row")
+    equal(shownNightfall(state).buttonText, "Open Proc settings")
     equal(state.categories["Shield display"].headings[1].buttonText, "Open Shield settings")
 end)
 -- The primer box (John, 2026-11-27: when the AddOn is missing, tell "people
@@ -2193,16 +2230,16 @@ end)
 test("primer: the Nightfall page's proc owner rows draw it while Dyre's Buff Reminders is missing", function()
     local state = fixture({toolkit = true, sections = {}, nightfallOwner = false})
     local rows = nightfallRows(state)
-    equal(#rows, 3, "the primer, the link, and the owner row")
+    equal(#rows, 2, "the primer and the proc row")
     contains(rows[1].row.primer, "Nightfall")
     equal(rows[1].shown, true)
-    state.nightfallOwner = "DyresShieldsUp"
-    equal(nightfallRows(state)[1].shown, false, "an AddOn plays it with arcs: no primer")
+    local owned = fixture({toolkit = true, sections = {}, nightfallOwner = "DyresShieldsUp"})
+    equal(#nightfallRows(owned), 1, "an AddOn plays it with arcs when the page is built: no primer")
     -- Loaded by the client but not joined yet: no primer.
     local client = fixture({toolkit = true, sections = {}, nightfallOwner = false, loadedAddOns = {DyresBuffReminders = true}})
-    equal(#nightfallRows(client), 2, "loaded: no primer")
+    equal(#nightfallRows(client), 1, "loaded: no primer")
     local joined = fixture({toolkit = true, sections = {}, nightfallOwner = false, members = members({})})
-    equal(#nightfallRows(joined), 2, "joined: no primer")
+    equal(#nightfallRows(joined), 1, "joined: no primer")
 end)
 -- Parts (SETTINGS_SECTIONS_VERSION 3; John, 2026-11-27: "the top-level
 -- disable for each section should be on the top-level MTF panel").
@@ -5052,6 +5089,24 @@ test("announcement texts are repaired on load", function()
     equal(settings.soulstoneGroupText, state.wtf.ANNOUNCE_DEFAULTS.soulstoneGroupText)
     equal(settings.soulstoneWhisperText, state.wtf.ANNOUNCE_DEFAULTS.soulstoneWhisperText)
     equal(settings.channel, "group")
+end)
+test("no runtime file calls AddShownPredicate on a settings row", function()
+    -- The family rule (2026-11-27): "listed and greyed, never hidden". A row
+    -- that does not apply now is greyed with a modify predicate.
+    local toc = io.open("WarlockToolsForever.toc", "r")
+    local files = {}
+    for line in toc:lines() do
+        local file = line:match("^([%w_]+%.lua)%s*$")
+        if file then files[#files + 1] = file end
+    end
+    toc:close()
+    equal(#files > 0, true, "the TOC lists the runtime files")
+    for _, file in ipairs(files) do
+        local handle = io.open(file, "r")
+        local text = handle:read("*a")
+        handle:close()
+        equal(text:find("AddShownPredicate", 1, true), nil, file .. " calls no AddShownPredicate")
+    end
 end)
 test("the Announce help names the page that has the Fear and Banish messages", function()
     -- John, in client (1.14.0): the help sent players to "the Control page, in

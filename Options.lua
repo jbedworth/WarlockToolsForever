@@ -263,31 +263,6 @@ local function OpenProcOwner(key)
     info.openSettings()
 end
 
--- The owner's row: "<proc> arcs and sound", a button that opens the owner's
--- settings. Its tooltip names the owner, again on each owner change.
-local function AddProcOwnerRow(layout, moved)
-    if type(CreateSettingsButtonInitializer) ~= "function" or type(layout) ~= "table"
-            or type(layout.AddInitializer) ~= "function" then
-        return nil
-    end
-    local key = moved.procKey
-    local name = ProcName(key) .. " arcs and sound"
-    local row = CreateSettingsButtonInitializer(name, "Open settings", function() OpenProcOwner(key) end,
-        ProcOwnerTooltip(key), true)
-    layout:AddInitializer(row)
-    local toolkit = rawget(_G, "DyresToolkit")
-    if type(toolkit) == "table" and type(toolkit.OnOwnerChanged) == "function"
-            and type(toolkit.PROC_KIND_PREFIX) == "string" then
-        toolkit.OnOwnerChanged(toolkit.PROC_KIND_PREFIX .. key, function()
-            local data = type(row.GetData) == "function" and row:GetData() or row
-            if type(data) == "table" then
-                data.tooltip = ProcOwnerTooltip(key)
-            end
-        end)
-    end
-    return row
-end
-
 local function Missing(moved)
     return "Install " .. moved.owner .. " from CurseForge for " .. moved.what:gsub("^The", "the") .. "."
 end
@@ -296,6 +271,69 @@ end
 local function LinkOptions(moved)
     return {addon = moved.addon, name = moved.name, button = moved.button, missing = Missing(moved),
         tooltip = "Opens " .. Possessive(moved.owner) .. " settings for " .. moved.what:gsub("^The", "the") .. "."}
+end
+
+-- The proc row's label, button, and tooltip for the owner now: with an owner,
+-- "<proc> arcs and sound"; with none, the page's link to Dyre's Buff
+-- Reminders' Proc Sounds, as before.
+local function ProcRowText(moved)
+    local key = moved.procKey
+    if WTF.ProcOwner(key) then
+        return ProcName(key) .. " arcs and sound", "Open settings", ProcOwnerTooltip(key)
+    end
+    local options = LinkOptions(moved)
+    return options.name, options.button, Member(moved.addon) and options.tooltip or options.missing
+end
+
+-- The click asks for the owner again.
+local function OpenProcRow(moved)
+    if WTF.ProcOwner(moved.procKey) then
+        OpenProcOwner(moved.procKey)
+        return
+    end
+    local info = Member(moved.addon)
+    if not info or type(info.openSettings) ~= "function" then
+        WTF.Report(Missing(moved))
+        return
+    end
+    if InCombatLockdown() then
+        WTF.Report("The settings open out of combat.")
+        return
+    end
+    info.openSettings()
+end
+
+-- The proc row: one button whose words and click follow the owner,
+-- rewritten on each owner change, since the owner claims at its PLAYER_LOGIN,
+-- which can come after this page is built. Greyed while there is no owner and
+-- Dyre's Buff Reminders is missing. Never a shown predicate: the family rule
+-- is "listed and greyed, never hidden".
+local function AddProcRow(layout, moved)
+    if type(CreateSettingsButtonInitializer) ~= "function" or type(layout) ~= "table"
+            or type(layout.AddInitializer) ~= "function" then
+        return nil
+    end
+    local key = moved.procKey
+    local name, button, tooltip = ProcRowText(moved)
+    local row = CreateSettingsButtonInitializer(name, button, function() OpenProcRow(moved) end, tooltip, true)
+    if type(row.AddModifyPredicate) == "function" then
+        row:AddModifyPredicate(function() return WTF.ProcOwner(key) ~= nil or Member(moved.addon) ~= nil end)
+    end
+    if WTF.toolkit and type(WTF.toolkit.GreyButtonLabel) == "function" then
+        WTF.toolkit.GreyButtonLabel(row)
+    end
+    layout:AddInitializer(row)
+    local toolkit = rawget(_G, "DyresToolkit")
+    if type(toolkit) == "table" and type(toolkit.OnOwnerChanged) == "function"
+            and type(toolkit.PROC_KIND_PREFIX) == "string" then
+        toolkit.OnOwnerChanged(toolkit.PROC_KIND_PREFIX .. key, function()
+            local data = type(row.GetData) == "function" and row:GetData() or row
+            if type(data) == "table" then
+                data.name, data.buttonText, data.tooltip = ProcRowText(moved)
+            end
+        end)
+    end
+    return row
 end
 
 -- One row: the Toolkit's link, else (without Dyre's Toolkit 2.3.0) the note only.
@@ -387,10 +425,6 @@ local function Loaded(addon)
     return type(isLoaded) == "function" and isLoaded(addon) == true
 end
 
-local function CanShow(row)
-    return type(row) == "table" and type(row.AddShownPredicate) == "function"
-end
-
 local AddOwnerRows
 
 local function AddMovedPage(parent, moved)
@@ -420,41 +454,13 @@ AddOwnerRows = function(page, layout, moved)
         AddMovedRow(page, layout, moved)
         return
     end
-    -- The proc owner rows draw their own primer while Dyre's Buff Reminders is
-    -- missing, shown only while no AddOn plays Nightfall with its arcs.
-    if HasPrimer() and moved.primer and not Loaded(moved.addon) then
-        local primer = WTF.toolkit.AddSettingsPrimer(page, layout, moved.primer)
-        if CanShow(primer) then
-            primer:AddShownPredicate(function() return WTF.ProcOwner(key) == nil end)
-        end
+    -- The primer, while Dyre's Buff Reminders is missing and no AddOn plays
+    -- Nightfall with its arcs when the page is built.
+    if HasPrimer() and moved.primer and not Loaded(moved.addon) and WTF.ProcOwner(key) == nil then
+        WTF.toolkit.AddSettingsPrimer(page, layout, moved.primer)
     end
-    -- A proc (Nightfall): two rows, one shown. With no owner, the old row to
-    -- Dyre's Buff Reminders; with one, the owner's row. The owner is asked
-    -- each time the page draws, since it claims at its PLAYER_LOGIN, which can
-    -- come after this page is built. Without shown predicates, only the row
-    -- for the owner at build time.
-    local function Unowned() return WTF.ProcOwner(key) == nil end
-    local function Owned() return WTF.ProcOwner(key) ~= nil end
-    if Owned() then
-        local row = AddProcOwnerRow(layout, moved)
-        if not row then
-            AddMovedRow(page, layout, moved)
-        elseif CanShow(row) then
-            row:AddShownPredicate(Owned)
-            local old = AddMovedRow(page, layout, moved)
-            if CanShow(old) then
-                old:AddShownPredicate(Unowned)
-            end
-        end
-        return
-    end
-    local old = AddMovedRow(page, layout, moved)
-    if CanShow(old) then
-        old:AddShownPredicate(Unowned)
-        local row = AddProcOwnerRow(layout, moved)
-        if CanShow(row) then
-            row:AddShownPredicate(Owned)
-        end
+    if not AddProcRow(layout, moved) then
+        AddMovedRow(page, layout, moved)
     end
 end
 
