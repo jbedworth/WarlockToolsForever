@@ -291,27 +291,33 @@ end
 -- Chat messages longer than this are cut by the client.
 WTF.ANNOUNCE_MAX_LENGTH = 255
 
--- The default texts credit WTF (author-approved), so players you group with
--- can find it; a text you edit says only what you wrote.
-WTF.ANNOUNCE_CREDIT = " - via Warlock Tools Forever (WTF)"
+-- Plain texts that never name the AddOn (John, 2026-11-28, after a player
+-- uninstalled over texts that "advertised the addon": "Tone down the flair a
+-- bit too"). %Z leaves room for long zone names.
 WTF.ANNOUNCE_DEFAULTS = {
-    summonGroupText = "The ritual hungers! Click the portal to drag >> %T << through the Twisting Nether" .. WTF.ANNOUNCE_CREDIT,
-    soulstoneGroupText = "A piece of >> %T <<'s soul now rests in my keeping. Death is merely an inconvenience" .. WTF.ANNOUNCE_CREDIT,
-    -- The author's texts, with their own credit; %Z leaves room for long zone names.
-    summonWhisperText = "Summoning you to %Z, since your sloth-like pace would get you there sometime next week. Accept the summon when it pops up (and tell me if it doesn't). Courtesy of Warlock Tools Forever (WTF)",
-    soulstoneWhisperText = "I've trapped a sliver of your soul in a stone. If you die, it drags you back to life right where you fell, so if you're going to die, die in a good spot. Courtesy of Warlock Tools Forever (WTF)",
-    -- Emotes start with your name: "Dyre crushes a Soul Shard ...".
-    healthstoneEmoteText = "crushes a Soul Shard and forges a Healthstone from the screaming essence within. - via Warlock Tools Forever (WTF)",
-    soulstoneEmoteText = "binds a captured soul into a Soulstone. Someone's afterlife just got an escape hatch. - via Warlock Tools Forever (WTF)",
-    healthstoneWhisperText = "Here, have a Healthstone. Some poor creature's essence gives you more health! Courtesy of Warlock Tools Forever (WTF)",
+    summonGroupText = "Summoning >> %T <<. Please click the portal.",
+    soulstoneGroupText = "Soulstone on >> %T <<.",
+    summonWhisperText = "Summoning you to %Z. Accept the summon when it pops up, and tell me if it doesn't.",
+    soulstoneWhisperText = "I put a Soulstone on you. If you die, you can come back to life right where you fell.",
+    -- Emotes start with your name: "Dyre creates a Healthstone.".
+    healthstoneEmoteText = "creates a Healthstone.",
+    soulstoneEmoteText = "creates a Soulstone.",
+    healthstoneWhisperText = "Here's a Healthstone. Use it when your health runs low.",
 }
 -- Saved copies of earlier defaults, never edited, become the new ones.
 local OLD_ANNOUNCE_DEFAULTS = {
-    summonGroupText = {"Summoning >> %T << click please", "Summoning >> %T << click please - via Warlock Tools Forever (WTF)"},
-    summonWhisperText = {"Summoning you to %Z now. Watch for the summon prompt and accept it. If it doesn't appear, tell me.", "Summoning you to %Z now. Watch for the summon prompt and accept it. If it doesn't appear, tell me. - via Warlock Tools Forever (WTF)"},
-    soulstoneGroupText = {"Soulstone on >> %T <<", "Soulstone on >> %T << - via Warlock Tools Forever (WTF)"},
-    soulstoneWhisperText = {"I've applied a soulstone to you, this means if you die, you can revive yourself where you fell. So, if you're going to die, die in a good spot.", "I've applied a soulstone to you, this means if you die, you can revive yourself where you fell. So, if you're going to die, die in a good spot. - via Warlock Tools Forever (WTF)"},
-    healthstoneWhisperText = {"Enjoy the Healthstone, %T! Use it when your health runs low. - via Warlock Tools Forever (WTF)"},
+    summonGroupText = {"Summoning >> %T << click please", "Summoning >> %T << click please - via Warlock Tools Forever (WTF)",
+        "The ritual hungers! Click the portal to drag >> %T << through the Twisting Nether - via Warlock Tools Forever (WTF)"},
+    summonWhisperText = {"Summoning you to %Z now. Watch for the summon prompt and accept it. If it doesn't appear, tell me.", "Summoning you to %Z now. Watch for the summon prompt and accept it. If it doesn't appear, tell me. - via Warlock Tools Forever (WTF)",
+        "Summoning you to %Z, since your sloth-like pace would get you there sometime next week. Accept the summon when it pops up (and tell me if it doesn't). Courtesy of Warlock Tools Forever (WTF)"},
+    soulstoneGroupText = {"Soulstone on >> %T <<", "Soulstone on >> %T << - via Warlock Tools Forever (WTF)",
+        "A piece of >> %T <<'s soul now rests in my keeping. Death is merely an inconvenience - via Warlock Tools Forever (WTF)"},
+    soulstoneWhisperText = {"I've applied a soulstone to you, this means if you die, you can revive yourself where you fell. So, if you're going to die, die in a good spot.", "I've applied a soulstone to you, this means if you die, you can revive yourself where you fell. So, if you're going to die, die in a good spot. - via Warlock Tools Forever (WTF)",
+        "I've trapped a sliver of your soul in a stone. If you die, it drags you back to life right where you fell, so if you're going to die, die in a good spot. Courtesy of Warlock Tools Forever (WTF)"},
+    healthstoneWhisperText = {"Enjoy the Healthstone, %T! Use it when your health runs low. - via Warlock Tools Forever (WTF)",
+        "Here, have a Healthstone. Some poor creature's essence gives you more health! Courtesy of Warlock Tools Forever (WTF)"},
+    healthstoneEmoteText = {"crushes a Soul Shard and forges a Healthstone from the screaming essence within. - via Warlock Tools Forever (WTF)"},
+    soulstoneEmoteText = {"binds a captured soul into a Soulstone. Someone's afterlife just got an escape hatch. - via Warlock Tools Forever (WTF)"},
 }
 
 local function IsOldDefault(key, text)

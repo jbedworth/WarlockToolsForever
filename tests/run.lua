@@ -4290,7 +4290,7 @@ test("the Healthstone gift whisper goes when the trade window opens", function()
     equal(#state.sent, 1)
     equal(state.sent[1].chatType, "WHISPER")
     equal(state.sent[1].target, "Meatrod-Theog")
-    equal(state.sent[1].message, "Here, have a Healthstone. Some poor creature's essence gives you more health! Courtesy of Warlock Tools Forever (WTF)")
+    equal(state.sent[1].message, "Here's a Healthstone. Use it when your health runs low.")
     state.emit("TRADE_CLOSED")
     state.emit("TRADE_SHOW")
     equal(#state.sent, 1, "a later trade WTF did not start gets none")
@@ -4315,17 +4315,62 @@ test("no gift whisper for a late window, or with it off", function()
     equal(#off.sent, 0)
     equal(off.tradeSlots[1], 5511, "the stone still goes in")
 end)
-test("saved texts that match an old default gain the credit; edited ones do not", function()
-    local state = fixture({db = {announce = {summonGroupText = "Summoning >> %T << click please",
-        soulstoneGroupText = "Stone on %T", soulstoneWhisperText = "I've applied a soulstone to you, this means if you die, you can revive yourself where you fell. So, if you're going to die, die in a good spot. - via Warlock Tools Forever (WTF)"}}})
-    local settings = state.wtf.db.announce
-    equal(settings.summonGroupText, "The ritual hungers! Click the portal to drag >> %T << through the Twisting Nether - via Warlock Tools Forever (WTF)")
-    equal(settings.soulstoneGroupText, "Stone on %T")
-    equal(settings.soulstoneWhisperText, state.wtf.ANNOUNCE_DEFAULTS.soulstoneWhisperText)
-    equal(settings.healthstoneWhisper, true)
-    for key, text in pairs(state.wtf.ANNOUNCE_DEFAULTS) do
-        if #text > state.wtf.ANNOUNCE_MAX_LENGTH then error(key .. " is over the chat limit") end
+test("the default texts are plain and never name the AddOn", function()
+    local wtf = fixture().wtf
+    local defaults = wtf.ANNOUNCE_DEFAULTS
+    equal(defaults.summonGroupText, "Summoning >> %T <<. Please click the portal.")
+    equal(defaults.summonWhisperText, "Summoning you to %Z. Accept the summon when it pops up, and tell me if it doesn't.")
+    equal(defaults.soulstoneGroupText, "Soulstone on >> %T <<.")
+    equal(defaults.soulstoneWhisperText, "I put a Soulstone on you. If you die, you can come back to life right where you fell.")
+    equal(defaults.healthstoneEmoteText, "creates a Healthstone.")
+    equal(defaults.soulstoneEmoteText, "creates a Soulstone.")
+    equal(defaults.healthstoneWhisperText, "Here's a Healthstone. Use it when your health runs low.")
+    local count = 0
+    for key, text in pairs(defaults) do
+        count = count + 1
+        if text:find("Warlock Tools Forever", 1, true) or text:find("(WTF)", 1, true) then
+            error(key .. " names the AddOn")
+        end
+        if #text > wtf.ANNOUNCE_MAX_LENGTH then error(key .. " is over the chat limit") end
     end
+    equal(count, 7)
+end)
+-- Every earlier default, credited or not, by key (John, 2026-11-28).
+local OLD_DEFAULTS = {
+    summonGroupText = {"Summoning >> %T << click please", "Summoning >> %T << click please - via Warlock Tools Forever (WTF)",
+        "The ritual hungers! Click the portal to drag >> %T << through the Twisting Nether - via Warlock Tools Forever (WTF)"},
+    summonWhisperText = {"Summoning you to %Z now. Watch for the summon prompt and accept it. If it doesn't appear, tell me.",
+        "Summoning you to %Z now. Watch for the summon prompt and accept it. If it doesn't appear, tell me. - via Warlock Tools Forever (WTF)",
+        "Summoning you to %Z, since your sloth-like pace would get you there sometime next week. Accept the summon when it pops up (and tell me if it doesn't). Courtesy of Warlock Tools Forever (WTF)"},
+    soulstoneGroupText = {"Soulstone on >> %T <<", "Soulstone on >> %T << - via Warlock Tools Forever (WTF)",
+        "A piece of >> %T <<'s soul now rests in my keeping. Death is merely an inconvenience - via Warlock Tools Forever (WTF)"},
+    soulstoneWhisperText = {"I've applied a soulstone to you, this means if you die, you can revive yourself where you fell. So, if you're going to die, die in a good spot.",
+        "I've applied a soulstone to you, this means if you die, you can revive yourself where you fell. So, if you're going to die, die in a good spot. - via Warlock Tools Forever (WTF)",
+        "I've trapped a sliver of your soul in a stone. If you die, it drags you back to life right where you fell, so if you're going to die, die in a good spot. Courtesy of Warlock Tools Forever (WTF)"},
+    healthstoneWhisperText = {"Enjoy the Healthstone, %T! Use it when your health runs low. - via Warlock Tools Forever (WTF)",
+        "Here, have a Healthstone. Some poor creature's essence gives you more health! Courtesy of Warlock Tools Forever (WTF)"},
+    healthstoneEmoteText = {"crushes a Soul Shard and forges a Healthstone from the screaming essence within. - via Warlock Tools Forever (WTF)"},
+    soulstoneEmoteText = {"binds a captured soul into a Soulstone. Someone's afterlife just got an escape hatch. - via Warlock Tools Forever (WTF)"},
+}
+test("a saved copy of any earlier default becomes the new default", function()
+    local defaults = fixture().wtf.ANNOUNCE_DEFAULTS
+    local count = 0
+    for key, olds in pairs(OLD_DEFAULTS) do
+        for _, old in ipairs(olds) do
+            count = count + 1
+            local state = fixture({db = {announce = {[key] = old}}})
+            equal(state.wtf.db.announce[key], defaults[key], key .. ": " .. old)
+        end
+    end
+    equal(count, 16)
+end)
+test("a text the player edited stays as it is", function()
+    local state = fixture({db = {announce = {soulstoneGroupText = "Stone on %T",
+        summonGroupText = "The ritual hungers! Click the portal to drag >> %T <<"}}})
+    local settings = state.wtf.db.announce
+    equal(settings.soulstoneGroupText, "Stone on %T")
+    equal(settings.summonGroupText, "The ritual hungers! Click the portal to drag >> %T <<", "an old default, edited")
+    equal(settings.healthstoneWhisper, true)
 end)
 test("a refused trade placement waits for the next key press, once", function()
     local state = stonesFixture({carried = {[5511] = 1}, bags = bagWith(5511),
@@ -4917,18 +4962,18 @@ test("a summon tells the party and whispers the target", function()
     local state = fixture({group = "party"})
     cast(state, 698, "Friend")
     equal(#state.sent, 2)
-    equal(state.sent[1].message, "The ritual hungers! Click the portal to drag >> Friend << through the Twisting Nether - via Warlock Tools Forever (WTF)")
+    equal(state.sent[1].message, "Summoning >> Friend <<. Please click the portal.")
     equal(state.sent[1].chatType, "PARTY")
     equal(state.sent[2].chatType, "WHISPER")
     equal(state.sent[2].target, "Friend")
-    equal(state.sent[2].message, "Summoning you to Redridge Mountains, since your sloth-like pace would get you there sometime next week. Accept the summon when it pops up (and tell me if it doesn't). Courtesy of Warlock Tools Forever (WTF)")
+    equal(state.sent[2].message, "Summoning you to Redridge Mountains. Accept the summon when it pops up, and tell me if it doesn't.")
 end)
 test("a Soulstone use tells the raid and whispers the author's text", function()
     local state = fixture({group = "raid"})
     cast(state, 20762, "Tank")
-    equal(state.sent[1].message, "A piece of >> Tank <<'s soul now rests in my keeping. Death is merely an inconvenience - via Warlock Tools Forever (WTF)")
+    equal(state.sent[1].message, "Soulstone on >> Tank <<.")
     equal(state.sent[1].chatType, "RAID")
-    equal(state.sent[2].message, "I've trapped a sliver of your soul in a stone. If you die, it drags you back to life right where you fell, so if you're going to die, die in a good spot. Courtesy of Warlock Tools Forever (WTF)")
+    equal(state.sent[2].message, "I put a Soulstone on you. If you die, you can come back to life right where you fell.")
 end)
 test("alone, only the whisper goes out", function()
     local state = fixture()
@@ -4954,7 +4999,7 @@ test("a summon is announced when the ritual starts, once", function()
     equal(#state.sent, 0, "not yet: only sent")
     state.emit("UNIT_SPELLCAST_START", "player", "ritual", 698)
     equal(#state.sent, 2)
-    equal(state.sent[1].message, "The ritual hungers! Click the portal to drag >> Friend << through the Twisting Nether - via Warlock Tools Forever (WTF)")
+    equal(state.sent[1].message, "Summoning >> Friend <<. Please click the portal.")
     equal(state.sent[1].chatType, "RAID")
     state.emit("UNIT_SPELLCAST_CHANNEL_START", "player", "ritual", 698)
     state.emit("UNIT_SPELLCAST_SUCCEEDED", "player", "ritual", 698)
@@ -4969,7 +5014,7 @@ test("a ritual that names no target uses your friendly player target", function(
     state.emit("UNIT_SPELLCAST_SENT", "player", "", "ritual", 698)
     state.emit("UNIT_SPELLCAST_CHANNEL_START", "player", "ritual", 698)
     equal(#state.sent, 2)
-    equal(state.sent[1].message, "The ritual hungers! Click the portal to drag >> Friend << through the Twisting Nether - via Warlock Tools Forever (WTF)")
+    equal(state.sent[1].message, "Summoning >> Friend <<. Please click the portal.")
     equal(state.sent[2].target, "Friend")
     local alone = fixture({group = "party", units = {target = {name = "Boar"}}})
     alone.emit("UNIT_SPELLCAST_SENT", "player", "", "ritual", 698)
@@ -4983,13 +5028,13 @@ test("creating a stone emotes on your next key press, at most once a minute per 
     state.press()
     equal(#state.sent, 1)
     equal(state.sent[1].chatType, "EMOTE")
-    equal(state.sent[1].message, "crushes a Soul Shard and forges a Healthstone from the screaming essence within. - via Warlock Tools Forever (WTF)")
+    equal(state.sent[1].message, "creates a Healthstone.")
     cast(state, 5699, "")
     state.press()
     equal(#state.sent, 1, "a second Healthstone within the minute stays quiet")
     cast(state, 693, "")
     state.press()
-    equal(state.sent[2].message, "binds a captured soul into a Soulstone. Someone's afterlife just got an escape hatch. - via Warlock Tools Forever (WTF)")
+    equal(state.sent[2].message, "creates a Soulstone.")
     state.press()
     equal(#state.sent, 2, "sent once")
     state.now = state.now + 61
@@ -5044,16 +5089,16 @@ test("whispers go to the full First-Last name", function()
         units = {target = {name = "Meatrod", surname = "Theog", player = true, friend = true}}})
     state.emit("UNIT_SPELLCAST_SENT", "player", nil, "ritual", 698)
     state.emit("UNIT_SPELLCAST_CHANNEL_START", "player", "ritual", 698)
-    equal(state.sent[1].message, "The ritual hungers! Click the portal to drag >> Meatrod Theog << through the Twisting Nether - via Warlock Tools Forever (WTF)", "%T is the full name")
+    equal(state.sent[1].message, "Summoning >> Meatrod Theog <<. Please click the portal.", "%T is the full name")
     equal(state.sent[2].target, "Meatrod-Theog")
     state.emit("UNIT_SPELLCAST_SENT", "player", "Meatrod", "stone", 20707)
     state.emit("UNIT_SPELLCAST_SUCCEEDED", "player", "stone", 20707)
     equal(state.sent[4].target, "Meatrod-Theog", "a Soulstone on your target too")
-    equal(state.sent[3].message, "A piece of >> Meatrod Theog <<'s soul now rests in my keeping. Death is merely an inconvenience - via Warlock Tools Forever (WTF)")
+    equal(state.sent[3].message, "Soulstone on >> Meatrod Theog <<.")
     state.units.target = nil
     state.emit("UNIT_SPELLCAST_SENT", "player", "Ryla-Stone", "stone2", 20707)
     state.emit("UNIT_SPELLCAST_SUCCEEDED", "player", "stone2", 20707)
-    equal(state.sent[5].message, "A piece of >> Ryla Stone <<'s soul now rests in my keeping. Death is merely an inconvenience - via Warlock Tools Forever (WTF)", "a First-Last cast name, not targeted")
+    equal(state.sent[5].message, "Soulstone on >> Ryla Stone <<.", "a First-Last cast name, not targeted")
     equal(state.sent[6].target, "Ryla-Stone")
     state.clear()
     state.slash("debug_announce")
@@ -5194,7 +5239,7 @@ test("the Announce page edits texts, switches, and the channel", function()
     local page = state.categories.Announce.frame
     page:OnRefresh()
     local row = page.rows[1]
-    equal(row.edit.text, "The ritual hungers! Click the portal to drag >> %T << through the Twisting Nether - via Warlock Tools Forever (WTF)")
+    equal(row.edit.text, "Summoning >> %T <<. Please click the portal.")
     row.edit.text = "  Port >> %T <<  "
     row.edit.scripts.OnEnterPressed(row.edit)
     equal(state.wtf.db.announce.summonGroupText, "Port >> %T <<")
@@ -5213,7 +5258,7 @@ test("the Announce page edits texts, switches, and the channel", function()
     page:OnDefault()
     equal(state.wtf.db.announce.channel, "group")
     equal(state.wtf.db.announce.summonGroup, true)
-    equal(state.wtf.db.announce.summonGroupText, "The ritual hungers! Click the portal to drag >> %T << through the Twisting Nether - via Warlock Tools Forever (WTF)")
+    equal(state.wtf.db.announce.summonGroupText, "Summoning >> %T <<. Please click the portal.")
 end)
 
 -- Settings page ----------------------------------------------------------------

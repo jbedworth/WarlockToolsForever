@@ -429,20 +429,17 @@ announcements go with the Control bar (the 2026-10-30 decision).
   casts announce nothing.
 - Five messages with their own switches and texts (`%T` the target's full
   "First Last" name, whispers to "First-Last"; `%Z` zone):
-  summon group line ("The ritual hungers! Click the portal to drag >> %T <<
-  through the Twisting Nether"), summon whisper (only
+  summon group line ("Summoning >> %T <<. Please click the portal."), summon
+  whisper (only
   verified advice; the accept-blocking rules are unverified), Soulstone group
-  line, Soulstone whisper (the author's text), and Healthstone gift whisper.
-  Every default text credits WTF: " - via Warlock Tools Forever (WTF)", or
-  the author's own credited lines for the summon whisper (a light jab at the
-  target's sloth-like pace, then: accept the summon, tell me if it doesn't
-  appear), the Soulstone whisper ("I've trapped a
-  sliver of your soul in a stone. ... die in a good spot. Courtesy of
-  Warlock Tools Forever (WTF)") and the gift whisper ("Here, have a Healthstone. Some poor
-  creature's essence gives you more health! Courtesy of Warlock Tools
-  Forever (WTF)" (author-approved, defaults only: edited texts say only what the player
-  wrote). Saved texts equal to the earlier, uncredited defaults are upgraded
-  to the new defaults at login. Group means raid, else
+  line, Soulstone whisper, and Healthstone gift whisper. The default texts
+  are plain and never name the AddOn (John, 2026-11-28, reversing the earlier
+  credit after a player uninstalled over texts that "advertised the addon":
+  "Tone down the flair a bit too"; he approved each text, in
+  `WTF.ANNOUNCE_DEFAULTS`). Saved texts equal to any earlier default
+  (`OLD_ANNOUNCE_DEFAULTS`, credited or not) become the new defaults at
+  login; a player's own text stays. A test fails if a default names the
+  AddOn. Group means raid, else
   party, else nothing; Say is optional. SAY outdoors needs a hardware event and
   the success event is not one, so a blocked Say is reported once.
 - Never a whisper to yourself (1.13.0; John, 2026-11-27: a Soulstone on

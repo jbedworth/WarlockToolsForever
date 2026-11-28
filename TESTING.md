@@ -297,8 +297,7 @@ and printing.
 - [ ] Drag (unlocked) and `/wtf reset` the bar; its place survives `/reload`.
 - [ ] Ritual of Summoning on a party member: one party line and one whisper
       with the zone. A Soulstone on a party member: the party line and the
-      author's whisper. On yourself: nothing. Default texts credit
-      Warlock Tools Forever (WTF).
+      whisper. On yourself: nothing. No default text names the AddOn.
 - [ ] Create a Healthstone outdoors, then press a key: one emote; a second
       within a minute stays quiet. The same for a Soulstone.
 - [ ] The Announce page edits, Enter and Escape, switches, the Say choice, and

@@ -202,18 +202,17 @@ your zone.
 
 - Group messages go to your raid, else your party, and nothing when you are
   alone. You can choose Say instead, but the game may block it outdoors.
-- The summon whisper teases the target's sloth-like pace and asks them to
-  accept the summon.
-- The Soulstone whisper tells the target that a sliver of their soul is
-  trapped in a stone and drags them back to life where they fell.
+- The summon whisper names your zone and asks the target to accept the
+  summon.
+- The Soulstone whisper tells the target they can come back to life where
+  they fell.
 - When you create a Healthstone or a Soulstone, WTF emotes (for example,
-  "Dyre crushes a Soul Shard and forges a Healthstone from the screaming
-  essence within."), at most once a minute per stone. The game lets AddOns
+  "Dyre creates a Healthstone."), at most once a minute per stone. The game lets AddOns
   emote only during a key press or click, so the emote goes out with your
   next one, within 30 seconds.
-- The default texts credit Warlock Tools Forever (WTF), and the Healthstone
-  whisper says: "Here, have a Healthstone. Some poor creature's essence gives
-  you more health!" Edit a text to say anything you like.
+- The default texts are short and plain, and never name the AddOn. The
+  Healthstone whisper says: "Here's a Healthstone. Use it when your health
+  runs low." Edit a text to say anything you like.
 
 ## Settings
 

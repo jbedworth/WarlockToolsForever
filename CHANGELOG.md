@@ -4,6 +4,11 @@ Player-facing changes for each Warlock Tools Forever release, newest first. The
 release builder copies the section for the TOC version into the GitHub release
 notes and the CurseForge changelog, and fails if that section is missing.
 
+## 1.14.4
+
+### Fixes
+- Your chat messages no longer name the AddOn, and they skip the flavor text. They now just say what you did, like "Summoning >> Dyre <<. Please click the portal." If you never changed a message, you get the new one. Your own edits stay as they are.
+
 ## 1.14.3
 
 ### Fixes
